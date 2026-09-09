@@ -10,3 +10,9 @@
 [submodule "services/notification"]
 	path = services/notification
 	url = https://github.com/arturtugui/pad-team-8-notification.git
+[submodule "services/map"]
+	path = services/map
+	url = https://github.com/AlexandruRudoi/pad-team-8-map.git
+[submodule "services/monster-raid"]
+	path = services/monster-raid
+	url = https://github.com/AlexandruRudoi/pad-team-8-monster-raid.git
