@@ -15,8 +15,8 @@ include coverage and the important success/failure/edge cases checked. -->
 ## Compatibility and follow-up
 
 <!-- Explain breaking contract changes, migration needs, or remaining work.
-Write "None" if there are none. For release PRs, also list the original dev
-commit IDs being promoted, in order, and the intended version tag. -->
+Write "None" if there are none. For release PRs (dev to main), state the
+intended version tag and the notable changes. -->
 
 ## Checklist
 
