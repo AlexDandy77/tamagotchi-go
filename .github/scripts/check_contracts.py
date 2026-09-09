@@ -1,4 +1,4 @@
-"""Validate the shared contracts and their README catalog without running services."""
+"""Validate the shared contracts, the README catalog and the field dictionary without running services."""
 
 import json
 import re
@@ -89,12 +89,13 @@ def main():
     events = json.loads((ROOT / "contracts/events.schema.json").read_text())
     realtime = json.loads((ROOT / "contracts/realtime.schema.json").read_text())
     readme = (ROOT / "README.md").read_text()
+    dictionary = (ROOT / "contracts/field-dictionary.md").read_text()
     validate(spec)
     for document in (spec, events, realtime):
         check_references(document, document)
     for name, schema in spec["components"]["schemas"].items():
         Draft202012Validator.check_schema(schema)
-        require(f"#### {name}\n" in readme, f"Missing README type: {name}")
+        require(f"#### {name}\n" in dictionary, f"Missing field dictionary type: {name}")
     for document in (events, realtime):
         Draft202012Validator.check_schema(document)
 
@@ -166,9 +167,10 @@ def main():
             schema_validator("CareInput").validate(payload)
     for target in re.findall(r"\]\((contracts/[^)]+)\)", readme):
         require((ROOT / target).is_file(), f"Broken contract link: {target}")
-    require(readme.count("```") % 2 == 0, "Unclosed README code fence")
+    for label, text in (("README", readme), ("field dictionary", dictionary)):
+        require(text.count("```") % 2 == 0, f"Unclosed {label} code fence")
     print(f"Validated {len(catalog)} HTTP operations, {len(events['oneOf'])} event types and {len(realtime['oneOf'])} chat types.")
-    print("README agreement, references, examples and nine invalid-payload checks passed.")
+    print("README and field dictionary agreement, references, examples and nine invalid-payload checks passed.")
 
 
 if __name__ == "__main__":

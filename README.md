@@ -2,247 +2,250 @@
 
 Team 8's project for Distributed Applications Programming (PAD), Autumn 2026.
 
-Tamagotchi Go is a shared backend for virtual-pet applications. Players care for pets, discover nearby players, fight turn-based battles, join guilds, and cooperate in monster raids. Creatures from different applications can participate in the same multiplayer ecosystem.
+Tamagotchi Go is a shared backend for virtual-pet apps. Players raise a pet, meet nearby players, fight turn-based battles, join guilds and take down raid monsters together. Pets from different apps live in the same multiplayer world.
 
-**Contents:** [Service boundaries](#service-boundaries) · [Architecture](#architecture-and-service-communication) · [Technologies](#technologies-and-communication-patterns) · [Communication contract](#communication-contract) · [Endpoint catalog](#http-endpoint-catalog) · [Field dictionary](#request-and-response-field-dictionary) · [Contribution workflow](#contribution-workflow)
+**Contents:** [Team](#team) · [Architecture](#architecture) · [Services](#services) · [Technologies](#technologies-and-communication-patterns) · [Communication contract](#communication-contract) · [Endpoint catalog](#endpoint-catalog) · [Contribution workflow](#contribution-workflow)
 
-## Players, client apps, and packages
+## Team
 
-- **Client app:** the program a player uses to see their pet, perform care actions, view the map, battle, or chat. It sends actions to the backend and displays the results.
-- **Package:** the registered identity and game configuration of one participating app. For example, a dragon app might use hunger and happiness, while a robot app uses energy and discipline. The Package Registry stores their definitions; it does not store or run the client application's code.
-- **Backend:** the eight microservices below. They validate actions, own persistent game data, and coordinate shared gameplay. Clients request actions; they cannot award themselves currency, XP, or victories.
+| Person | GitHub | Services | Language |
+| --- | --- | --- | --- |
+| Alexei | [AlexDandy77](https://github.com/AlexDandy77) | User Management, Battle | Go |
+| Artur | [arturtugui](https://github.com/arturtugui) | Tamagotchi, Notification | TypeScript |
+| Alexandru | [AlexandruRudoi](https://github.com/AlexandruRudoi) | Map, Monster Raid | Go |
+| Nicolae | [xnikug](https://github.com/xnikug) | Guild, Package Registry | TypeScript |
 
-Package developers, represented by package moderators, configure their app's content and care rules. The brief imagines independently created clients but does not assign responsibility for building the course's demonstration client.
+Each service lives in its own private repository, linked under [`services/`](services) as a Git submodule.
 
-## Service boundaries
+## How the game works
 
-Each service is the authority for its own data. Other services request information or changes through the owning service instead of modifying its storage directly. A reference to a user, pet, package, or guild identifies the existing entity; it does not create another authoritative copy.
+- **Client apps** are built by package developers. A client shows the pet, sends care actions, location updates, battle moves and chat messages, and displays what the backend returns.
+- **Packages** are the registered apps. A package defines its own pet statistics (a dragon app may use hunger and happiness, a robot app energy and discipline), starter pets and care rules. The backend stores those definitions; it never runs client code.
+- **The backend** is the eight services below. It validates every action and owns all persistent game data. Clients request actions; they cannot award themselves currency, XP or victories.
 
-### 1. User Management Service
+## Architecture
 
-**Responsibility:** global user identity, social relationships, and user currency balances.
+### System overview
 
-- Owns accounts, usernames, email addresses, authentication credentials, and global user privileges.
-- Owns friend requests, friendships, and enemy relationships.
-- Records which packages a user is registered with.
-- Owns global currency balances and applies currency changes resulting from battles and raids.
-- Owns available battle boosts and reserves/consumes them for Battle.
-- Proposed boundary: also owns local currency balances per user and package; their earning and spending rules remain package-specific.
-
-**Boundary:** pet ownership and progression belong to Tamagotchi; guild membership belongs to Guild; package definitions belong to Package Registry. User Management validates and applies currency changes, while Battle and Monster Raid determine the rewards for their activities.
-
-### 2. Battle Service
-
-**Responsibility:** player-versus-player matches and turn-based combat.
-
-- Proposed boundary: owns battle challenges, acceptance, and match creation, as well as the resulting battle session.
-- Owns participants, selected primary and secondary pet references, equipped battle boosts, starting HP, current HP, turns, and battle results.
-- Calculates damage from levels, type advantages, boosts, and the interpretation of package-specific care statistics.
-- Determines winner and loser rewards and a defined XP split between primary and secondary pets.
-- Coordinates settlement: User Management applies currency changes; Tamagotchi applies XP and transfers the loser's primary pet to the winner. The winner gains global currency and XP; the loser loses some global currency and receives less XP.
-
-**Boundary:** Battle owns the combat result, but never directly edits currency balances or persistent pet records. Cooperative monster fights belong to Monster Raid.
-
-### 3. Tamagotchi Service
-
-**Responsibility:** persistent pet identity, ownership, and progression.
-
-- Owns each pet's identifier, originating package, owner, combat type, level, XP, and sprite references.
-- Creates the user's initial primary pet from the chosen package's starter-pet configuration.
-- Owns primary-pet assignments and references to secondary pets. Secondary pets refer to existing records and are never duplicated when acquired or selected.
-- Stores and validates each pet's package-specific care statistics using the package's definitions. Hunger, energy, happiness, and other statistics retain their package-specific structures and meanings.
-- Maintains the six predefined combat types and their type-advantage relationships. The six types and advantage cycle are specified in the initial contract rules below.
-- Applies pet XP updates and ownership transfers requested after gameplay outcomes.
-
-**Boundary:** this service owns persistent pet state, not a battle's temporary HP or turn counter. Package Registry defines care and growth rules; Battle interprets pet properties for PvP combat.
-
-### 4. Notification Service
-
-**Responsibility:** asynchronous delivery of user notifications through Firebase push notifications.
-
-- Receives events such as friend requests, nearby-player encounters, battle requests, pet use or capture, guild invitations, and raid starts.
-- Owns client push-registration information and notification delivery records.
-- Determines how an event becomes a notification and handles its delivery through Firebase.
-
-**Boundary:** it delivers information about decisions made by other services. It does not detect proximity, accept invitations, calculate combat, or award rewards. Guild chat belongs to Guild.
-
-### 5. Map Service
-
-**Responsibility:** player locations and proximity detection.
-
-- Owns each user's latest known coordinates and location timestamp, ignoring stale updates.
-- Uses relationships from User Management to keep friends and enemies visible on the map.
-- Detects unrelated users within the proximity threshold and produces encounter events that can suggest friendship or battle.
-
-**Boundary:** Map reports encounters; Battle manages challenges and Notification delivers alerts. The brief suggests approximately `6(?)` meters; contract version 1.0.0 uses 6 meters, subject to professor confirmation.
-
-### 6. Monster Raid Service
-
-**Responsibility:** active cooperative guild raids against a shared monster.
-
-- Runs raid instances using the monster definitions, schedule, duration, participant limits, and reward configuration provided by Package Registry.
-- Checks guild eligibility through Guild and primary-pet eligibility through Tamagotchi.
-- Owns active monster HP, participants, damage contributions, action timestamps, the raid timer, and raid status.
-- Processes repeated attack actions and determines victory or failure when the monster dies or time expires.
-- Determines participant rewards and requests their application from User Management and Tamagotchi.
-
-**Boundary:** live raid progress belongs here; editable monster definitions and scheduling configuration belong to Package Registry. Guild membership belongs to Guild, and persistent player rewards belong to their respective data owners.
-
-### 7. Guild Service
-
-**Responsibility:** guild organization and real-time communication between guild members.
-
-- Owns guild identity, membership, invitations, roles, and permissions, including leaders, officers, and ordinary members.
-- Owns guild chat messages, including their guild, author, and timestamp.
-- Checks user identity and relationships through User Management when evaluating membership and invitation rules.
-- Provides membership and permission information to Monster Raid.
-
-**Boundary:** Guild decides who belongs to a guild and who may use guild features. Monster Raid manages the shared fight; User Management owns global friendships and enemy relationships.
-
-### 8. Package Registry Service
-
-**Responsibility:** participating app definitions and configurable game content.
-
-- Owns package identifiers, names, versions, descriptions, status, and associated developers/moderators.
-- Owns package-specific starter-pet configuration, care-statistic definitions, limits, growth mechanics, and interpretation rules such as thresholds for combat bonuses.
-- Proposed boundary: owns configurable local-currency earning and spending rules; User Management owns the corresponding balances.
-- Records user-package associations using registration information supplied by User Management.
-- Allows globally privileged admins to configure monsters: names, descriptions, sprites, maximum HP, combat properties, weaknesses, resistances, and rewards.
-- Owns raid scheduling configuration, including duration and participant limits, and requests activation, deactivation, or cancellation of raid instances from Monster Raid.
-
-**Boundary:** Registry owns the definition of a statistic, not an individual pet's current value. It owns monster and raid configuration, not the live monster HP, attack history, or reward settlement of an active raid.
-
-## Architecture and service communication
-
-The two diagrams are complementary views of the same backend. The first shows domain-service dependencies; the second shows the Notification Service and external push delivery.
-
-Arrows identify which service initiates a request or sends information to another service. A double arrow represents communication in both directions. The language, transport and endpoint choices for these relationships are defined in the technologies and communication contract sections below.
-
-### Domain services
+Client apps call the service that owns the action: User Management for accounts and friends, Tamagotchi for pets, Battle for PvP, Map for location, Monster Raid for raids, Guild for membership and chat, Notification for push devices, and Package Registry for app configuration. Every service owns its own PostgreSQL database with its own credentials; services never share a database. Events between services travel through Kafka (see [Event flow](#event-flow)), and Notification delivers push messages through Firebase Cloud Messaging.
 
 ```mermaid
 flowchart LR
-    Map["Map Service"]
-    Guild["Guild Service"]
-    Battle["Battle Service"]
-    Raid["Monster Raid Service"]
-    User["User Management Service"]
-    Pet["Tamagotchi Service"]
-    Registry["Package Registry Service"]
-
-    Map -->|"Friends and enemies"| User
-    Guild -->|"Identity and relationships"| User
-    Battle -->|"Currency and boost settlement"| User
-    Battle -->|"Pet properties, XP and capture"| Pet
-    Battle -->|"Package combat rules"| Registry
-    Raid -->|"Membership and permissions"| Guild
-    Raid -->|"Currency rewards"| User
-    Raid -->|"Primary pet properties and XP"| Pet
-    Raid <-->|"Raid configuration and lifecycle"| Registry
-    Pet -->|"Starter pets, care and growth rules"| Registry
-    Pet -->|"Enrollment checks and local rewards"| User
-    User -->|"Starter provisioning recovery"| Pet
-    User -->|"Package and reward rules"| Registry
+    Client(["Client apps"]) --> UM["User Management"] --> UMDB[("users DB")]
+    Client --> BT["Battle"] --> BTDB[("battles DB")]
+    Client --> TM["Tamagotchi"] --> TMDB[("pets DB")]
+    Client --> NT["Notification"] --> NTDB[("notifications DB")]
+    Client --> MP["Map"] --> MPDB[("locations DB")]
+    Client --> MR["Monster Raid"] --> MRDB[("raids DB")]
+    Client --> GD["Guild"] --> GDDB[("guilds DB")]
+    Client --> PR["Package Registry"] --> PRDB[("registry DB")]
+    NT -->|"push"| FCM["Firebase Cloud Messaging"]
 ```
 
-Client apps call the service responsible for the requested action: User Management for accounts and friendships, Tamagotchi for pets and care, Map for location, Battle for PvP, Guild for membership and chat, and Monster Raid for cooperative attacks. Developer/moderator and admin tools use Package Registry to configure content. Clients register for push delivery through Notification.
+### Service dependencies
 
-All protected actions use the user's authenticated identity. Repeated authentication dependencies are omitted from the diagram for readability. Reward settlement and pet-transfer operations are internal service responsibilities, not unrestricted client actions.
-
-### Events and notification delivery
+Arrows show which service calls which over HTTP. Authentication calls (every service verifies JWTs with User Management's public keys) are omitted for readability.
 
 ```mermaid
 flowchart LR
-    subgraph Backend["Shared backend"]
-        User["User Management Service"] -->|"Enrollment and friend events"| Bus["RabbitMQ - event transport"]
-        Map["Map Service"] -->|"Encounter events"| Bus
-        Battle["Battle Service"] -->|"Battle events"| Bus
-        Pet["Tamagotchi Service"] -->|"Pet events"| Bus
-        Guild["Guild Service"] -->|"Invitation events"| Bus
-        Raid["Monster Raid Service"] -->|"Raid events"| Bus
-        Bus -->|"Notification events"| Notify["Notification Service"]
-        Bus -->|"Enrollment events"| Registry["Package Registry Service"]
-        Bus -->|"Enrollment events"| Pet
+    Map["Map"]
+    Guild["Guild"]
+    Battle["Battle"]
+    Raid["Monster Raid"]
+    User["User Management"]
+    Pet["Tamagotchi"]
+    Registry["Package Registry"]
+
+    Map -->|"friends and enemies"| User
+    Guild -->|"identity, relationships"| User
+    Battle -->|"currency holds and settlement"| User
+    Battle -->|"pet reservations, XP, capture"| Pet
+    Battle -->|"combat rules"| Registry
+    Raid -->|"membership, eligibility"| Guild
+    Raid -->|"currency rewards"| User
+    Raid -->|"primary pet, XP"| Pet
+    Raid <-->|"schedule start and cancel, pinned config"| Registry
+    Pet -->|"starter pets, care rules"| Registry
+    Pet -->|"enrollment check, local rewards"| User
+    User -->|"starter provisioning"| Pet
+    User -->|"package status, rules"| Registry
+```
+
+### Event flow
+
+Anything that does not have to happen before a response is sent travels as an event through Kafka. Notification turns events into push messages; Package Registry and Tamagotchi react to enrollments.
+
+```mermaid
+flowchart LR
+    subgraph Producers
+        UM["User Management"]
+        MP["Map"]
+        BT["Battle"]
+        TM["Tamagotchi"]
+        GD["Guild"]
+        MR["Monster Raid"]
     end
-    Notify -->|"Push delivery"| Firebase["Firebase - external service"]
-    Firebase -->|"User notifications"| Apps["Players' client apps"]
+    subgraph Kafka["Kafka: one topic per event type, keyed by aggregateId"]
+        T1["user.package-registered.v1"]
+        T2["friend, map, battle, pet, guild and raid events"]
+    end
+    UM --> T1
+    UM & MP & BT & TM & GD & MR --> T2
+    T1 -->|"group: package-registry"| PR["Package Registry"]
+    T1 -->|"group: tamagotchi"| TM2["Tamagotchi"]
+    T2 -->|"group: notification"| NT["Notification"]
+    NT -->|"push"| FCM["Firebase Cloud Messaging"] --> Apps["Client apps"]
 ```
 
-## Example flows
+### Example: finishing a battle
 
-1. **Care for a pet:** the client sends a care action to Tamagotchi. Tamagotchi checks the package's rules through Package Registry, validates the action, and updates the pet's values. The client displays the resulting state.
-2. **Discover another player:** the client sends location updates to Map. Map checks relationships through User Management and detects a nearby stranger. Notification receives the encounter event and delivers a push notification. A player can then initiate a challenge through Battle.
-3. **Finish a PvP battle:** Battle determines the outcome using pet properties and package rules. It requests currency settlement from User Management and XP/ownership changes from Tamagotchi. Capturing a pet changes the existing record's ownership; it does not create another pet.
-4. **Run a guild raid:** an admin configures and schedules a raid through Package Registry. Monster Raid starts the instance, checks membership through Guild, and retrieves primary-pet properties from Tamagotchi. It tracks attacks and the timer, then coordinates rewards through the owning services if the monster is defeated.
+The player's request is answered as soon as the result is stored; settlement with the data owners and the notification happen afterwards.
 
-## Design assumptions to confirm
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client app
+    participant B as Battle
+    participant UM as User Management
+    participant T as Tamagotchi
+    participant K as Kafka
+    participant N as Notification
+    C->>B: POST /v1/battles/:id/actions (JWT, Idempotency-Key)
+    B->>B: validate turn, apply damage, detect winner, persist result
+    B-->>C: 200 Battle (status: settling)
+    B->>UM: PUT /internal/v1/battle-settlements/:id
+    UM-->>B: WalletResult (stake moved, boost consumed)
+    B->>T: PUT /internal/v1/pet-battle-settlements/:id
+    T-->>B: PetResult (XP applied, loser's primary transferred)
+    B->>B: mark finished and write battle.finished.v1 to the outbox
+    B->>K: publish battle.finished.v1 (key: battleId)
+    K->>N: consume (group: notification)
+    N-->>C: push to both players via Firebase
+```
 
-The brief leaves several boundaries open. This proposal uses the following assumptions so each kind of state has a clear owner:
+### Decisions to confirm
 
-| Point requiring clarification | Proposed boundary or open decision |
+The brief leaves some boundaries open. These are our choices; they can change after discussion with the professor.
+
+| Question | Our choice |
 | --- | --- |
-| Guild is told to use “Registry” for identity and relationships, while User Management explicitly owns those facts. | Guild uses User Management for identity and relationships. |
-| User Management and Package Registry both record user-package registrations. | User Management owns registrations; Registry maintains a corresponding view for package administration. |
-| Battle is described as starting after a match exists, without assigning challenge or match creation. | Battle also owns challenges, acceptance, and match creation. |
-| Local currency rules vary by package. | User Management owns balances per user and package; Registry owns their configurable rules. |
-| Packages can define different growth rates and combat-bonus thresholds. | Tamagotchi validates progression; Battle enforces shared combat limits; Registry validates package settings against those limits. The initial game rules below specify the selected limits for contract version 1.0.0. |
-| Losing a battle transfers the loser's primary pet. | Tamagotchi transfers the existing record. The winner keeps their primary; the loser must select another owned pet. Ownership changes remove the old owner's secondary reference. These rules are specified below. |
+| The brief tells Guild to use "Registry" for identity and relationships, but User Management owns those. | Guild asks User Management. |
+| Both User Management and Package Registry record user-package enrollments. | User Management is authoritative; Registry keeps a read-only projection fed by events. |
+| Who creates battle challenges and matches? | Battle owns challenges, acceptance and match creation. |
+| Local currency rules differ per package. | User Management stores balances per user and package; Registry stores the rules. |
+| Losing a battle transfers the loser's primary pet. | Tamagotchi transfers the existing record; the winner keeps its primary and gains a secondary; the loser must pick a new primary. |
+| Proximity threshold is written as "6(?)" meters. | 6 meters, locations fresh for 120 seconds. |
+
+## Services
+
+Each service is the only writer of its data. Other services ask the owner through its API; a reference to a user, pet, package or guild points at the existing record and never creates a copy.
+
+### 1. User Management
+
+- **Owns:** accounts, credentials and roles; friend requests, friendships and enemy marks; which packages a user is enrolled in; global and local currency balances; battle boosts and their holds.
+- **Does:** issues JWTs, answers "who is this user", "are they friends", "can they afford this stake"; applies currency results reported by Battle and Monster Raid.
+- **Not here:** pets (Tamagotchi), guild membership (Guild), package definitions (Package Registry).
+
+### 2. Battle
+
+- **Owns:** challenges, accepted matches, chosen pets and boosts, frozen combat inputs, turn and HP state, the outcome and settlement progress.
+- **Does:** computes damage from levels, type advantage, boosts and package care bonuses; decides winner rewards and the primary/secondary XP split; asks User Management and Tamagotchi to apply them.
+- **Not here:** currency balances or persistent pet records (never edited directly); cooperative fights (Monster Raid).
+
+### 3. Tamagotchi
+
+- **Owns:** every pet: identity, origin package, owner, combat type, level, XP, sprites and package-specific care statistics; primary and secondary assignments; pet reservations for battles and raids.
+- **Does:** creates the starter pet on enrollment, validates care actions against the package's pinned rules, applies XP and ownership transfers after battles and raids.
+- **Not here:** a battle's temporary HP (Battle); the definition of a statistic (Package Registry).
+
+### 4. Notification
+
+- **Owns:** push device registrations and notification records.
+- **Does:** consumes events (friend request, encounter, battle request or result, pet used or captured, guild invitation, raid start or result), decides who receives what, and delivers it through Firebase.
+- **Not here:** guild chat (Guild); any game decision.
+
+### 5. Map
+
+- **Owns:** each user's latest location and timestamp; encounter state.
+- **Does:** ignores stale updates, keeps friends and enemies visible, detects strangers within 6 meters and publishes an encounter event that may lead to a friend request or a battle.
+- **Not here:** challenges (Battle) and alerts (Notification).
+
+### 6. Monster Raid
+
+- **Owns:** active raid instances: monster HP, participants, damage per participant, timer and status.
+- **Does:** starts raids from Registry schedules, checks guild eligibility and reserves primary pets, processes clicker-style attacks with a one-second cooldown, and requests rewards from User Management and Tamagotchi on victory.
+- **Not here:** monster and schedule definitions (Package Registry); membership (Guild).
+
+### 7. Guild
+
+- **Owns:** guilds, invitations, members and roles (leader, officer, member); chat messages with a per-guild sequence.
+- **Does:** enforces membership and permission rules, runs the guild chat over WebSockets, and tells Monster Raid who is eligible.
+- **Not here:** friendships and enemies (User Management); the raid itself (Monster Raid).
+
+### 8. Package Registry
+
+- **Owns:** packages and their moderators; immutable package configurations (starter pets, statistics, care actions, combat bonus thresholds); global combat rules; monster definitions; raid schedules.
+- **Does:** lets admins register packages and configure monsters and raids, lets moderators publish package rules, keeps a projection of enrollments, and tells Monster Raid when a raid starts or is cancelled.
+- **Not here:** a pet's current statistic values (Tamagotchi); live raid state (Monster Raid).
 
 ## Technologies and communication patterns
 
-The team uses **Go and TypeScript**, with each person implementing both assigned services in one language. These are the selected design choices for implementation in later labs; this repository currently contains documentation and contracts.
+The team works in **Go and TypeScript**. Each person implements both of their services in one language.
 
-| Person | Service | Language and HTTP framework | Storage | Communication |
+| Service | Owner | Language and framework | Storage | Communication |
 | --- | --- | --- | --- | --- |
-| Alexei | User Management | Go, `net/http` | PostgreSQL `users` database | HTTP/JSON accounts, relationships and settlement; publishes enrollment/friend events |
-| Alexei | Battle | Go, `net/http` | PostgreSQL `battles` database | HTTP/JSON challenges, turns, dependency requests and result polling; publishes battle events |
-| Artur | Tamagotchi | TypeScript, Node.js, Fastify | PostgreSQL `pets` database; JSONB for package-local statistics | HTTP/JSON care, reservations and pet settlement; consumes enrollment events; publishes pet events |
-| Artur | Notification | TypeScript, Node.js, Fastify | PostgreSQL `notifications` database | HTTP/JSON device registration; consumes RabbitMQ events; Firebase Cloud Messaging push |
-| Alexandru | Map | Go, `net/http` | PostgreSQL `locations` database | HTTP/JSON location updates and map queries; reads relationships; publishes encounter events |
-| Alexandru | Monster Raid | Go, `net/http` | PostgreSQL `raids` database | HTTP/JSON scheduling commands, joins, attacks and result polling; publishes raid events |
-| Nicolae | Guild | TypeScript, Node.js, Fastify | PostgreSQL `guilds` database | HTTP/JSON membership/history; WebSocket chat; publishes invitation events |
-| Nicolae | Package Registry | TypeScript, Node.js, Fastify | PostgreSQL `registry` database; JSONB for configuration | HTTP/JSON configuration and scheduler commands; consumes enrollment events |
+| User Management | Alexei | Go, `net/http` | PostgreSQL `users` | HTTP/JSON; publishes enrollment and friend events |
+| Battle | Alexei | Go, `net/http` | PostgreSQL `battles` | HTTP/JSON with client polling of battle state; publishes battle events |
+| Tamagotchi | Artur | TypeScript, Fastify | PostgreSQL `pets` (JSONB for package statistics) | HTTP/JSON; consumes enrollment events; publishes pet events |
+| Notification | Artur | TypeScript, Fastify | PostgreSQL `notifications` | HTTP/JSON for devices; consumes Kafka events; Firebase push |
+| Map | Alexandru | Go, `net/http` | PostgreSQL `locations` | HTTP/JSON; publishes encounter events |
+| Monster Raid | Alexandru | Go, `net/http` | PostgreSQL `raids` | HTTP/JSON with client polling of raid state; publishes raid events |
+| Guild | Nicolae | TypeScript, Fastify | PostgreSQL `guilds` | HTTP/JSON; WebSocket chat; publishes invitation events |
+| Package Registry | Nicolae | TypeScript, Fastify | PostgreSQL `registry` (JSONB for configurations) | HTTP/JSON; consumes enrollment events |
 
+**Why two languages, and these two.** Go's standard library gives small, fast binaries with built-in concurrency, which fits the request-heavy, timer-driven services (settlement, combat, location updates, raid attacks). TypeScript with Fastify gives schema-validated routes, JSON-native handling of package-specific statistics and easy WebSocket support, which fits pets, notifications, chat and configuration. One language per person avoids context switching. The cost is keeping validation and serialization equivalent in both stacks; the language-neutral contract below is the shared reference.
+
+**PostgreSQL per service.** Balances, ownership, holds and combat state need local transactions; PostgreSQL gives them, and JSONB stores each package's differently named statistics without a shared schema. Separate databases make ownership explicit at the cost of cross-service consistency work, handled with the outbox and settlement flows below. For the lab, one PostgreSQL server can host all databases with separate credentials.
+
+**HTTP/JSON for requests.** Synchronous calls handle decisions the caller must know immediately, such as reserving pets or checking eligibility. JSON is inspectable from both languages and from any client app. Calls time out after two seconds and unfinished work stays visible for retry. Clients poll battle and raid resources; guild chat uses WebSockets because it needs continuous delivery, and therefore reconnect and history replay.
+
+**Kafka for events.** Events are an append-only log: a consumer that was down (Notification, Registry) catches up from its last offset, and a new projection can replay history. Partitioning by `aggregateId` keeps events for one battle, raid or request in order. The cost is a heavier broker to run and no per-message routing; the lab uses a single-node Kafka in Docker and one topic per event type.
+
+**Firebase Cloud Messaging** is the push provider required by the brief. A push carries only `eventId`, `type` and `targetId`; the client fetches the authoritative state after opening it. Firebase needs a project, a service-account key kept out of Git, and a client that produces device tokens.
 
 ## Communication contract
 
-Contract version: **1.0.0**. This is the proposed complete interface for the scope above, not a claim that the endpoints are already running.
+Contract version **1.0.0**. This is the proposed interface, not a running system.
 
-- [HTTP API: OpenAPI 3.1.1](contracts/openapi.yaml) defines every path, parameter, request, response, field type and caller restriction.
-- [Broker event JSON Schema](contracts/events.schema.json) defines the ten event envelopes and payloads.
-- [Guild WebSocket JSON Schema](contracts/realtime.schema.json) defines the six application-frame types.
-- The endpoint catalog, field dictionary and flows below are the readable form of the same contract. Named types in the tables are defined in the field dictionary and the schema files.
+- [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
+- [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
+- [`contracts/realtime.schema.json`](contracts/realtime.schema.json): the six guild chat WebSocket frames (JSON Schema).
+- [`contracts/field-dictionary.md`](contracts/field-dictionary.md): readable definitions of every request, response, event and frame type named in the tables below.
+- [`contracts/game-rules.md`](contracts/game-rules.md): the numbers and formulas behind the contract.
 
-OpenAPI describes HTTP interfaces independently of their implementation language. Versioned JSON Schema documents cover the non-HTTP messages. [OpenAPI specification](https://spec.openapis.org/oas/v3.1.1.html).
+### Rules
 
-### Common request and response rules
-
-| Item | Contract |
+| Item | Rule |
 | --- | --- |
-| Addressing | Paths are relative to the owning service's origin. There is no assumed API gateway. Public application paths start with `/v1`; internal paths start with `/internal/v1`. |
-| Serialization | Request and response bodies use `application/json`, UTF-8, camelCase field names. Unlisted object fields are rejected except in explicitly defined maps. |
-| Identifiers | IDs are UUID strings, not numbers. All path placeholders ending in `Id` are UUIDs. `configVersion`, `monsterVersion`, `rulesVersion` and `scheduleVersion` path parameters are positive integers. |
-| Numbers | Currency is whole units in the range 0–9,007,199,254,740,991; arithmetic cannot exceed that range. JSON integers and numbers remain distinct in the schemas. Coordinates are degrees; distances are meters. |
-| Time | RFC 3339 UTC strings, such as `2026-09-09T10:00:00Z`. Game timers, care progression and action cooldowns use server time. |
-| Required/nullable | Fields are required unless marked `?` in the dictionary. `T or null` requires the key but permits a null value. An omitted request body is shown as `—`. |
-| User authentication | `Authorization: Bearer <accessToken>`. User Management signs RS256 JWTs; services validate signature, trusted issuer, audience `tamagotchi-go`, subject and expiry using its public JWKS. JWTs last 15 minutes. Refresh tokens are opaque, hashed in storage, rotated on refresh and valid for at most 30 days. Logout revokes the refresh session; already issued access tokens expire normally. |
-| Roles | `player` means an authenticated user with resource-specific ownership/membership checks. `admin` requires the global admin role. `moderator/admin` permits a moderator assigned to that package or a global admin. Initial admin provisioning is a deployment/bootstrap task; clients cannot grant themselves roles. |
-| Service authentication | `internal` routes require mutual TLS plus the per-endpoint caller allowlist in OpenAPI. Player tokens alone cannot call them. Public read-only package/rule routes also serve internal readers. User-context calls may forward the originating user's JWT without enlarging its permissions. |
-| Idempotency | Every business mutation requires a UUID `Idempotency-Key`, except authentication and timestamp-based location updates. The owning service scopes it by authenticated caller, method and path, and stores the request hash and outcome. Same key/input replays the outcome; changed input returns `409`. Ordinary keys are retained for at least 24 hours. Settlement/provisioning resource IDs and their uniqueness records are retained permanently. |
-| Concurrency | `expectedVersion` and `expectedTurn` reject stale changes with `409`. Database transactions serialize balance changes, pet reservations and raid HP updates. Raid attacks use one key per click, without a shared client-side version precondition. |
-| Pagination | Routes marked as paginated accept optional `cursor:string` and `limit:integer` (1–100, default 20). Return `{items:[T], nextCursor:string or null}`. Cursors are opaque and bound to the caller/filter. Chat history instead uses `afterSequence` and `hasMore`. |
-| Success | The endpoint table gives the status and body type. `204` has no body. `202` acknowledges work still in progress; clients poll the returned battle's GET endpoint. `101` is a WebSocket upgrade, not JSON. |
-| Failure | `400` malformed input; `401` unauthenticated; `403` forbidden; `404` absent/inaccessible resource; `409` conflict; `422` invalid domain values; `429` rate/cooldown limit; `503` unavailable dependency. Each uses the `Error` body. Validation and authorization failures have no effect. A timeout or `503` can follow accepted work: retry with the same key and inspect its state. |
-| Retries | Retry reads on transient failure with bounded backoff. After a timeout on a mutation, retry the exact operation with the same key; never assume it failed. Scheduled coordinators retain unresolved work durably instead of making clients resubmit it as a new action. |
-| Evolution | Additive optional fields may be introduced compatibly. Breaking HTTP changes get `/v2`; breaking events get a new type suffix and schema version. Care/configuration and combat-rule revisions are immutable snapshots, independent of API version. |
+| Addressing | Paths are relative to the owning service's origin. Public paths start with `/v1`; `/internal/v1` paths are for service-to-service calls only. |
+| Format | `application/json`, UTF-8, camelCase keys. Unknown fields are rejected. IDs are UUID strings; versions are positive integers; times are RFC 3339 UTC (`2026-09-09T10:00:00Z`); currency is whole units up to 2^53 - 1. |
+| User authentication | `Authorization: Bearer <accessToken>`. User Management issues RS256 JWTs valid for 15 minutes; every service verifies them with the JWKS endpoint. Refresh tokens are opaque, rotated on use and valid for at most 30 days. |
+| Roles | `player`: any authenticated user, with ownership or membership checked per resource. `moderator/admin`: a moderator of that package or a global admin. `admin`: global admin. Clients cannot grant roles. |
+| Service authentication | `internal` routes require mutual TLS plus the per-endpoint caller allowlist in OpenAPI. A player token alone cannot call them. |
+| Idempotency | Every mutation sends a UUID `Idempotency-Key`, except authentication and location updates. The same key and body replays the stored outcome; a different body returns `409`. Keys are kept for at least 24 hours; settlement and provisioning IDs permanently. |
+| Concurrency | `expectedVersion` and `expectedTurn` reject stale writes with `409`. Balances, reservations and raid HP change inside database transactions. |
+| Pagination | `cursor?` and `limit?` (1 to 100, default 20) return `{items, nextCursor}`. Chat history uses `afterSequence` and `hasMore`. |
+| Responses | Success codes are listed per endpoint; `204` has no body, `202` means work continues and the client polls, `101` is a WebSocket upgrade. Errors: `400` malformed, `401` unauthenticated, `403` forbidden, `404` missing, `409` conflict, `422` invalid value, `429` rate or cooldown limit, `503` dependency unavailable. All errors use the `Error` body. |
+| Timeouts and retries | Service-to-service calls time out after 2 seconds. After a timeout on a mutation, retry with the same key and read the state; never assume it failed. |
+| Evolution | Optional fields may be added compatibly. Breaking HTTP changes get `/v2`; breaking events get a new type suffix. |
 
-Example: `POST /v1/pets/{petId}/care`, with a user bearer token and an `Idempotency-Key`:
+Example: `POST /v1/pets/{petId}/care` with a bearer token and an `Idempotency-Key`:
 
 ```json
 {"actionId":"feed","expectedVersion":3}
 ```
 
-An unsuccessful version check returns `409`:
+A stale version returns `409`:
 
 ```json
 {
@@ -257,186 +260,179 @@ An unsuccessful version check returns `409`:
 
 ### Data ownership and consistency
 
-| Owner | Authoritative data and local atomic operations | Data obtained from other owners |
+| Owner | Authoritative data | Reads from others |
 | --- | --- | --- |
-| User Management | Accounts, refresh sessions, friendships/enemies, user-package enrollments, global/local currency, boost inventory, holds and reward ledger | Active package/configuration, pinned combat rules and raid reward configuration |
-| Tamagotchi | Pet records, primary/secondary references, care progression, XP, exclusive reservations and ownership transfers | Canonical enrollment, immutable package rules and gameplay reward configuration |
-| Battle | Challenges, loadouts, frozen inputs, turn/HP state, outcome and settlement progress | Reserved pets, package rules, wallet/boost holds |
-| Notification | Device tokens, notification records and event deduplication | Validated domain events; Firebase delivery responses |
-| Map | Latest location per user, timestamp and encounter state | Public profiles and current relationships |
-| Monster Raid | Active instance, participant reservations, HP/damage/timer and reward progress | Pinned monster/schedule, current guild eligibility and frozen pet properties |
-| Guild | Guilds, invitations, member roles, chat messages and per-guild message sequence | User identity and relationships |
-| Package Registry | Package/moderator definitions, immutable care rules, global rule versions, monsters and schedules | A read-only enrollment projection from User Management |
+| User Management | accounts, sessions, friends and enemies, enrollments, global and local currency, boosts, holds, reward ledger | package status, combat rules, raid rewards (Registry) |
+| Battle | challenges, loadouts, frozen inputs, turn and HP state, outcome, settlement progress | reserved pets (Tamagotchi), rules (Registry), wallet holds (User Management) |
+| Tamagotchi | pets, primary and secondary references, care progression, XP, reservations, ownership transfers | enrollment (User Management), package rules (Registry) |
+| Notification | device tokens, notification records, processed-event inbox | events (Kafka), Firebase responses |
+| Map | latest location per user, encounter state | profiles and relationships (User Management) |
+| Monster Raid | raid instance, participants, HP, damage, timer, reward progress | monster and schedule snapshot (Registry), eligibility (Guild), frozen pets (Tamagotchi) |
+| Guild | guilds, invitations, members and roles, chat messages and sequence | identity and relationships (User Management) |
+| Package Registry | packages, moderators, immutable configurations, global rules, monsters, schedules | enrollment projection (User Management, via Kafka) |
 
-Each database has its own credentials. There are no cross-database writes or foreign keys: service-owned IDs cross the API boundary, and the owner validates them. User Management is authoritative for enrollment; Registry's copy is a projection and may lag. Private credentials and device tokens stay in their owning service.
+There are no cross-database writes or foreign keys; IDs cross the API boundary and the owner validates them. A service that publishes an event writes the business change and an outbox row in one transaction; a worker publishes the outbox with a stable `eventId`. Consumers store processed event IDs in an inbox before committing offsets, and compare `aggregateVersion` so an old event never overwrites a newer state. Failed messages retry with backoff and then land in a dead-letter topic.
 
-For event publication, the service writes its business update and outbox record in one local transaction. A worker publishes the outbox message with the same `eventId` until confirmed. Consumers record processed event IDs in an inbox with their local changes before acknowledging. Updates to the same projected entity also compare `aggregateVersion`; older revisions cannot overwrite newer ones. Validation/processing failures are retried with backoff and then retained in a dead-letter queue for inspection and replay. Notification creates one durable record per event/recipient. Firebase delivery can still repeat after an uncertain provider response, so clients deduplicate by event ID.
+Cross-service workflows complete eventually rather than in one distributed transaction:
 
-Cross-service workflows have **eventual completion, not a single distributed database transaction**:
+1. **Enrollment and starter pet.** User Management commits the enrollment and emits `user.package-registered.v1`. Registry records the projection; Tamagotchi provisions exactly one starter per user and package. Until then `GET /v1/pets` may be empty.
+2. **Care rewards.** Tamagotchi stores the action and calls User Management's local-reward endpoint with the action ID. User Management enforces the daily cap; `CareResult.localRewardStatus` stays `pending` until it settles. Retrying the care request never applies the stat change twice.
+3. **Starting a battle.** Battle reserves currency and boosts for both users in User Management and all four pets in Tamagotchi. Combat starts only after both holds succeed; a failed hold releases the other and cancels the battle. Held pets cannot be cared for, reassigned or used elsewhere.
+4. **Finishing a battle.** Battle stores the result, then asks User Management to move the stake and Tamagotchi to apply XP and transfer the loser's primary, both keyed by battle ID. The battle shows `settling` until both confirm, then `finished`, then emits `battle.finished.v1`. Retries reuse the same IDs; a completed reward is never repeated or reversed.
+5. **Raids.** Registry dispatches a due schedule with `raidId = scheduleId`. Monster Raid pins the configuration, reserves each joining member's primary, updates HP atomically per attack, and on victory settles currency once per raid and XP once per participant. Cancellation writes a tombstone so a late start cannot run; once victory settlement begins, cancellation returns `409`.
 
-1. **Enrollment and starter pets:** registration/enrollment commits in User Management and emits `user.package-registered.v1`. Registry records the projection; Tamagotchi verifies the canonical enrollment and provisions exactly one starter per `(userId, packageId)`. The first starter becomes primary; a starter from another enrolled package becomes an owned secondary reference. Re-enrolling does not grant another pet. Until the event is processed, `GET /v1/pets` may return an empty roster.
-2. **Care rewards:** Tamagotchi stores the validated action, pet update and a durable currency-settlement task together. It calls User Management's local-reward endpoint with the action instance ID. User Management reads the pinned action rule and independently enforces the daily currency cap. `CareResult.localRewardStatus` remains pending/blocked until that one operation settles; retrying the care request does not apply stat changes twice. Poll `/v1/care-actions/{operationId}` using the returned `actionInstanceId`; it returns the original pet snapshot with current settlement progress.
-3. **Starting a battle:** Battle validates participants, then requests one atomic currency/boost reservation for both users and one atomic pet reservation for all four pets. Only then may combat start. A failed preparation releases successful holds before cancelling. Pet holds are exclusive: care, primary changes, other battles and raids cannot mutate/use a held pet. Each service enforces uniqueness locally. Holds are durable and released explicitly, not automatically expired during a live or settling match.
-4. **Finishing a battle:** Battle persists the result before requesting wallet and pet settlement with the battle ID. User Management atomically transfers the stake and consumes reserved boosts. Tamagotchi atomically assigns XP to the four reserved pets, transfers the loser's original primary record and releases its holds. Each owner accepts only the coordinator and validates the result against its reservation. Battle reports `settling` until both owners acknowledge; after completion it emits `battle.finished.v1`. Partial success is retried with the same IDs; the winning side's already applied reward is never repeated or reversed by a network timeout. Permanently failing work is reported as `blocked` for repair.
-5. **Raids:** Registry durably dispatches a due schedule using `raidId = scheduleId`. Monster Raid records the instance once and pins the configuration. Each successful join reserves the member's primary with a distinct persisted reservation ID; interrupted joins are retried or compensated. Attacks validate current membership, timer and cooldown, then update HP atomically. Victory records the eligible contributor list once; User Management settles currency once per raid and Tamagotchi settles XP/releases once per participant reservation. Failed/cancelled raids release holds without rewards. Completion events follow settlement. The first terminal decision wins when cancellation, expiry and the final attack race.
+### Game rules in short
 
-Schedule changes are versioned. Registry retries dispatch/cancellation with stable operation IDs and reads the same version after an uncertain result. Cancellation records a tombstone even if a delayed start has not arrived, preventing a cancelled raid from starting later. An inactive schedule may be reactivated only if no start/cancellation has been dispatched; otherwise create a new schedule. Once victory settlement begins, cancellation returns `409`. A schedule's `dispatchStatus` describes command delivery, while the Raid resource describes actual gameplay.
+Full values and formulas are in [`contracts/game-rules.md`](contracts/game-rules.md).
 
-### Initial game rules used by the contracts
+- **Types:** `flame → nature → earth → electric → water → shadow → flame`. Attacking the next type deals 1.5×, the previous type 0.75×.
+- **Battle:** each player stakes 10 global coins; the winner takes them and captures the loser's primary pet. Winner pets earn 100 XP, loser pets 40, split 60/40 between primary and secondary. `level = min(100, 1 + floor(xp / 100))`. Challenges expire after 5 minutes; turns last 30 seconds; timeout or forfeit loses.
+- **Care:** at most 10 XP per action, 100 XP per pet per day and 100 local currency per user and package per day. Care bonuses in battle are capped at 10%.
+- **Raids:** one attack per second per member; monster weakness 1.5×, resistance 0.75×, `armored` halves damage. Every participant with damage above zero receives the configured reward on victory.
+- **Map and guilds:** strangers count as nearby within 6 meters when both locations are under 120 seconds old. A guild has at most 100 members.
 
-These are team design decisions for contract version 1.0.0; the numerical values are not prescribed by the lab PDF.
+### Endpoint catalog
 
-- Types follow `flame → nature → earth → electric → water → shadow → flame`. Attacking the next type gives `1.5×`; attacking the previous type gives `0.75×`; other pairings give `1×`. Battle uses primary types; secondary levels contribute to damage and starting HP.
-- Combat rules version 1: stake **10 global coins** per player; the winner gains 10 and the loser loses 10. Reservations require both to have enough available currency. Accounts start with zero coins and can earn their first coins in a raid. Each account receives one `power` boost; choosing it gives +10% damage and consumes it on completed battle settlement. At most one boost is equipped. Package moderators cannot grant boosts or global currency.
-- Winner pet XP is **100**, loser pet XP is **40**, split **60% primary / 40% secondary** before any ownership transfer. Pet XP is cumulative; `level = min(100, 1 + floor(xp / 100))`. At level 100, additional XP may be recorded but gives no extra combat level. Care earns at most 10 XP per action and 100 XP per pet per UTC day. Local currency earns at most 100 units per user/package per UTC day; attempts beyond that cap settle with a zero grant.
-- Package statistics remain in their original units. Each satisfied threshold produces its configured bonus; each pet's total care bonus is capped at 10%. A battle uses the average bonus of the primary and secondary. Starting HP is `100 + 10 * primaryLevel + 5 * secondaryLevel`. Attack damage is `max(1, floor((2 * primaryLevel + secondaryLevel) * typeMultiplier * (1 + (careBonus + boostBonus) / 100)))`. Only the acting player's frozen properties are used; clients submit an action, never damage or XP.
-- A challenge expires after five minutes. Turns have a 30-second deadline; the challenger starts. A timeout or forfeit awards the opponent victory. Accept/decline/cancel transitions use a local compare-and-set so only one succeeds.
-- Both battle pets must already exist, be different, belong to the player, and match the current primary/secondary assignment. A player can obtain a second starter by enrolling in another active package. Capture preserves the pet's original package/configuration. The winner keeps their existing primary; the captured pet becomes an owned secondary. The loser has no selected primary until choosing another owned pet. Secondary references owned by the loser no longer include the captured pet.
-- Package versions cannot rewrite a running battle or raid. New configurations apply to newly created pets; explicit migration is future work. Package publication validates stat bounds, known stat names in care actions, positive cooldowns and global bonus/XP limits. Only global admins may activate packages and configure raids. Suspended packages cannot enroll users or start new care/combat actions; already running activities finish against their snapshots.
-- A raid member may attack once per second. Each attack deals `max(1, floor(2 * primaryLevel * monsterMultiplier * (1 + careBonus / 100)))`: weakness `1.5×`, resistance `0.75×`, otherwise `1×`; a type cannot be both. The `armored` special property halves that result, rounded down with a minimum of one. Monster `baseAttack` is configuration metadata; this initial clicker contract has no counterattack action. Raid boosts are not enabled. On victory, each participant with positive recorded damage receives the configured per-participant reward, even if they later leave the guild; departed members cannot submit more attacks.
-- Map proximity is **6 meters** for strangers. A location is fresh for 120 seconds. Stale incoming updates never replace newer ones. Friends/enemies remain listed with their last known or null location; no fresh nearby claim is made for stale data. An encounter is emitted once on entry for an unordered pair and can recur after exit and re-entry. Guilds allow at most 100 members in this initial contract.
+Path parameters and listed bodies are required. `cursor?` and `limit?` are optional query parameters. Named types are defined in the [field dictionary](contracts/field-dictionary.md); every route also returns the shared error responses. Behavioral details per endpoint (who may call it, what is validated, what is atomic) are in the OpenAPI descriptions.
 
-### HTTP endpoint catalog
+#### User Management
 
-Every path parameter is required. Every listed JSON request body is required. GET and bodyless actions use only their path, query, authentication and applicable idempotency header. The success column gives the complete named response shape; all routes share the error responses above. Caller-specific restrictions are also present in OpenAPI.
-
-#### User Management endpoints
-
-| Method and path | Caller | Input body / query | Success response | Purpose |
+| Method and path | Caller | Body / query | Success | Purpose |
 | --- | --- | --- | --- | --- |
-| `POST /v1/auth/register` | public | `Register` | `201` `Session` | Validate an active package; create account/enrollment atomically. Grant one initial power boost per account. Publish enrollment for Registry and starter provisioning. New accounts have zero currency and must earn a raid reward before staking a PvP battle. |
+| `POST /v1/auth/register` | public | `Register` | `201` `Session` | Create an account and its first enrollment |
 | `POST /v1/auth/login` | public | `Login` | `200` `Session` | Create a session |
 | `POST /v1/auth/refresh` | public | `Refresh` | `200` `Session` | Rotate the refresh token |
-| `POST /v1/auth/logout` | public | `Refresh` | `204` empty | Revoke the refresh session |
-| `GET /.well-known/jwks.json` | public | — | `200` `JWKS` | Read public token verification keys |
-| `GET /v1/users/me` | player | — | `200` `User` | Read your private profile |
-| `PATCH /v1/users/me` | player | `ProfileUpdate` | `200` `User` | Update your public username |
-| `GET /v1/users/{userId}` | player | — | `200` `PublicUser` | Read a public user profile |
-| `PUT /v1/users/me/packages/{packageId}` | player | — | `200` `Enrollment` | Unique user/package pair. Publishes user.package-registered.v1 for Registry and Tamagotchi. Repeated enrollment does not create another starter. |
+| `POST /v1/auth/logout` | public | `Refresh` | `204` | Revoke the refresh session |
+| `GET /.well-known/jwks.json` | public | — | `200` `JWKS` | Public keys for token verification |
+| `GET /v1/users/me` | player | — | `200` `User` | Own private profile |
+| `PATCH /v1/users/me` | player | `ProfileUpdate` | `200` `User` | Change the username |
+| `GET /v1/users/{userId}` | player | — | `200` `PublicUser` | Public profile of a user |
+| `PUT /v1/users/me/packages/{packageId}` | player | — | `200` `Enrollment` | Enroll in a package (idempotent; publishes an event) |
 | `POST /v1/friend-requests` | player | `FriendRequestInput` | `201` `FriendRequest` | Send a friend request |
-| `GET /v1/friend-requests` | player | —; query: `cursor?: string`, `limit?: integer` | `200` `FriendRequestPage` | List your sent and received requests |
-| `PUT /v1/friend-requests/{requestId}/decision` | player | `RequestDecision` | `200` `FriendRequest` | Only the recipient may decide. Acceptance creates mutual friendship atomically and removes enemy markers for this pair. |
-| `DELETE /v1/friend-requests/{requestId}` | player | — | `204` empty | Sender only; atomically changes pending to cancelled. |
-| `DELETE /v1/friends/{userId}` | player | — | `204` empty | Remove a mutual friendship |
-| `GET /v1/relationships` | player | —; query: `cursor?: string`, `limit?: integer` | `200` `RelationshipPage` | List your friends and enemies |
-| `PUT /v1/enemies/{userId}` | player | — | `200` `Relationship` | Directed enemy relationship; removes an existing mutual friendship atomically. Self-relations are rejected. |
-| `DELETE /v1/enemies/{userId}` | player | — | `204` empty | Remove your enemy marker |
-| `GET /v1/wallet` | player | — | `200` `Wallet` | Read your currencies and available boosts |
-| `GET /internal/v1/relationships` | internal | —; query: `userId: ID`, `otherUserId: ID` | `200` `Relationship` | Read a relationship for another service |
-| `GET /internal/v1/users/{userId}/relationships` | internal | —; query: `cursor?: string`, `limit?: integer` | `200` `RelationshipPage` | List user relationships for map visibility |
-| `GET /internal/v1/users/{userId}/packages/{packageId}` | internal | — | `200` `Enrollment` | Verify canonical package enrollment |
-| `PUT /internal/v1/battle-holds/{battleId}` | internal | `BattleHoldInput` | `200` `Hold` | Reserve both stakes and chosen boosts |
-| `DELETE /internal/v1/battle-holds/{battleId}` | internal | — | `204` empty | Release an aborted battle reservation |
-| `PUT /internal/v1/battle-settlements/{battleId}` | internal | `BattleMoneyResult` | `200` `WalletResult` | Apply battle currency transfer and consume boosts |
+| `GET /v1/friend-requests` | player | `cursor?`, `limit?` | `200` `FriendRequestPage` | Sent and received requests |
+| `PUT /v1/friend-requests/{requestId}/decision` | player | `RequestDecision` | `200` `FriendRequest` | Recipient accepts or rejects |
+| `DELETE /v1/friend-requests/{requestId}` | player | — | `204` | Sender cancels a pending request |
+| `DELETE /v1/friends/{userId}` | player | — | `204` | Remove a friendship |
+| `GET /v1/relationships` | player | `cursor?`, `limit?` | `200` `RelationshipPage` | Friends and enemies |
+| `PUT /v1/enemies/{userId}` | player | — | `200` `Relationship` | Mark an enemy (removes a friendship) |
+| `DELETE /v1/enemies/{userId}` | player | — | `204` | Remove an enemy mark |
+| `GET /v1/wallet` | player | — | `200` `Wallet` | Currencies and available boosts |
+| `GET /internal/v1/relationships` | internal | `userId`, `otherUserId` | `200` `Relationship` | Relationship between two users |
+| `GET /internal/v1/users/{userId}/relationships` | internal | `cursor?`, `limit?` | `200` `RelationshipPage` | Relationships for map visibility |
+| `GET /internal/v1/users/{userId}/packages/{packageId}` | internal | — | `200` `Enrollment` | Verify an enrollment |
+| `PUT /internal/v1/battle-holds/{battleId}` | internal | `BattleHoldInput` | `200` `Hold` | Reserve both stakes and boosts |
+| `DELETE /internal/v1/battle-holds/{battleId}` | internal | — | `204` | Release a battle hold |
+| `PUT /internal/v1/battle-settlements/{battleId}` | internal | `BattleMoneyResult` | `200` `WalletResult` | Apply the battle currency result |
 | `PUT /internal/v1/raid-settlements/{raidId}` | internal | `RaidMoneyInput` | `200` `WalletResult` | Apply raid currency rewards |
-| `PUT /internal/v1/local-rewards/{operationId}` | internal | `LocalRewardInput` | `200` `LocalRewardResult` | Apply one validated care-action currency reward |
+| `PUT /internal/v1/local-rewards/{operationId}` | internal | `LocalRewardInput` | `200` `LocalRewardResult` | Apply one care-action reward |
 
-#### Tamagotchi endpoints
+#### Battle
 
-| Method and path | Caller | Input body / query | Success response | Purpose |
-| --- | --- | --- | --- | --- |
-| `GET /v1/pets` | player | — | `200` `PetRoster` | Read your owned pets and active primary |
-| `GET /v1/pets/{petId}` | player | — | `200` `Pet` | Only the current owner. Battle/Raid use reserved snapshots instead of this player endpoint. |
-| `PUT /v1/pets/primary` | player | `PrimaryInput` | `200` `PetRoster` | Select your primary pet |
-| `POST /v1/pets/{petId}/care` | player | `CareInput` | `200` `CareResult` | Owner only. Reject reserved pets. Validate action against the pinned package configuration, elapsed server time, cooldown and daily XP/currency caps. |
-| `GET /v1/care-actions/{operationId}` | player | — | `200` `CareResult` | Only the user who performed the action. operationId is the returned actionInstanceId; the pet snapshot is the original action result and settlement status may advance. |
-| `GET /v1/pet-types` | player | — | `200` `TypeCatalog` | Read the six combat types and advantage cycle |
-| `PUT /internal/v1/starter-pets/{operationId}` | internal | `StarterInput` | `200` `Pet` | operationId identifies a provisioning attempt/replay; uniqueness is enforced by userId/packageId as well. Set primary only if the user has none. The same logic handles the enrollment event. |
-| `PUT /internal/v1/pet-reservations/{activityId}` | internal | `PetReserveInput` | `200` `PetReservation` | Reserve pets and return frozen combat properties |
-| `DELETE /internal/v1/pet-reservations/{activityId}` | internal | — | `204` empty | Release unused pets without rewards |
-| `PUT /internal/v1/pet-battle-settlements/{battleId}` | internal | `PetBattleResult` | `200` `PetResult` | Apply XP, transfer the loser primary and release pets |
-| `PUT /internal/v1/pet-raid-settlements/{activityId}` | internal | `PetRaidResult` | `200` `PetResult` | Apply raid pet reward and release the primary |
-
-#### Battle endpoints
-
-| Method and path | Caller | Input body / query | Success response | Purpose |
+| Method and path | Caller | Body / query | Success | Purpose |
 | --- | --- | --- | --- | --- |
 | `POST /v1/battles` | player | `BattleCreate` | `201` `Battle` | Challenge another player |
-| `GET /v1/battles` | player | —; query: `cursor?: string`, `limit?: integer` | `200` `BattlePage` | List your battles |
-| `GET /v1/battles/{battleId}` | player | — | `200` `Battle` | Read battle progress and settlement |
-| `POST /v1/battles/{battleId}/accept` | player | `BattleAccept` | `202` `Battle` | Opponent only. Returns preparing while dependencies reserve resources. Starts combat only after all holds succeed; on failure compensates reservations and cancels. |
-| `POST /v1/battles/{battleId}/decline` | player | — | `200` `Battle` | Opponent only, pending status only. |
-| `DELETE /v1/battles/{battleId}` | player | — | `204` empty | Challenger only, before preparation/active combat. |
+| `GET /v1/battles` | player | `cursor?`, `limit?` | `200` `BattlePage` | Own battles |
+| `GET /v1/battles/{battleId}` | player | — | `200` `Battle` | Battle state and settlement |
+| `POST /v1/battles/{battleId}/accept` | player | `BattleAccept` | `202` `Battle` | Opponent accepts; holds are reserved, then combat starts |
+| `POST /v1/battles/{battleId}/decline` | player | — | `200` `Battle` | Opponent declines |
+| `DELETE /v1/battles/{battleId}` | player | — | `204` | Challenger cancels before combat |
 | `POST /v1/battles/{battleId}/actions` | player | `BattleAction` | `200` `Battle` | Attack or forfeit |
 
-#### Notification endpoints
+#### Tamagotchi
 
-| Method and path | Caller | Input body / query | Success response | Purpose |
+| Method and path | Caller | Body / query | Success | Purpose |
 | --- | --- | --- | --- | --- |
-| `PUT /v1/notification-devices/{deviceId}` | player | `DeviceInput` | `200` `Device` | Register or refresh your push device |
-| `DELETE /v1/notification-devices/{deviceId}` | player | — | `204` empty | Remove your push device |
-| `GET /v1/notifications` | player | —; query: `cursor?: string`, `limit?: integer` | `200` `NotificationPage` | List your notifications |
-| `PUT /v1/notifications/{notificationId}/read` | player | — | `200` `Notification` | Mark your notification as read |
+| `GET /v1/pets` | player | — | `200` `PetRoster` | Owned pets and current primary |
+| `GET /v1/pets/{petId}` | player | — | `200` `Pet` | One owned pet |
+| `PUT /v1/pets/primary` | player | `PrimaryInput` | `200` `PetRoster` | Select the primary pet |
+| `POST /v1/pets/{petId}/care` | player | `CareInput` | `200` `CareResult` | Perform a care action |
+| `GET /v1/care-actions/{operationId}` | player | — | `200` `CareResult` | Care action and its reward status |
+| `GET /v1/pet-types` | player | — | `200` `TypeCatalog` | The six types and the advantage cycle |
+| `PUT /internal/v1/starter-pets/{operationId}` | internal | `StarterInput` | `200` `Pet` | Provision a starter pet exactly once |
+| `PUT /internal/v1/pet-reservations/{activityId}` | internal | `PetReserveInput` | `200` `PetReservation` | Reserve pets and return frozen combat properties |
+| `DELETE /internal/v1/pet-reservations/{activityId}` | internal | — | `204` | Release reserved pets without rewards |
+| `PUT /internal/v1/pet-battle-settlements/{battleId}` | internal | `PetBattleResult` | `200` `PetResult` | Apply XP and transfer the loser's primary |
+| `PUT /internal/v1/pet-raid-settlements/{activityId}` | internal | `PetRaidResult` | `200` `PetResult` | Apply raid XP and release the pet |
 
-#### Map endpoints
+#### Notification
 
-| Method and path | Caller | Input body / query | Success response | Purpose |
+| Method and path | Caller | Body / query | Success | Purpose |
 | --- | --- | --- | --- | --- |
-| `PUT /v1/map/location` | player | `LocationInput` | `200` `LocationResult` | Ignore recordedAt <= stored timestamp. Reject timestamps more than 30 seconds in the future. Only authenticated user location can be updated. |
-| `GET /v1/map/nearby` | player | —; query: `cursor?: string`, `limit?: integer` | `200` `MapEntryPage` | Unknown users require fresh locations from both users, within 6 meters. Friends/enemies remain listed with stale or null locations. Map computes distance; the client cannot set the detection threshold. |
+| `PUT /v1/notification-devices/{deviceId}` | player | `DeviceInput` | `200` `Device` | Register or refresh a push device |
+| `DELETE /v1/notification-devices/{deviceId}` | player | — | `204` | Remove a push device |
+| `GET /v1/notifications` | player | `cursor?`, `limit?` | `200` `NotificationPage` | Own notifications |
+| `PUT /v1/notifications/{notificationId}/read` | player | — | `200` `Notification` | Mark a notification as read |
 
-#### Monster Raid endpoints
+#### Map
 
-| Method and path | Caller | Input body / query | Success response | Purpose |
+| Method and path | Caller | Body / query | Success | Purpose |
 | --- | --- | --- | --- | --- |
-| `PUT /internal/v1/raids/{raidId}` | internal | `RaidStart` | `200` `Raid` | raidId must equal scheduleId. Fetch and pin the schedule and monster configuration. Reject early starts and inactive/cancelled schedules. One instance per schedule. |
-| `DELETE /internal/v1/raids/{raidId}` | internal | — | `204` empty | Idempotently record a cancellation tombstone even if start has not arrived; reject later starts. If already won/settling after victory, return 409 and retain the result. Cancellation rewards nobody. |
-| `GET /v1/raids` | player | —; query: `guildId: ID`, `cursor?: string`, `limit?: integer` | `200` `RaidPage` | Caller must currently belong to the guild. |
-| `GET /v1/raids/{raidId}` | player | — | `200` `Raid` | Current guild members and recorded participants may view results. |
-| `POST /v1/raids/{raidId}/participants` | player | `RaidJoin` | `201` `RaidParticipant` | Join using your primary pet |
-| `POST /v1/raids/{raidId}/attacks` | player | — | `200` `Raid` | No body: caller identity, path and Idempotency-Key identify the attack. Require current guild eligibility, active timer and a one-second per-user cooldown. Compute damage on the server and update HP/version atomically; simultaneous participants do not submit a shared expectedVersion. |
+| `PUT /v1/map/location` | player | `LocationInput` | `200` `LocationResult` | Report the current location |
+| `GET /v1/map/nearby` | player | `cursor?`, `limit?` | `200` `MapEntryPage` | Friends, enemies and strangers within 6 meters |
 
-#### Guild endpoints
+#### Monster Raid
 
-| Method and path | Caller | Input body / query | Success response | Purpose |
+| Method and path | Caller | Body / query | Success | Purpose |
 | --- | --- | --- | --- | --- |
-| `POST /v1/guilds` | player | `GuildInput` | `201` `Guild` | Create a guild and become leader |
-| `GET /v1/guilds` | player | —; query: `cursor?: string`, `limit?: integer` | `200` `GuildPage` | List guilds you belong to |
-| `GET /v1/guilds/{guildId}` | player | — | `200` `Guild` | Read a guild you belong to |
-| `PATCH /v1/guilds/{guildId}` | player | `GuildInput` | `200` `Guild` | Leader or officer only. |
-| `GET /v1/guilds/{guildId}/members` | player | —; query: `cursor?: string`, `limit?: integer` | `200` `MemberPage` | List guild members |
-| `POST /v1/guilds/{guildId}/invitations` | player | `FriendRequestInput` | `201` `GuildInvite` | Leader/officer only; reject enemy relationship in either direction. |
-| `GET /v1/guild-invitations` | player | —; query: `cursor?: string`, `limit?: integer` | `200` `GuildInvitePage` | List your received guild invitations |
-| `PUT /v1/guild-invitations/{invitationId}/decision` | player | `RequestDecision` | `200` `GuildInvite` | Recipient only. Acceptance creates membership atomically. A user may belong to multiple guilds. |
-| `DELETE /v1/guild-invitations/{invitationId}` | player | — | `204` empty | Leader or officer of the invitation guild only; atomically changes pending to revoked. |
-| `PUT /v1/guilds/{guildId}/members/{userId}/role` | player | `RoleInput` | `200` `Member` | Leader only; target must be an existing non-leader member. |
-| `PUT /v1/guilds/{guildId}/leader` | player | `LeaderInput` | `200` `Guild` | Current leader only. Demote previous leader to officer atomically. |
-| `DELETE /v1/guilds/{guildId}/members/{userId}` | player | — | `204` empty | Self may leave unless leader. Leader can remove officers/members; officers can remove ordinary members. A leader must transfer leadership first. End removed member chat access. |
-| `GET /v1/guilds/{guildId}/messages` | player | —; query: `afterSequence?: integer`, `limit?: integer` | `200` `ChatHistory` | Replay guild chat history |
-| `GET /v1/guilds/{guildId}/chat` | public | — | `101` upgrade | Upgrade has no JSON body. First application frame must be ChatAuthenticate within 5 seconds; no messages/data are permitted before authentication and membership checks. See realtime.schema.json and README. |
-| `GET /internal/v1/guilds/{guildId}/members/{userId}/eligibility` | internal | — | `200` `Eligibility` | Check current raid eligibility |
-| `GET /internal/v1/guilds/{guildId}/members` | internal | —; query: `cursor?: string`, `limit?: integer` | `200` `MemberPage` | Read guild members for raid announcements |
+| `PUT /internal/v1/raids/{raidId}` | internal | `RaidStart` | `200` `Raid` | Start the raid for a schedule (`raidId` = `scheduleId`) |
+| `DELETE /internal/v1/raids/{raidId}` | internal | — | `204` | Cancel a raid, recording a tombstone |
+| `GET /v1/raids` | player | `guildId`, `cursor?`, `limit?` | `200` `RaidPage` | Raids of a guild you belong to |
+| `GET /v1/raids/{raidId}` | player | — | `200` `Raid` | Raid state and results |
+| `POST /v1/raids/{raidId}/participants` | player | `RaidJoin` | `201` `RaidParticipant` | Join with your primary pet |
+| `POST /v1/raids/{raidId}/attacks` | player | — | `200` `Raid` | One attack, one-second cooldown per member |
 
-#### Package Registry endpoints
+#### Guild
 
-| Method and path | Caller | Input body / query | Success response | Purpose |
+| Method and path | Caller | Body / query | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `POST /v1/guilds` | player | `GuildInput` | `201` `Guild` | Create a guild and become its leader |
+| `GET /v1/guilds` | player | `cursor?`, `limit?` | `200` `GuildPage` | Guilds you belong to |
+| `GET /v1/guilds/{guildId}` | player | — | `200` `Guild` | One of your guilds |
+| `PATCH /v1/guilds/{guildId}` | player | `GuildInput` | `200` `Guild` | Edit a guild (leader or officer) |
+| `GET /v1/guilds/{guildId}/members` | player | `cursor?`, `limit?` | `200` `MemberPage` | Guild members |
+| `POST /v1/guilds/{guildId}/invitations` | player | `FriendRequestInput` | `201` `GuildInvite` | Invite a user (leader or officer) |
+| `GET /v1/guild-invitations` | player | `cursor?`, `limit?` | `200` `GuildInvitePage` | Received invitations |
+| `PUT /v1/guild-invitations/{invitationId}/decision` | player | `RequestDecision` | `200` `GuildInvite` | Accept or reject an invitation |
+| `DELETE /v1/guild-invitations/{invitationId}` | player | — | `204` | Revoke a pending invitation |
+| `PUT /v1/guilds/{guildId}/members/{userId}/role` | player | `RoleInput` | `200` `Member` | Change a member's role (leader) |
+| `PUT /v1/guilds/{guildId}/leader` | player | `LeaderInput` | `200` `Guild` | Transfer leadership |
+| `DELETE /v1/guilds/{guildId}/members/{userId}` | player | — | `204` | Leave, or remove a member |
+| `GET /v1/guilds/{guildId}/messages` | player | `afterSequence?`, `limit?` | `200` `ChatHistory` | Replay chat history |
+| `GET /v1/guilds/{guildId}/chat` | public | — | `101` | WebSocket upgrade for guild chat |
+| `GET /internal/v1/guilds/{guildId}/members/{userId}/eligibility` | internal | — | `200` `Eligibility` | Raid eligibility of a member |
+| `GET /internal/v1/guilds/{guildId}/members` | internal | `cursor?`, `limit?` | `200` `MemberPage` | Members for raid announcements |
+
+#### Package Registry
+
+| Method and path | Caller | Body / query | Success | Purpose |
 | --- | --- | --- | --- | --- |
 | `POST /v1/packages` | admin | `PackageInput` | `201` `Package` | Register a participating app |
-| `GET /v1/packages` | public | —; query: `cursor?: string`, `limit?: integer` | `200` `PackagePage` | List active packages |
-| `GET /v1/packages/{packageId}` | public | — | `200` `Package` | Read package metadata |
-| `PATCH /v1/packages/{packageId}` | moderator/admin | `PackageUpdate` | `200` `Package` | Update package metadata or status |
-| `PUT /v1/packages/{packageId}/moderators/{userId}` | admin | — | `200` `Package` | Assign a package moderator |
-| `DELETE /v1/packages/{packageId}/moderators/{userId}` | admin | — | `204` empty | Remove a package moderator |
-| `POST /v1/packages/{packageId}/configurations` | moderator/admin | `PackageConfigInput` | `201` `PackageConfig` | Publish immutable package rules |
-| `GET /v1/packages/{packageId}/configurations/{configVersion}` | public | — | `200` `PackageConfig` | Read a pinned package configuration |
-| `GET /v1/packages/{packageId}/users` | moderator/admin | —; query: `cursor?: string`, `limit?: integer` | `200` `EnrollmentPage` | List the package registration view |
-| `GET /v1/combat-rules/{rulesVersion}` | public | — | `200` `CombatRules` | Read versioned global combat and progression rules |
-| `POST /v1/monsters` | admin | `MonsterInput` | `201` `Monster` | Create a monster definition |
-| `GET /v1/monsters` | player | —; query: `cursor?: string`, `limit?: integer` | `200` `MonsterPage` | List monster definitions |
-| `GET /v1/monsters/{monsterId}` | player | — | `200` `Monster` | Read a monster definition |
-| `GET /internal/v1/monsters/{monsterId}/versions/{monsterVersion}` | internal | — | `200` `Monster` | Read the pinned monster configuration |
-| `POST /v1/raid-schedules` | admin | `ScheduleInput` | `201` `Schedule` | Configure and schedule a guild raid |
-| `GET /v1/raid-schedules` | admin | —; query: `cursor?: string`, `limit?: integer` | `200` `SchedulePage` | List raid schedules |
-| `GET /v1/raid-schedules/{scheduleId}` | admin | — | `200` `Schedule` | Read a schedule |
-| `PUT /v1/raid-schedules/{scheduleId}/status` | admin | `ScheduleStatus` | `200` `Schedule` | Activate, deactivate or cancel a schedule |
-| `GET /internal/v1/raid-schedules/{scheduleId}/versions/{scheduleVersion}` | internal | — | `200` `Schedule` | Read an immutable raid reward/configuration snapshot |
+| `GET /v1/packages` | public | `cursor?`, `limit?` | `200` `PackagePage` | Active packages |
+| `GET /v1/packages/{packageId}` | public | — | `200` `Package` | Package metadata |
+| `PATCH /v1/packages/{packageId}` | moderator/admin | `PackageUpdate` | `200` `Package` | Update metadata or status |
+| `PUT /v1/packages/{packageId}/moderators/{userId}` | admin | — | `200` `Package` | Assign a moderator |
+| `DELETE /v1/packages/{packageId}/moderators/{userId}` | admin | — | `204` | Remove a moderator |
+| `POST /v1/packages/{packageId}/configurations` | moderator/admin | `PackageConfigInput` | `201` `PackageConfig` | Publish an immutable configuration |
+| `GET /v1/packages/{packageId}/configurations/{configVersion}` | public | — | `200` `PackageConfig` | Read a pinned configuration |
+| `GET /v1/packages/{packageId}/users` | moderator/admin | `cursor?`, `limit?` | `200` `EnrollmentPage` | Users enrolled in the package |
+| `GET /v1/combat-rules/{rulesVersion}` | public | — | `200` `CombatRules` | Global combat and progression rules |
+| `POST /v1/monsters` | admin | `MonsterInput` | `201` `Monster` | Create a monster |
+| `GET /v1/monsters` | player | `cursor?`, `limit?` | `200` `MonsterPage` | Monster definitions |
+| `GET /v1/monsters/{monsterId}` | player | — | `200` `Monster` | One monster |
+| `GET /internal/v1/monsters/{monsterId}/versions/{monsterVersion}` | internal | — | `200` `Monster` | Pinned monster version |
+| `POST /v1/raid-schedules` | admin | `ScheduleInput` | `201` `Schedule` | Schedule a guild raid |
+| `GET /v1/raid-schedules` | admin | `cursor?`, `limit?` | `200` `SchedulePage` | Raid schedules |
+| `GET /v1/raid-schedules/{scheduleId}` | admin | — | `200` `Schedule` | One schedule |
+| `PUT /v1/raid-schedules/{scheduleId}/status` | admin | `ScheduleStatus` | `200` `Schedule` | Activate, deactivate or cancel |
+| `GET /internal/v1/raid-schedules/{scheduleId}/versions/{scheduleVersion}` | internal | — | `200` `Schedule` | Pinned schedule version |
 
+### Kafka event contract
 
-### Broker event contract
+Each event type has its own Kafka topic named after the type. The message key is `aggregateId`, so events about one request, pet, battle, raid or enrollment stay in order within a partition. Each consuming service reads with its own consumer group and commits offsets only after durable processing. Producers publish from their outbox with `acks=all` and the idempotent producer setting, reusing the same `eventId` on retry. Topics retain events for 7 days; messages that keep failing go to `<topic>.dlq`. Topic ACLs allow writes only from the listed producer.
 
-The routing key equals `type`. Every message contains `eventId:ID`, `type:string`, `schemaVersion:"1"`, `occurredAt:Time`, `producer:string`, `aggregateId:ID`, `aggregateVersion:Version`, `correlationId:ID` and the typed `data` object below. `aggregateId` identifies the affected request, pet, battle, raid, enrollment, or encounter; its version increases within that producer/resource. Broker ACLs restrict publication to the listed producer. A consumer checks both the envelope and payload before processing.
+Every message carries the `EventEnvelope` fields (`eventId`, `type`, `schemaVersion`, `occurredAt`, `producer`, `aggregateId`, `aggregateVersion`, `correlationId`) and a typed `data` object. Consumers validate both.
 
-| Routing key | Producer | Consumers | Data type |
+| Topic | Producer | Consumer groups | Data type |
 | --- | --- | --- | --- |
 | `user.package-registered.v1` | user-management | package-registry, tamagotchi | `UserPackageRegisteredV1Data` |
 | `friend.requested.v1` | user-management | notification | `FriendRequestedV1Data` |
@@ -449,7 +445,7 @@ The routing key equals `type`. Every message contains `eventId:ID`, `type:string
 | `raid.started.v1` | monster-raid | notification | `RaidStartedV1Data` |
 | `raid.finished.v1` | monster-raid | notification | `RaidFinishedV1Data` |
 
-Notification recipients are derived from these fields: friend/guild requests go to the recipient; battle requests to the opponent; completed battles to both players; encounters to both users; pet use to the owners; captures to old and new owners; raid announcements/results to the supplied membership/participant snapshot. The client cannot submit broker events or choose arbitrary recipients.
+Notification derives recipients from the payload: the recipient of a friend or guild request, the opponent of a battle request, both players of a finished battle, both users of an encounter, the owners involved in a pet use or capture, and the member snapshot of a raid. Clients never publish events or choose recipients.
 
 ```json
 {
@@ -471,1217 +467,18 @@ Notification recipients are derived from these fields: friend/guild requests go 
 
 ### Guild chat WebSocket contract
 
-Connect to the Guild service with `wss://<guild-origin>/v1/guilds/{guildId}/chat`. The HTTP upgrade returns `101` without granting access to messages. Within five seconds the client sends `ChatAuthenticate`; the server validates the JWT and guild membership, then sends `ChatAuthenticated`. Failure closes the connection with WebSocket code `1008`. Authentication expiration or lost membership also closes it; reconnect with a fresh token when appropriate.
+Connect to the Guild service at `wss://<guild-origin>/v1/guilds/{guildId}/chat`. The upgrade returns `101` but grants nothing yet: within five seconds the client must send `ChatAuthenticate`; the server checks the JWT and guild membership and replies with `ChatAuthenticated`, or closes with code `1008`. Losing membership or token expiry also closes the connection.
 
-| Direction | Frame | Purpose |
+| Direction | Frame | Content |
 | --- | --- | --- |
-| Client → server | `ChatAuthenticate` | `{type:"authenticate", accessToken:string}`; first frame only |
-| Server → client | `ChatAuthenticated` | `{type:"authenticated", guildId:ID, userId:ID, latestSequence:integer}` |
-| Client → server | `ChatSend` | `{type:"message.send", requestId:ID, content:string}` |
-| Server → sender | `ChatAck` | `{type:"message.ack", requestId:ID, message:ChatMessage}` after persistence |
-| Server → members | `ChatCreated` | `{type:"message.created", message:ChatMessage}` |
-| Server → client | `ChatError` | `{type:"error", requestId:ID or null, code:string, message:string}`; allowed codes are in the schema |
-
-Message content is 1–2,000 characters. Sender identity, guild and timestamp are server-assigned; each message gets a monotonically increasing per-guild sequence. The same `(guildId, userId, requestId)` and content replays its acknowledgement; changed content returns `IDEMPOTENCY_CONFLICT`. Clients deduplicate acknowledgements/broadcasts by message ID. Membership is checked for sends and delivery. After reconnect, fetch `/v1/guilds/{guildId}/messages?afterSequence=<last-seen>&limit=50` and continue while `hasMore` is true. WebSocket ping/pong use protocol control frames, not extra application JSON types.
-
-### Request and response field dictionary
-
-`T[]` is an array; `map<T>` is a JSON object whose values are `T`. `?` marks an optional key. Object keys without `?` are required. Closed objects reject additional fields. The OpenAPI file additionally records numeric ranges, string limits, enums and path/query/header requirements, and is authoritative if a future edit creates a discrepancy.
-
-<details>
-<summary>Expand all request, response and message fields</summary>
-
-#### ID
-
-UUID string identifying an existing resource.
-
-```text
-string(uuid)
-```
-
-#### Time
-
-RFC 3339 UTC timestamp, e.g. 2026-09-09T10:00:00Z.
-
-```text
-string(date-time)
-```
-
-#### URI
-
-HTTPS asset reference; binary assets are not embedded in JSON.
-
-```text
-string(uri)
-```
-
-#### Name
-
-
-
-```text
-string
-```
-
-#### Version
-
-
-
-```text
-integer
-```
-
-#### Coins
-
-Whole currency units, within JavaScript safe-integer range.
-
-```text
-integer
-```
-
-#### Type
-
-
-
-```text
-"flame" / "nature" / "earth" / "electric" / "water" / "shadow"
-```
-
-#### Stats
-
-
-
-```text
-map<number>
-```
-
-#### SettlementState
-
-
-
-```text
-"pending" / "complete" / "blocked"
-```
-
-#### Error
-
-Standard non-success JSON response. Never contains credentials.
-
-```text
-error: {code: string, message: string, requestId: ID, details: ({field: string, reason: string})[]}
-```
-
-#### User
-
-Private profile; returned only to its owner.
-
-```text
-id: ID
-username: Name
-email: string(email)
-roles: ("player" / "admin")[]
-packageIds: (ID)[]
-createdAt: Time
-```
-
-#### PublicUser
-
-Profile visible to other users; excludes email and credentials.
-
-```text
-id: ID
-username: Name
-```
-
-#### Register
-
-Creates an account and starts package enrollment.
-
-```text
-username: string
-email: string(email)
-password: string
-packageId: ID
-```
-
-#### Login
-
-Password is input only.
-
-```text
-email: string(email)
-password: string
-```
-
-#### Refresh
-
-Opaque refresh token; rotated on refresh, revoked on logout.
-
-```text
-refreshToken: string
-```
-
-#### Session
-
-Access token lifetime 900 seconds. Store refresh tokens securely; never publish in events.
-
-```text
-accessToken: string
-refreshToken: string
-tokenType: "Bearer"
-expiresIn: integer
-user: User
-```
-
-#### ProfileUpdate
-
-Only editable public username.
-
-```text
-username: Name
-```
-
-#### JWK
-
-RSA public verification key; no private key fields.
-
-```text
-kty: "RSA"
-use: "sig"
-alg: "RS256"
-kid: string
-n: string
-e: string
-```
-
-#### JWKS
-
-Public signing keys for offline access-token validation.
-
-```text
-keys: (JWK)[]
-```
-
-#### Enrollment
-
-One record per user and package; pet provisioning is eventually consistent.
-
-```text
-userId: ID
-packageId: ID
-version: Version
-createdAt: Time
-```
-
-#### FriendRequestInput
-
-The sender is the authenticated user.
-
-```text
-recipientId: ID
-```
-
-#### FriendRequest
-
-Only sender and recipient can view the request.
-
-```text
-id: ID
-senderId: ID
-recipientId: ID
-status: "pending" / "accepted" / "declined" / "cancelled"
-createdAt: Time
-```
-
-#### RequestDecision
-
-Recipient decides a pending invitation/request.
-
-```text
-decision: "accept" / "decline"
-```
-
-#### Relationship
-
-Friends are mutual; enemies are a directed relation from userId to otherUserId.
-
-```text
-userId: ID
-otherUserId: ID
-kind: "friend" / "enemy" / "unknown"
-```
-
-#### Wallet
-
-available excludes reservations; local balances are keyed by enrolled package UUID.
-
-```text
-globalBalance: Coins
-globalAvailable: Coins
-localBalances: map<Coins>
-boosts: ({boostId: "power", quantity: integer, available: integer})[]
-```
-
-#### ParticipantLoadout
-
-Primary and secondary must be distinct, owned by this user, and available.
-
-```text
-userId: ID
-primaryPetId: ID
-secondaryPetId: ID
-boostIds: ("power")[]
-```
-
-#### BattleHoldInput
-
-Battle-only command. Reserve fixed stake and selected boosts for both users atomically.
-
-```text
-participants: (ParticipantLoadout)[]
-rulesVersion: Version
-```
-
-#### Hold
-
-A durable reservation retained until explicit release or successful settlement.
-
-```text
-activityId: ID
-status: "reserved" / "released" / "settled"
-```
-
-#### BattleMoneyResult
-
-User Management checks winner/loser against the reservation and computes stake transfer.
-
-```text
-winnerId: ID
-loserId: ID
-```
-
-#### WalletResult
-
-Exactly one settlement per activity; reward amounts are server-validated.
-
-```text
-activityId: ID
-status: "complete"
-balances: ({userId: ID, balance: Coins})[]
-```
-
-#### RaidMoneyInput
-
-Raid-only command. Uses the pinned admin-created schedule; no client-chosen amount.
-
-```text
-scheduleId: ID
-scheduleVersion: Version
-recipientIds: (ID)[]
-```
-
-#### LocalRewardInput
-
-Tamagotchi-only command, one grant per completed care action.
-
-```text
-userId: ID
-packageId: ID
-configVersion: Version
-actionId: Name
-```
-
-#### LocalRewardResult
-
-Result of one package-local currency grant.
-
-```text
-operationId: ID
-userId: ID
-packageId: ID
-balance: Coins
-```
-
-#### Pet
-
-Persistent pet; primary assignment is separate. packageStats preserve package-specific keys and units.
-
-```text
-id: ID
-packageId: ID
-configVersion: Version
-ownerId: ID
-name: Name
-combatType: Type
-level: integer
-xp: integer
-spriteUrls: (URI)[]
-packageStats: Stats
-version: Version
-```
-
-#### PetRoster
-
-Owned pets and selected primary. All secondary entries are existing pet IDs.
-
-```text
-pets: (Pet)[]
-primaryPetId: ID or null
-secondaryPetIds: (ID)[]
-```
-
-#### PrimaryInput
-
-Select another owned, unreserved pet.
-
-```text
-petId: ID
-```
-
-#### CareInput
-
-Server applies configured effects, XP/currency caps and cooldown; client supplies no stat deltas.
-
-```text
-actionId: Name
-expectedVersion: Version
-```
-
-#### CareResult
-
-Pet update is durable; local currency settlement may still be pending.
-
-```text
-actionInstanceId: ID
-pet: Pet
-localRewardStatus: SettlementState
-```
-
-#### StarterInput
-
-User Management only; requires a canonical enrollment. Unique by user and package.
-
-```text
-userId: ID
-packageId: ID
-```
-
-#### TypeCatalog
-
-Directed cycle means each type has advantage over the next one.
-
-```text
-types: (Type)[]
-advantages: ({attacker: Type, defender: Type, multiplier: number})[]
-```
-
-#### PetReserveInput
-
-Coordinator reserves all pets atomically. Battle uses two loadouts; raid uses one primary per reservation.
-
-```text
-kind: "battle" / "raid"
-users: ({userId: ID, primaryPetId: ID, secondaryPetId: ID or null})[]
-```
-
-#### PetReservation
-
-Frozen combat inputs. Each returned pet includes its package configuration version.
-
-```text
-activityId: ID
-status: "reserved" / "released" / "settled"
-pets: (Pet)[]
-```
-
-#### PetBattleResult
-
-Battle-only: split XP and transfer the existing loser primary atomically, then release holds.
-
-```text
-winnerId: ID
-loserId: ID
-rulesVersion: Version
-```
-
-#### PetRaidResult
-
-Raid-only: award the configured XP to one reserved primary, then release its hold.
-
-```text
-raidId: ID
-scheduleId: ID
-scheduleVersion: Version
-rewarded: boolean
-```
-
-#### PetResult
-
-Pet changes applied once per reservation.
-
-```text
-activityId: ID
-status: "complete"
-pets: (Pet)[]
-```
-
-#### BattleCreate
-
-Challenge a different user using an owned primary, an owned secondary and optional boost.
-
-```text
-opponentId: ID
-primaryPetId: ID
-secondaryPetId: ID
-boostIds: ("power")[]
-```
-
-#### BattleAccept
-
-Recipient selects their loadout. Validation and all reservations precede active combat.
-
-```text
-primaryPetId: ID
-secondaryPetId: ID
-boostIds: ("power")[]
-```
-
-#### BattleAction
-
-Only the current player can attack. Forfeit is allowed for either participant while active.
-
-```text
-expectedTurn: integer
-action: "attack" / "forfeit"
-```
-
-#### Battle
-
-Only participants may read. Currency/pet effects become final when settlement is complete.
-
-```text
-id: ID
-challengerId: ID
-opponentId: ID
-status: "pending" / "preparing" / "active" / "settling" / "finished" / "declined" / "cancelled" / "expired"
-loadouts: (ParticipantLoadout)[]
-rulesVersion: Version
-turn: integer
-currentPlayerId: ID or null
-turnDeadline: Time or null
-hp: ({userId: ID, current: integer, maximum: integer})[]
-winnerId: ID or null
-loserId: ID or null
-settlement: SettlementState or null
-createdAt: Time
-expiresAt: Time
-```
-
-#### DeviceInput
-
-Token is delivered only to Firebase; unique per owner/device. Never echoed.
-
-```text
-token: string
-platform: "web" / "android" / "ios"
-packageId: ID
-```
-
-#### Device
-
-Safe push-registration response.
-
-```text
-id: ID
-packageId: ID
-platform: "web" / "android" / "ios"
-updatedAt: Time
-```
-
-#### Notification
-
-Durable notification generated from a domain event.
-
-```text
-id: ID
-eventId: ID
-type: string
-title: string
-body: string
-targetId: ID
-createdAt: Time
-readAt: Time or null
-```
-
-#### LocationInput
-
-Measured coordinates from the current client; older timestamps are ignored.
-
-```text
-latitude: number
-longitude: number
-accuracyMeters: number
-recordedAt: Time
-```
-
-#### LocationResult
-
-An ignored stale update does not replace the stored location.
-
-```text
-accepted: boolean
-latest: LocationInput
-```
-
-#### MapEntry
-
-Friends/enemies stay listed even with missing or stale location. Only fresh nearby strangers appear.
-
-```text
-user: PublicUser
-relationship: "friend" / "enemy" / "unknown"
-location: LocationInput or null
-distanceMeters: number or null
-stale: boolean
-```
-
-#### GuildInput
-
-Guild name and description.
-
-```text
-name: Name
-description: string
-```
-
-#### Guild
-
-Guild leader is also a member; exactly one leader per guild.
-
-```text
-id: ID
-name: Name
-description: string
-leaderId: ID
-memberCount: integer
-createdAt: Time
-```
-
-#### Member
-
-Guild-local role, independent of global privileges.
-
-```text
-userId: ID
-role: "leader" / "officer" / "member"
-joinedAt: Time
-```
-
-#### RoleInput
-
-Leader-only; use the leadership endpoint to change leader.
-
-```text
-role: "officer" / "member"
-```
-
-#### LeaderInput
-
-Transfer leadership to an existing member.
-
-```text
-userId: ID
-```
-
-#### GuildInvite
-
-Only guild officers/leader and the invited user may read.
-
-```text
-id: ID
-guildId: ID
-inviterId: ID
-recipientId: ID
-status: "pending" / "accepted" / "declined" / "revoked"
-createdAt: Time
-```
-
-#### Eligibility
-
-Guild authority response. eligible is false for a non-member.
-
-```text
-guildId: ID
-userId: ID
-eligible: boolean
-role: "leader" / "officer" / "member" or null
-```
-
-#### ChatMessage
-
-Sequence is monotonically increasing within a guild.
-
-```text
-id: ID
-guildId: ID
-authorId: ID
-sequence: integer
-content: string
-createdAt: Time
-```
-
-#### ChatHistory
-
-Replay messages after a known sequence; hasMore controls continuation.
-
-```text
-items: (ChatMessage)[]
-hasMore: boolean
-```
-
-#### PackageInput
-
-Admin registers a participating app. Moderator assignments are separate.
-
-```text
-name: Name
-appVersion: string
-description: string
-```
-
-#### Package
-
-Package metadata; configVersion identifies immutable game rules, independently of appVersion.
-
-```text
-id: ID
-name: Name
-appVersion: string
-description: string
-status: "draft" / "active" / "suspended"
-configVersion: Version or null
-moderatorIds: (ID)[]
-version: Version
-```
-
-#### PackageUpdate
-
-Admin controls status; moderators may edit name, description and appVersion for their package.
-
-```text
-expectedVersion: Version
-name?: Name
-appVersion?: string
-description?: string
-status?: "draft" / "active" / "suspended"
-```
-
-#### BonusRule
-
-Package-defined interpretation; aggregate care bonus is capped by global combat rules.
-
-```text
-threshold: number
-direction: "gte" / "lte"
-percent: number
-```
-
-#### StatDefinition
-
-Values are package-local; min <= initial <= max. changePerMinute is applied using server elapsed time.
-
-```text
-minimum: number
-maximum: number
-initial: number
-changePerMinute: number
-bonus: BonusRule or null
-```
-
-#### CareDefinition
-
-Server-selected effects for an action. Currency grants and XP are subject to global caps.
-
-```text
-statChanges: Stats
-cooldownSeconds: integer
-xp: integer
-localCurrency: Coins
-```
-
-#### PackageConfigInput
-
-Publish a new immutable revision. First publication expects version 0; later publications expect the current revision.
-
-```text
-expectedVersion: integer
-starter: {name: Name, combatType: Type, spriteUrls: (URI)[]}
-statistics: map<StatDefinition>
-careActions: map<CareDefinition>
-localCurrencyName: Name
-```
-
-#### PackageConfig
-
-Immutable snapshot. Existing pets keep their creation version; migrations require a future explicit contract.
-
-```text
-packageId: ID
-version: Version
-starter: {name: Name, combatType: Type, spriteUrls: (URI)[]}
-statistics: map<StatDefinition>
-careActions: map<CareDefinition>
-localCurrencyName: Name
-```
-
-#### CombatRules
-
-Global, admin-controlled server rules; initial version 1 is fixed by this contract.
-
-```text
-version: Version
-stake: Coins
-winnerXp: integer
-loserXp: integer
-primaryXpPercent: integer
-careBonusCapPercent: integer
-powerBoostPercent: integer
-turnTimeoutSeconds: integer
-maxLevel: integer
-dailyCareXpCap: integer
-dailyLocalCurrencyCap: Coins
-```
-
-#### MonsterInput
-
-Admin-created monster definition. Resistances/weaknesses use the six global types.
-
-```text
-name: Name
-description: string
-spriteUrls: (URI)[]
-maxHp: integer
-baseAttack: integer
-weaknesses: (Type)[]
-resistances: (Type)[]
-specialProperties: ("none" / "armored")[]
-```
-
-#### Monster
-
-Immutable versioned monster configuration.
-
-```text
-id: ID
-version: Version
-name: Name
-description: string
-spriteUrls: (URI)[]
-maxHp: integer
-baseAttack: integer
-weaknesses: (Type)[]
-resistances: (Type)[]
-specialProperties: ("none" / "armored")[]
-```
-
-#### RaidRewards
-
-Each participant who dealt damage receives this reward on victory; no reward on failure/cancellation.
-
-```text
-globalCurrencyPerParticipant: Coins
-xpPerParticipant: integer
-```
-
-#### ScheduleInput
-
-One guild and one immutable monster version per scheduled raid.
-
-```text
-guildId: ID
-monsterId: ID
-monsterVersion: Version
-startsAt: Time
-durationSeconds: integer
-participantLimit: integer
-rewards: RaidRewards
-```
-
-#### Schedule
-
-Desired lifecycle configuration; actual raid state is owned by Monster Raid.
-
-```text
-id: ID
-version: Version
-guildId: ID
-monsterId: ID
-monsterVersion: Version
-startsAt: Time
-durationSeconds: integer
-participantLimit: integer
-rewards: RaidRewards
-status: "scheduled" / "inactive" / "cancelled"
-dispatchStatus: "pending" / "applied"
-```
-
-#### ScheduleStatus
-
-Reactivation requires no previous start/cancellation dispatch; deactivating a live instance cancels it.
-
-```text
-expectedVersion: Version
-status: "scheduled" / "inactive" / "cancelled"
-```
-
-#### RaidStart
-
-Registry-only command; uses the immutable schedule ID and version.
-
-```text
-scheduleId: ID
-scheduleVersion: Version
-```
-
-#### RaidJoin
-
-Reserves the caller primary pet for this raid.
-
-```text
-primaryPetId: ID
-```
-
-#### RaidParticipant
-
-One member per raid. reservationId identifies the exclusive primary-pet hold.
-
-```text
-userId: ID
-primaryPetId: ID
-reservationId: ID
-damageDealt: integer
-joinedAt: Time
-rewardStatus: SettlementState or null
-```
-
-#### Raid
-
-Current raid state; version changes when HP/status changes.
-
-```text
-id: ID
-scheduleId: ID
-scheduleVersion: Version
-guildId: ID
-monster: Monster
-hp: integer
-startsAt: Time
-endsAt: Time
-status: "active" / "settling" / "won" / "failed" / "cancelled"
-version: Version
-participants: (RaidParticipant)[]
-settlement: SettlementState or null
-```
-
-#### FriendRequestPage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (FriendRequest)[]
-nextCursor: string or null
-```
-
-#### RelationshipPage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Relationship)[]
-nextCursor: string or null
-```
-
-#### BattlePage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Battle)[]
-nextCursor: string or null
-```
-
-#### NotificationPage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Notification)[]
-nextCursor: string or null
-```
-
-#### MapEntryPage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (MapEntry)[]
-nextCursor: string or null
-```
-
-#### GuildPage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Guild)[]
-nextCursor: string or null
-```
-
-#### MemberPage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Member)[]
-nextCursor: string or null
-```
-
-#### GuildInvitePage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (GuildInvite)[]
-nextCursor: string or null
-```
-
-#### PackagePage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Package)[]
-nextCursor: string or null
-```
-
-#### EnrollmentPage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Enrollment)[]
-nextCursor: string or null
-```
-
-#### MonsterPage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Monster)[]
-nextCursor: string or null
-```
-
-#### SchedulePage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Schedule)[]
-nextCursor: string or null
-```
-
-#### RaidPage
-
-Cursor page; nextCursor is null at the end.
-
-```text
-items: (Raid)[]
-nextCursor: string or null
-```
-
-#### EventEnvelope
-
-Every broker message has stable identity and producer resource revision.
-
-```text
-eventId: ID
-type: string
-schemaVersion: "1"
-occurredAt: Time
-producer: "user-management" / "tamagotchi" / "battle" / "map" / "guild" / "monster-raid"
-aggregateId: ID
-aggregateVersion: Version
-correlationId: ID
-data: object
-```
-
-#### UserPackageRegisteredV1Data
-
-Payload for user.package-registered.v1
-
-```text
-userId: ID
-packageId: ID
-enrollmentVersion: Version
-createdAt: Time
-```
-
-#### FriendRequestedV1Data
-
-Payload for friend.requested.v1
-
-```text
-requestId: ID
-senderId: ID
-recipientId: ID
-```
-
-#### MapEncounteredV1Data
-
-Payload for map.encountered.v1
-
-```text
-userIds: (ID)[]
-distanceMeters: number
-```
-
-#### BattleRequestedV1Data
-
-Payload for battle.requested.v1
-
-```text
-battleId: ID
-challengerId: ID
-opponentId: ID
-expiresAt: Time
-```
-
-#### BattleFinishedV1Data
-
-Payload for battle.finished.v1
-
-```text
-battleId: ID
-winnerId: ID
-loserId: ID
-```
-
-#### PetUsedV1Data
-
-Payload for pet.used.v1
-
-```text
-activityId: ID
-petIds: (ID)[]
-ownerIds: (ID)[]
-```
-
-#### PetCapturedV1Data
-
-Payload for pet.captured.v1
-
-```text
-battleId: ID
-petId: ID
-previousOwnerId: ID
-newOwnerId: ID
-```
-
-#### GuildInvitedV1Data
-
-Payload for guild.invited.v1
-
-```text
-invitationId: ID
-guildId: ID
-inviterId: ID
-recipientId: ID
-```
-
-#### RaidStartedV1Data
-
-Payload for raid.started.v1
-
-```text
-raidId: ID
-guildId: ID
-recipientIds: (ID)[]
-endsAt: Time
-```
-
-#### RaidFinishedV1Data
-
-Payload for raid.finished.v1
-
-```text
-raidId: ID
-guildId: ID
-outcome: "won" / "failed" / "cancelled"
-recipientIds: (ID)[]
-```
-
-#### ChatAuthenticate
-
-First client frame, before any chat data. Do not persist or echo the token.
-
-```text
-type: "authenticate"
-accessToken: string
-```
-
-#### ChatAuthenticated
-
-Server confirms membership and current sequence; replay uses REST.
-
-```text
-type: "authenticated"
-guildId: ID
-userId: ID
-latestSequence: integer
-```
-
-#### ChatSend
-
-Client frame. requestId is also its deduplication key within the guild/user.
-
-```text
-type: "message.send"
-requestId: ID
-content: string
-```
-
-#### ChatAck
-
-Server replies to the sender after durable persistence.
-
-```text
-type: "message.ack"
-requestId: ID
-message: ChatMessage
-```
-
-#### ChatCreated
-
-Server broadcast to current guild members; deduplicate by message.id.
-
-```text
-type: "message.created"
-message: ChatMessage
-```
-
-#### ChatError
-
-Server protocol/business error; requestId is null for handshake errors.
-
-```text
-type: "error"
-requestId: ID or null
-code: "UNAUTHENTICATED" / "FORBIDDEN" / "INVALID_MESSAGE" / "RATE_LIMITED" / "IDEMPOTENCY_CONFLICT"
-message: string
-```
-
-</details>
+| client to server | `ChatAuthenticate` | `{type:"authenticate", accessToken}`; must be the first frame |
+| server to client | `ChatAuthenticated` | `{type:"authenticated", guildId, userId, latestSequence}` |
+| client to server | `ChatSend` | `{type:"message.send", requestId, content}`; content is 1 to 2,000 characters |
+| server to sender | `ChatAck` | `{type:"message.ack", requestId, message}` after the message is stored |
+| server to members | `ChatCreated` | `{type:"message.created", message}` |
+| server to client | `ChatError` | `{type:"error", requestId or null, code, message}` |
+
+The server assigns sender, guild, timestamp and a per-guild increasing sequence. Resending the same `requestId` with the same content replays the acknowledgement; different content returns `IDEMPOTENCY_CONFLICT`. After a reconnect, call `GET /v1/guilds/{guildId}/messages?afterSequence=<last-seen>` until `hasMore` is false. Ping and pong use WebSocket control frames.
 
 ## Contribution workflow
 
@@ -1689,24 +486,23 @@ message: string
 
 | Branch | Purpose | How changes arrive |
 | --- | --- | --- |
-| `main` | Approved releases and the default repository branch | A reviewed release PR, using **Rebase and merge** |
-| `dev` | Integration of completed work for the next release | A reviewed task PR, using **Rebase and merge**, or **Squash and merge** for long PRs (see below) |
-| Task branches | One issue or a small, related set of changes | Created from the latest `dev`; open the PR against `dev` |
-| `release/<version>` | Promote reviewed development work to a release | Created from the latest `main`; open the PR against `main` |
+| `main` | Approved releases; the default branch | Release PR from `dev`, **2 approvals** |
+| `dev` | Integration of finished work | Task PR, **2 approvals** |
+| `<type>/<scope>/<description>` | One task | Branched from the latest `dev`; PR into `dev` |
 
-Both `main` and `dev` are protected. Changes require a pull request, **three approving reviews from other collaborators**, resolution of review conversations, and a passing **Validate contracts** check. The branch must be up to date with its target. New reviewable changes dismiss stale approvals, and the latest push needs approval from someone other than its pusher. These rules also apply to administrators. Direct pushes, force pushes and deletion of these two branches are blocked.
+Both `main` and `dev` are protected: changes arrive only through a pull request with two approving reviews from other collaborators, all review conversations resolved, a passing **Validate contracts** check and a branch that is up to date with its target. A new push dismisses earlier approvals. Direct pushes, force pushes and branch deletion are blocked for everyone, including administrators.
 
-The repository allows **Rebase and merge** and **Squash and merge**. Merge commits are disabled, so both branches keep a linear history.
+Merge strategies:
 
-- **Rebase and merge** is the default for task PRs. Use it when the PR contains a few focused commits that each make sense on their own; they land on `dev` one by one, unchanged.
-- **Squash and merge** is used when a PR has grown to about ten or more commits, or when it contains fix-up, typo or "address review" commits that add nothing individually. The squashed commit title follows the commit message rules below and summarizes the whole PR. The individual commits remain visible in the PR history for anyone who needs them.
-- Release PRs always use **Rebase and merge** so the promoted commits stay identifiable on `main`.
+- **Rebase and merge** is the default. Use it for a PR with a few focused commits; they land unchanged, keeping a linear history.
+- **Squash and merge** is used when a PR has about ten or more commits or is full of fix-up commits. The squashed title follows the commit rules below; the original commits stay visible in the PR.
+- **Create a merge commit** is used only for release PRs from `dev` to `main`, so `main` keeps the same commits as `dev` and the next release contains only the new work.
 
-Reviewers check the actual changes, the explanation, validation results and consistency with the shared service contracts before approving.
+A release is a PR from `dev` to `main`, opened once the work for that release is merged into `dev` and validated. The PR lists the version and the notable changes. After the merge, the `main` commit is tagged `vMAJOR.MINOR.PATCH`.
 
-### Branch naming and normal development
+### Branch naming
 
-Use lowercase names with hyphens: `<type>/<scope>/<short-description>`. The scope is the service the change belongs to (`user-management`, `tamagotchi`, `battle`, `notification`, `map`, `monster-raid`, `guild`, `package-registry`) or `common` for changes to the shared repository itself: README, contracts, CI and workflow files. The short description says what the branch does in two to four words. The issue number goes in the PR and in the closing commit, not in the branch name.
+`<type>/<scope>/<short-description>`, lowercase with hyphens. Scope is a service name (`user-management`, `tamagotchi`, `battle`, `notification`, `map`, `monster-raid`, `guild`, `package-registry`) or `common` for the shared repository. The issue number goes in the PR and the closing commit, not the branch.
 
 | Type | Example |
 | --- | --- |
@@ -1715,44 +511,18 @@ Use lowercase names with hyphens: `<type>/<scope>/<short-description>`. The scop
 | `docs` | `docs/common/contribution-rules` |
 | `test` | `test/monster-raid/attack-cooldown` |
 | `ci`, `refactor`, `chore` | `ci/common/contract-validation` |
-| Release | `release/1.0.0` |
 
-Start each task from an updated `dev`, make focused commits on its own branch, push that branch and open a PR targeting `dev`. Avoid mixing unrelated issues. To update a PR branch, fetch the target and rebase your task branch onto it; resolve conflicts and rerun validation before requesting fresh reviews. If the branch has already been pushed, use `--force-with-lease` only on your own task branch, never on `main` or `dev` or a branch another teammate is using. Delete the task branch after it is merged.
+Start from an updated `dev`, keep commits focused, and open the PR against `dev`. To update a PR, rebase your branch onto the target and push with `--force-with-lease`; never force-push `main`, `dev` or someone else's branch. Delete the branch after it merges.
 
-For a release, create `release/<version>` from the current `main` and cherry-pick only the reviewed, not-yet-released commits from `dev`, in their original order. Record their source commit IDs in the release PR so the next release does not replay them. Merge that PR into `main` using Rebase and merge. GitHub rebasing creates new commit IDs, so do not rely on identical hashes between `main` and `dev` or repeatedly promote the long-lived `dev` branch directly. [GitHub merge behavior](https://docs.github.com/en/pull-requests/reference/pull-request-merges).
+### Commits and pull requests
 
-### Commit messages
+Commit titles are single-line Conventional Commits: `type(scope): imperative summary`, with types `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `chore` and an optional service scope. Reference the issue in the commit that completes it, for example `docs: define stack and API contracts (closes #2, closes #3)`. An issue closes when the commit reaches `main`.
 
-Use a single-line Conventional Commit title:
-
-```text
-type(optional-scope): explain the change in imperative form
-```
-
-Types are `feat`, `fix`, `docs`, `refactor`, `test`, `ci` and `chore`. Scopes, when helpful, identify a service or shared area, such as `battle`, `guild` or `contracts`. Keep the title concise; put the detailed explanation in the PR. Reference the issue when completing its work, for example:
-
-```text
-docs: define stack and API contracts (closes #2, closes #3)
-```
-
-An issue-closing reference takes effect when the commit reaches the default branch, `main`; merging a task into `dev` does not close its issue automatically. The PR and issue can still show the development work before release.
-
-### Pull request content and review
-
-Every PR must be **clear and explanatory**. Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md) to explain:
-
-1. The problem or requirement being addressed, what changed, and why that approach was chosen.
-2. The resulting behavior or contract changes, with a concrete example when it helps the reviewer.
-3. Which validation/tests ran and their results; include coverage for service-code changes.
-4. The related issue, plus any compatibility implications, migrations or remaining work. Release PRs also list source development commits and the intended version.
-
-The author answers review comments and updates the PR description when its scope changes. Reviewers must understand the affected common services and interfaces. Approval is a review of the final changes; obtain the required approvals again after changes invalidate them.
+Every PR uses the [PR template](.github/PULL_REQUEST_TEMPLATE.md) and explains the problem and the change, the resulting behavior with an example when useful, which checks and tests ran with their results and coverage, the related issue, and any compatibility impact or follow-up. The author answers review comments and keeps the description current. Reviewers check the actual diff against the shared contract; approvals are dismissed by new pushes and must be obtained again.
 
 ### Validation and test coverage
 
-The [Contract validation workflow](.github/workflows/validate-contracts.yml) runs on every PR targeting `main` or `dev`, and on pushes to those branches. It publishes the required job named **Validate contracts**. It validates OpenAPI and JSON Schemas, resolves references, checks the README endpoint/type catalog, validates message examples, and verifies rejection of malformed or excessive values. It runs for documentation changes too, avoiding a missing required check caused by path filters.
-
-Run the same checks locally from the repository root:
+The [Contract validation workflow](.github/workflows/validate-contracts.yml) runs on every PR to `main` or `dev` and publishes the required **Validate contracts** check. It validates the OpenAPI and JSON Schema files, checks that this README lists every route and event and that the field dictionary defines every type, validates the examples, and confirms that malformed payloads are rejected. Run it locally with:
 
 ```sh
 python3 -m venv .venv
@@ -1760,84 +530,62 @@ python3 -m venv .venv
 .venv/bin/python .github/scripts/check_contracts.py
 ```
 
-Python is used only for repository validation tooling; the application services remain Go and TypeScript. The check uses public repository files and does not require credentials for private service submodules.
-
-For service code, the agreed minimum is **80% statement coverage per service**, plus **70% branch coverage for TypeScript services**. Measure Go coverage with `go test -coverprofile=coverage.out ./...` and TypeScript coverage with the service's test runner. Each service's CI must enforce these thresholds from the first implementation PR. Exclude generated code, dependencies and test fixtures, not application logic. A percentage alone is insufficient: every PR that adds or changes behavior adds or updates tests at the level where that behavior lives.
+Service code needs **80% statement coverage and 70% branch coverage per service**, in both languages, enforced by each service's CI from its first implementation PR. Go measures statements with `go test -coverprofile=coverage.out ./...` and branches with `gobco`; TypeScript measures both with Vitest's coverage report. Generated code, dependencies and fixtures are excluded; application logic is not. A percentage alone is not enough: every PR that changes behavior adds or updates tests at the level where that behavior lives.
 
 | Level | What it covers | Tooling |
 | --- | --- | --- |
-| Unit | Pure domain logic: damage and starting-HP formulas, type multipliers, XP split and level calculation, cooldown and timer checks, input validation, cursor encoding. Write table-driven tests with one row per case. | Go `testing`; TypeScript Vitest |
-| Handler / integration | Each endpoint through the real router against a test database or a repository fake: the success path, every documented error status, authorization and ownership, idempotent replay and version conflicts. | Go `net/http/httptest`; Fastify `inject()` |
-| Contract | The service's request and response bodies validate against `contracts/openapi.yaml`; its published events validate against `contracts/events.schema.json`. | An OpenAPI or JSON Schema validator in the service's language |
-| Consumer / worker | Event consumers and outbox workers: duplicate delivery, out-of-order `aggregateVersion`, poison messages routed to the dead-letter queue, publisher retries. | Same as unit and integration |
+| Unit | Pure domain logic: damage and HP formulas, type multipliers, XP split and levels, cooldowns and timers, validation, cursor encoding. Table-driven, one row per case. | Go `testing`; Vitest |
+| Handler / integration | Each endpoint through the real router against a test database or a fake repository: success, every documented error status, authorization and ownership, idempotent replay, version conflicts. | Go `net/http/httptest`; Fastify `inject()` |
+| Contract | Request and response bodies validate against `contracts/openapi.yaml`; published events against `contracts/events.schema.json`. | OpenAPI or JSON Schema validator |
+| Consumer / worker | Event consumers and outbox workers: duplicate delivery, out-of-order `aggregateVersion`, poison messages to the dead-letter topic, publisher retries. | Same as above |
 
-**Edge cases that must be covered** whenever they apply to the change: boundary values (zero, the maximum, one past the limit), empty and full pages, missing and null optional fields, unknown IDs, expired or revoked tokens, the wrong caller (a player calling an internal route, a non-owner acting on a pet), the same request repeated with the same and with a changed `Idempotency-Key`, a stale `expectedVersion`, dependency timeouts and `503` responses, and timers that expire while a request is being processed (turn deadline, raid end, location freshness).
+Edge cases to cover whenever they apply: boundary values (zero, maximum, one past the limit), empty and full pages, missing and null optional fields, unknown IDs, expired tokens, the wrong caller, the same request repeated with the same and with a changed `Idempotency-Key`, a stale `expectedVersion`, dependency timeouts and `503`, and timers that expire mid-request. Test names describe scenario and outcome (`TestAttack_RejectsSecondClickWithinCooldown`). Tests inject a clock and build fresh fixtures; they never depend on wall-clock time or execution order. Skipped tests, `.only` and placeholder assertions count as missing tests. Never claim unrun checks passed; record limitations in the PR.
 
-Test names describe the scenario and the expected outcome, for example `TestAttack_RejectsSecondClickWithinCooldown` in Go or `attack rejects a second click within one second` in TypeScript. Tests must not depend on the wall clock or on execution order: inject a clock and build fresh fixtures per test. Skipped tests, `.only`, and placeholder assertions do not count toward coverage and are treated as missing tests in review.
+### Coding standards
 
-Cross-service changes need contract or integration checks covering the affected callers and responses. Documentation-only changes require the contract check; runtime coverage does not apply while no service code exists. Never claim unrun checks passed; record any limitation in the PR.
+These apply to every service in both languages; reviewers request changes for any anti-pattern, not only for bugs.
 
-### Coding standards, patterns and anti-patterns
-
-These rules apply to every service in both languages. Reviewers request changes for any anti-pattern below, not only for bugs.
-
-**Patterns to use**
-
-| Pattern | How it applies here |
+| Use | How it applies here |
 | --- | --- |
-| Layered structure: transport, application, domain, persistence | Handlers decode and validate input, call an application function and encode the result. Game rules (damage, cooldowns, eligibility, rewards) live in plain functions that know nothing about HTTP or SQL, so they can be unit tested directly. |
-| Validate at the boundary | Every body, path and query parameter is validated against the contract before any logic runs, and unknown fields are rejected. Code behind the boundary works with already-validated, typed values. |
-| Repository or data-access interface | One component per aggregate talks to PostgreSQL. Application code depends on an interface so tests can substitute a fake. |
-| Explicit transactions | An operation that touches several rows (a hold, a settlement, an outbox record) runs in one transaction opened by the application layer, never hidden inside helpers. |
-| Idempotent handlers via shared middleware | The `Idempotency-Key` lookup and replay is written once and applied to every mutation, as the contract requires. |
-| Outbox for events | The domain change and the event row are written together; a worker publishes. No direct publish from inside a request handler. |
-| Timeouts and cancellation on every outbound call | Go: `context.Context` with a deadline; TypeScript: `AbortSignal.timeout()`. A hanging dependency must not hang the caller. |
-| Typed configuration from the environment | Ports, database and broker URLs and secrets are read once at startup into a validated config value; the process refuses to start when something is missing. |
-| Structured logging with request IDs | Every log line carries the request ID and, where relevant, the user, battle or raid ID, so a cross-service flow can be followed. |
-| Typed errors mapped to contract codes | Errors carry a code that maps to one contract status; handlers translate, they do not invent statuses. |
-| Injected clock | Anything that reads time takes a clock dependency, so cooldowns and deadlines are testable. |
+| Layers: transport, application, domain, persistence | Handlers decode, validate, call an application function and encode. Game rules live in plain functions with no HTTP or SQL, so they are unit-testable. |
+| Validate at the boundary | Every body, path and query value is checked against the contract before any logic; unknown fields are rejected. |
+| Repository interface per aggregate | One component talks to PostgreSQL; application code depends on an interface so tests can use a fake. |
+| Explicit transactions | Multi-row operations (hold, settlement, outbox row) run in one transaction opened by the application layer. |
+| Shared middleware for cross-cutting behavior | Authentication, idempotency replay and error mapping are written once and applied to every route. |
+| Outbox for events | Business change and event row are written together; a worker publishes. No direct publish from a handler. |
+| Timeouts on every outbound call | Go `context.Context` deadlines; TypeScript `AbortSignal.timeout()`. |
+| Typed configuration from the environment | Read once at startup into a validated object; refuse to start if something is missing. |
+| Structured logs with request IDs | Every line carries the request ID and the relevant user, battle or raid ID. |
+| Injected clock | Anything that reads time takes a clock dependency. |
 
-**Anti-patterns to avoid**
-
-| Anti-pattern | Why it is a problem here |
+| Avoid | Why |
 | --- | --- |
-| God handler or fat controller | A function that parses, validates, queries, computes and publishes cannot be tested without HTTP and hides the game rules. |
-| Business logic in SQL or in the persistence layer | Reward and damage maths in queries or stored procedures cannot be unit tested and drifts between the Go and TypeScript services. |
-| Shared database or cross-service table access | Breaks ownership. A service uses only its own credentials and the owning service's API. |
-| Distributed monolith: chains of blocking calls | A request that fans out into a chain of synchronous calls fails whenever any link fails. Use one call per dependency, pinned snapshots and events for anything not needed to answer. |
-| Hardcoded configuration and magic numbers | URLs, ports, stakes, cooldowns and limits belong in configuration or in named constants tied to a rules version, never as literals scattered through code. |
-| Swallowed or generic errors | Empty `catch` blocks, ignored `err` values and `500` for everything hide bugs. Map every failure to a contract error code with details. |
-| Non-idempotent mutations | A retry after a timeout may apply a reward twice. Every mutation is idempotent as the contract requires. |
-| Wall-clock time inside logic | Makes cooldowns and timers untestable and flaky. Pass a clock. |
-| Unbounded queries and responses | Every list is paginated with the contract's `limit`; never load a whole guild's chat or all raids into memory. |
-| Blocking the event loop (TypeScript) or leaking goroutines (Go) | Synchronous CPU work on the event loop, or goroutines without cancellation, degrade every concurrent request. |
-| Copy-pasted validation, auth or idempotency code | Cross-cutting behavior belongs in shared middleware, not repeated per route. |
-| Premature abstraction | Do not build generic frameworks, plugin systems or extra layers before a second concrete use exists. The contract is the shared abstraction. |
-| Trusting client-supplied outcomes | Clients submit actions; the server computes damage, rewards, XP and distances. Never accept those values from a request. |
-| Secrets or environment files in Git | See repository hygiene below. |
+| God handler | A function that parses, validates, queries, computes and publishes cannot be tested without HTTP and hides the rules. |
+| Business logic in SQL | Reward and damage maths in queries drifts between the Go and TypeScript services and cannot be unit tested. |
+| Shared database or cross-service tables | Breaks ownership; use the owner's API. |
+| Chains of blocking calls | One failing link fails the request. Use one call per dependency, pinned snapshots and events for the rest. |
+| Hardcoded configuration and magic numbers | URLs, stakes, cooldowns and limits belong in configuration or named constants tied to a rules version. |
+| Swallowed or generic errors | Empty `catch`, ignored `err`, `500` for everything. Map every failure to a contract error code. |
+| Non-idempotent mutations | A retry after a timeout must not apply a reward twice. |
+| Wall-clock time in logic | Untestable and flaky; pass a clock. |
+| Unbounded queries | Every list is paginated with the contract's `limit`. |
+| Blocking the event loop or leaking goroutines | Degrades every concurrent request. |
+| Copy-pasted validation, auth or idempotency | Belongs in shared middleware. |
+| Premature abstraction | No generic frameworks or extra layers before a second concrete use exists. |
+| Trusting client-supplied outcomes | The server computes damage, rewards, XP and distances; never accept them from a request. |
 
 ### Versioning
 
-Use Semantic Versioning for releases: `MAJOR.MINOR.PATCH`, tagged on the approved `main` commit as `vMAJOR.MINOR.PATCH`. A breaking public contract change increments the major version; a backward-compatible feature increments minor; a compatible correction increments patch. During initial `0.x` development, document compatibility changes explicitly. Tags identify releases and are never moved to different commits.
-
-The HTTP contract's `info.version` tracks that contract; `/v1` changes only for breaking HTTP interfaces, and event types receive a new version suffix for incompatible payloads. Package/configuration revisions are distinct from release tags. Update the relevant contract, README and examples together whenever an interface changes, and keep each future microservice's own version and contract documentation consistent.
+Releases use Semantic Versioning, tagged on `main` as `vMAJOR.MINOR.PATCH`: breaking public contract change is major, compatible feature is minor, compatible fix is patch. Tags never move. The HTTP contract's `info.version` tracks the contract itself; `/v1` changes only for breaking HTTP interfaces, and event types get a new suffix for incompatible payloads. Update contract, README and examples together whenever an interface changes.
 
 ### Repository hygiene
 
-The lab rules are explicit: pushing `.env` files, exposing API keys or committing `node_modules` lowers the grade of the whole team. Every repository, including each private service repository, has a `.gitignore` covering the list below before its first code commit.
+The lab rules are explicit: pushing `.env` files, exposing API keys or committing `node_modules` lowers the whole team's grade. Every repository has a `.gitignore` covering the list below before its first code commit.
 
-**Never commit:**
+- **Never commit:** secrets of any kind (`.env` and `.env.*` except `.env.example`, API keys, JWT signing keys, TLS keys, database passwords, Firebase service-account JSON, Kafka credentials, tokens in code or fixtures); installed dependencies (`node_modules/`, `.venv/`, Go module caches, `vendor/` unless agreed); build and run outputs (`dist/`, `build/`, `bin/`, binaries, coverage, logs, local database files, Docker volumes); editor and OS files (`.idea/`, `.vscode/` except agreed shared settings, `.DS_Store`); large or regenerable artifacts.
+- **Always commit:** source, tests, documentation, `.env.example` with placeholders and a comment per variable, manifests and lockfiles (`go.mod`, `go.sum`, `package.json`, `package-lock.json`), Dockerfiles, compose files and CI configuration.
+- **If a secret slips in:** rotate it immediately, rewrite the history of your task branch and push with `--force-with-lease`, and say so in the PR. A secret that reached `dev` or `main` needs a coordinated history rewrite by the repository owner plus a new secret; deleting the file later is not enough.
 
-- Secrets of any kind: `.env` and `.env.*` files (except `.env.example`), API keys, JWT signing keys, TLS certificates and private keys, database passwords, Firebase service-account JSON files, broker credentials, or tokens pasted into code, tests or fixtures.
-- Installed dependencies: `node_modules/`, Python `.venv/`, Go module caches. Go `vendor/` directories are not committed unless the team agrees for a specific service.
-- Build and run outputs: `dist/`, `build/`, `bin/`, compiled binaries, coverage reports, logs, local database files and Docker volumes.
-- Editor and OS files: `.idea/`, `.vscode/` (except settings the team agreed to share), `.DS_Store`, `Thumbs.db`.
-- Anything that can be regenerated from source or that is large: media dumps, database exports, archives.
+Keep changes small enough to review well, and document each contributor's work through issues, commits and PRs.
 
-**Always commit:** source, tests, documentation, `.env.example` with placeholder values and a comment per variable, dependency manifests and lockfiles (`go.mod`, `go.sum`, `package.json`, `package-lock.json`), Dockerfiles, compose files and CI configuration.
-
-If a secret is committed by mistake, treat it as leaked: rotate it immediately, remove it from history on your own task branch and push with `--force-with-lease`, and say so in the PR. A secret that reached `dev` or `main` needs a history rewrite coordinated by the repository owner plus a new secret; deleting the file in a later commit is not enough.
-
-Keep changes small enough for meaningful review and document each contributor's work through issues, commits and PRs.
-
-Source: *FAF.PAD21.1 Autumn 2026, PAD_LAB_0_2026.pdf* — Lab 0 requirements, pages 2–4, and Topic 2: Tamagotchi Go, pages 8–11.
+Source: *FAF.PAD21.1 Autumn 2026, PAD_LAB_0_2026.pdf*, Lab 0 requirements (pages 2 to 4) and Topic 2: Tamagotchi Go (pages 8 to 11).
