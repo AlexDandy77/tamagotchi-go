@@ -1699,24 +1699,31 @@ message: string
 | Branch | Purpose | How changes arrive |
 | --- | --- | --- |
 | `main` | Approved releases and the default repository branch | A reviewed release PR, using **Rebase and merge** |
-| `dev` | Integration of completed work for the next release | A reviewed task PR, using **Rebase and merge** |
+| `dev` | Integration of completed work for the next release | A reviewed task PR, using **Rebase and merge**, or **Squash and merge** for long PRs (see below) |
 | Task branches | One issue or a small, related set of changes | Created from the latest `dev`; open the PR against `dev` |
 | `release/<version>` | Promote reviewed development work to a release | Created from the latest `main`; open the PR against `main` |
 
 Both `main` and `dev` are protected. Changes require a pull request, **three approving reviews from other collaborators**, resolution of review conversations, and a passing **Validate contracts** check. The branch must be up to date with its target. New reviewable changes dismiss stale approvals, and the latest push needs approval from someone other than its pusher. These rules also apply to administrators. Direct pushes, force pushes and deletion of these two branches are blocked.
 
-The repository allows **rebase merging only**. Merge commits and squash merging are disabled, preserving the individual commits in a linear history. Reviewers check the actual changes, the explanation, validation results and consistency with the shared service contracts before approving.
+The repository allows **Rebase and merge** and **Squash and merge**. Merge commits are disabled, so both branches keep a linear history.
+
+- **Rebase and merge** is the default for task PRs. Use it when the PR contains a few focused commits that each make sense on their own; they land on `dev` one by one, unchanged.
+- **Squash and merge** is used when a PR has grown to about ten or more commits, or when it contains fix-up, typo or "address review" commits that add nothing individually. The squashed commit title follows the commit message rules below and summarizes the whole PR. The individual commits remain visible in the PR history for anyone who needs them.
+- Release PRs always use **Rebase and merge** so the promoted commits stay identifiable on `main`.
+
+Reviewers check the actual changes, the explanation, validation results and consistency with the shared service contracts before approving.
 
 ### Branch naming and normal development
 
-Use lowercase names with hyphens: `<type>/<issue-number>-<short-description>`.
+Use lowercase names with hyphens: `<type>/<scope>/<short-description>`. The scope is the service the change belongs to (`user-management`, `tamagotchi`, `battle`, `notification`, `map`, `monster-raid`, `guild`, `package-registry`) or `common` for changes to the shared repository itself: README, contracts, CI and workflow files. The short description says what the branch does in two to four words. The issue number goes in the PR and in the closing commit, not in the branch name.
 
 | Type | Example |
 | --- | --- |
-| `feat` | `feat/12-battle-challenges` |
-| `fix` | `fix/15-prevent-duplicate-rewards` |
-| `docs` | `docs/3-service-contracts` |
-| `ci`, `test`, `refactor`, `chore` | `ci/4-contract-validation` |
+| `feat` | `feat/battle/challenge-flow` |
+| `fix` | `fix/tamagotchi/duplicate-rewards` |
+| `docs` | `docs/common/contribution-rules` |
+| `test` | `test/monster-raid/attack-cooldown` |
+| `ci`, `refactor`, `chore` | `ci/common/contract-validation` |
 | Release | `release/1.0.0` |
 
 Start each task from an updated `dev`, make focused commits on its own branch, push that branch and open a PR targeting `dev`. Avoid mixing unrelated issues. To update a PR branch, fetch the target and rebase your task branch onto it; resolve conflicts and rerun validation before requesting fresh reviews. If the branch has already been pushed, use `--force-with-lease` only on your own task branch, never on `main` or `dev` or a branch another teammate is using. Delete the task branch after it is merged.
@@ -1764,16 +1771,82 @@ python3 -m venv .venv
 
 Python is used only for repository validation tooling; the application services remain Go and TypeScript. The check uses public repository files and does not require credentials for private service submodules.
 
-For future service code, the agreed minimum is **80% statement coverage per service**, plus **70% branch coverage for TypeScript services**. Measure Go coverage with `go test -coverprofile=coverage.out ./...` and TypeScript coverage with the service's test runner. Each service's CI must enforce these thresholds when implementation is introduced. Exclude generated code, dependencies and test fixtures, not application logic. New and changed behavior needs meaningful tests, including failures and boundary cases; a percentage alone is insufficient.
+For service code, the agreed minimum is **80% statement coverage per service**, plus **70% branch coverage for TypeScript services**. Measure Go coverage with `go test -coverprofile=coverage.out ./...` and TypeScript coverage with the service's test runner. Each service's CI must enforce these thresholds from the first implementation PR. Exclude generated code, dependencies and test fixtures, not application logic. A percentage alone is insufficient: every PR that adds or changes behavior adds or updates tests at the level where that behavior lives.
 
-Tests must cover relevant authorization/ownership checks, valid actions, invalid input, conflicting state and duplicate/retried operations. Cross-service changes need contract or integration checks covering affected callers and responses. Documentation-only changes require the contract check; runtime coverage does not apply while no service code exists. Never claim unrun checks passed—record any limitation in the PR.
+| Level | What it covers | Tooling |
+| --- | --- | --- |
+| Unit | Pure domain logic: damage and starting-HP formulas, type multipliers, XP split and level calculation, cooldown and timer checks, input validation, cursor encoding. Write table-driven tests with one row per case. | Go `testing`; TypeScript Vitest |
+| Handler / integration | Each endpoint through the real router against a test database or a repository fake: the success path, every documented error status, authorization and ownership, idempotent replay and version conflicts. | Go `net/http/httptest`; Fastify `inject()` |
+| Contract | The service's request and response bodies validate against `contracts/openapi.yaml`; its published events validate against `contracts/events.schema.json`. | An OpenAPI or JSON Schema validator in the service's language |
+| Consumer / worker | Event consumers and outbox workers: duplicate delivery, out-of-order `aggregateVersion`, poison messages routed to the dead-letter queue, publisher retries. | Same as unit and integration |
 
-### Versioning and repository hygiene
+**Edge cases that must be covered** whenever they apply to the change: boundary values (zero, the maximum, one past the limit), empty and full pages, missing and null optional fields, unknown IDs, expired or revoked tokens, the wrong caller (a player calling an internal route, a non-owner acting on a pet), the same request repeated with the same and with a changed `Idempotency-Key`, a stale `expectedVersion`, dependency timeouts and `503` responses, and timers that expire while a request is being processed (turn deadline, raid end, location freshness).
+
+Test names describe the scenario and the expected outcome, for example `TestAttack_RejectsSecondClickWithinCooldown` in Go or `attack rejects a second click within one second` in TypeScript. Tests must not depend on the wall clock or on execution order: inject a clock and build fresh fixtures per test. Skipped tests, `.only`, and placeholder assertions do not count toward coverage and are treated as missing tests in review.
+
+Cross-service changes need contract or integration checks covering the affected callers and responses. Documentation-only changes require the contract check; runtime coverage does not apply while no service code exists. Never claim unrun checks passed; record any limitation in the PR.
+
+### Coding standards, patterns and anti-patterns
+
+These rules apply to every service in both languages. Reviewers request changes for any anti-pattern below, not only for bugs.
+
+**Patterns to use**
+
+| Pattern | How it applies here |
+| --- | --- |
+| Layered structure: transport, application, domain, persistence | Handlers decode and validate input, call an application function and encode the result. Game rules (damage, cooldowns, eligibility, rewards) live in plain functions that know nothing about HTTP or SQL, so they can be unit tested directly. |
+| Validate at the boundary | Every body, path and query parameter is validated against the contract before any logic runs, and unknown fields are rejected. Code behind the boundary works with already-validated, typed values. |
+| Repository or data-access interface | One component per aggregate talks to PostgreSQL. Application code depends on an interface so tests can substitute a fake. |
+| Explicit transactions | An operation that touches several rows (a hold, a settlement, an outbox record) runs in one transaction opened by the application layer, never hidden inside helpers. |
+| Idempotent handlers via shared middleware | The `Idempotency-Key` lookup and replay is written once and applied to every mutation, as the contract requires. |
+| Outbox for events | The domain change and the event row are written together; a worker publishes. No direct publish from inside a request handler. |
+| Timeouts and cancellation on every outbound call | Go: `context.Context` with a deadline; TypeScript: `AbortSignal.timeout()`. A hanging dependency must not hang the caller. |
+| Typed configuration from the environment | Ports, database and broker URLs and secrets are read once at startup into a validated config value; the process refuses to start when something is missing. |
+| Structured logging with request IDs | Every log line carries the request ID and, where relevant, the user, battle or raid ID, so a cross-service flow can be followed. |
+| Typed errors mapped to contract codes | Errors carry a code that maps to one contract status; handlers translate, they do not invent statuses. |
+| Injected clock | Anything that reads time takes a clock dependency, so cooldowns and deadlines are testable. |
+
+**Anti-patterns to avoid**
+
+| Anti-pattern | Why it is a problem here |
+| --- | --- |
+| God handler or fat controller | A function that parses, validates, queries, computes and publishes cannot be tested without HTTP and hides the game rules. |
+| Business logic in SQL or in the persistence layer | Reward and damage maths in queries or stored procedures cannot be unit tested and drifts between the Go and TypeScript services. |
+| Shared database or cross-service table access | Breaks ownership. A service uses only its own credentials and the owning service's API. |
+| Distributed monolith: chains of blocking calls | A request that fans out into a chain of synchronous calls fails whenever any link fails. Use one call per dependency, pinned snapshots and events for anything not needed to answer. |
+| Hardcoded configuration and magic numbers | URLs, ports, stakes, cooldowns and limits belong in configuration or in named constants tied to a rules version, never as literals scattered through code. |
+| Swallowed or generic errors | Empty `catch` blocks, ignored `err` values and `500` for everything hide bugs. Map every failure to a contract error code with details. |
+| Non-idempotent mutations | A retry after a timeout may apply a reward twice. Every mutation is idempotent as the contract requires. |
+| Wall-clock time inside logic | Makes cooldowns and timers untestable and flaky. Pass a clock. |
+| Unbounded queries and responses | Every list is paginated with the contract's `limit`; never load a whole guild's chat or all raids into memory. |
+| Blocking the event loop (TypeScript) or leaking goroutines (Go) | Synchronous CPU work on the event loop, or goroutines without cancellation, degrade every concurrent request. |
+| Copy-pasted validation, auth or idempotency code | Cross-cutting behavior belongs in shared middleware, not repeated per route. |
+| Premature abstraction | Do not build generic frameworks, plugin systems or extra layers before a second concrete use exists. The contract is the shared abstraction. |
+| Trusting client-supplied outcomes | Clients submit actions; the server computes damage, rewards, XP and distances. Never accept those values from a request. |
+| Secrets or environment files in Git | See repository hygiene below. |
+
+### Versioning
 
 Use Semantic Versioning for releases: `MAJOR.MINOR.PATCH`, tagged on the approved `main` commit as `vMAJOR.MINOR.PATCH`. A breaking public contract change increments the major version; a backward-compatible feature increments minor; a compatible correction increments patch. During initial `0.x` development, document compatibility changes explicitly. Tags identify releases and are never moved to different commits.
 
 The HTTP contract's `info.version` tracks that contract; `/v1` changes only for breaking HTTP interfaces, and event types receive a new version suffix for incompatible payloads. Package/configuration revisions are distinct from release tags. Update the relevant contract, README and examples together whenever an interface changes, and keep each future microservice's own version and contract documentation consistent.
 
-Commit source, documentation and dependency lockfiles. Keep secrets, real `.env` files, installed dependencies, build outputs and coverage artifacts out of Git. Use `.env.example` only for placeholders. Keep changes small enough for meaningful review and document each contributor's work through issues, commits and PRs.
+### Repository hygiene
+
+The lab rules are explicit: pushing `.env` files, exposing API keys or committing `node_modules` lowers the grade of the whole team. Every repository, including each private service repository, has a `.gitignore` covering the list below before its first code commit.
+
+**Never commit:**
+
+- Secrets of any kind: `.env` and `.env.*` files (except `.env.example`), API keys, JWT signing keys, TLS certificates and private keys, database passwords, Firebase service-account JSON files, broker credentials, or tokens pasted into code, tests or fixtures.
+- Installed dependencies: `node_modules/`, Python `.venv/`, Go module caches. Go `vendor/` directories are not committed unless the team agrees for a specific service.
+- Build and run outputs: `dist/`, `build/`, `bin/`, compiled binaries, coverage reports, logs, local database files and Docker volumes.
+- Editor and OS files: `.idea/`, `.vscode/` (except settings the team agreed to share), `.DS_Store`, `Thumbs.db`.
+- Anything that can be regenerated from source or that is large: media dumps, database exports, archives.
+
+**Always commit:** source, tests, documentation, `.env.example` with placeholder values and a comment per variable, dependency manifests and lockfiles (`go.mod`, `go.sum`, `package.json`, `package-lock.json`), Dockerfiles, compose files and CI configuration.
+
+If a secret is committed by mistake, treat it as leaked: rotate it immediately, remove it from history on your own task branch and push with `--force-with-lease`, and say so in the PR. A secret that reached `dev` or `main` needs a history rewrite coordinated by the repository owner plus a new secret; deleting the file in a later commit is not enough.
+
+Keep changes small enough for meaningful review and document each contributor's work through issues, commits and PRs.
 
 Source: *FAF.PAD21.1 Autumn 2026, PAD_LAB_0_2026.pdf* — Lab 0 requirements, pages 2–4, and Topic 2: Tamagotchi Go, pages 8–11.
