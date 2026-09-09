@@ -16,3 +16,9 @@
 [submodule "services/monster-raid"]
 	path = services/monster-raid
 	url = https://github.com/AlexandruRudoi/pad-team-8-monster-raid.git
+[submodule "services/guild"]
+	path = services/guild
+	url = https://github.com/xnikug/pad-team-8-guild.git
+[submodule "services/package-registry"]
+	path = services/package-registry
+	url = https://github.com/xnikug/pad-team-8-package-registry.git
