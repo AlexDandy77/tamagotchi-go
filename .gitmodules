@@ -1,0 +1,6 @@
+[submodule "services/user-management"]
+	path = services/user-management
+	url = https://github.com/AlexDandy77/pad-team-8-user-management.git
+[submodule "services/battle"]
+	path = services/battle
+	url = https://github.com/AlexDandy77/pad-team-8-battle.git
