@@ -190,7 +190,7 @@ The brief leaves several boundaries open. This proposal uses the following assum
 
 ## Technologies and communication patterns
 
-The team uses **Go and TypeScript**, with each person implementing both assigned services in one language. Alexei and Artur use Go; Alexandru and Nicolae use TypeScript. These are the selected design choices for implementation in later labs; this repository currently contains documentation and contracts.
+The team uses **Go and TypeScript**, with each person implementing both assigned services in one language. These are the selected design choices for implementation in later labs; this repository currently contains documentation and contracts.
 
 | Person | Service | Language and HTTP framework | Storage | Communication |
 | --- | --- | --- | --- | --- |
@@ -203,15 +203,6 @@ The team uses **Go and TypeScript**, with each person implementing both assigned
 | Nicolae | Guild | TypeScript, Node.js, Fastify | PostgreSQL `guilds` database | HTTP/JSON membership/history; WebSocket chat; publishes invitation events |
 | Nicolae | Package Registry | TypeScript, Node.js, Fastify | PostgreSQL `registry` database; JSONB for configuration | HTTP/JSON configuration and scheduler commands; consumes enrollment events |
 
-Go is our choice for the User Management/Battle and Map/Monster Raid pairs, keeping account settlement, combat, location processing and raid coordination in the same language for their respective owners. TypeScript is our choice for Tamagotchi/Notification and Guild/Package Registry, supporting typed pet-care, notification, membership and configuration interfaces. One language per person reduces context switching, while each service retains its own responsibilities and data ownership. The cost of two languages is maintaining equivalent validation and serialization; the language-independent contract below is the shared reference. Go's HTTP library and Fastify provide the HTTP foundations. [Go HTTP documentation](https://pkg.go.dev/net/http), [Fastify documentation](https://fastify.dev/docs/latest/).
-
-PostgreSQL provides local transactions for balances, ownership and combat state. JSONB preserves differently named package statistics and supports querying them; it does not require every package to have the same pet-care fields. Separate databases give clear ownership at the cost of cross-service consistency work. For a lab deployment, the databases may share one PostgreSQL server, with separate credentials and no cross-service table access. [PostgreSQL JSON documentation](https://www.postgresql.org/docs/current/datatype-json.html).
-
-HTTP with UTF-8 JSON keeps interfaces easy to inspect from both languages and from custom client apps. Synchronous requests handle immediate decisions such as checking membership or reserving pets. The trade-off is dependency latency and failure; calls have a two-second timeout, and failed operations remain visible for retry. Clients poll battle/raid resources for state; guild chat uses WebSockets because it needs continuous delivery and therefore requires reconnect and history-replay handling.
-
-RabbitMQ carries domain events through a durable topic exchange named `tamagotchi.events`; routing keys are the event types listed below. Each consuming service has its own durable queue so Notification and Registry do not compete for the same event. This separates notification delivery and registration projections from gameplay requests, at the cost of duplicate-message handling and eventually consistent views. Producers use persistent messages, an outbox and publisher confirms; consumers acknowledge after durable processing. These mechanisms still permit redelivery. [RabbitMQ reliability guide](https://www.rabbitmq.com/docs/reliability).
-
-Firebase Cloud Messaging is the required push provider. Notification sends a short notification plus string-valued data containing `eventId`, `type` and `targetId`; the client fetches authoritative state after opening it. Full battle objects and credentials are never put into a push payload. [Firebase message types](https://firebase.google.com/docs/cloud-messaging/customize-messages/set-message-type).
 
 ## Communication contract
 
