@@ -1,0 +1,762 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tamagotchi Go broker events v1",
+  "oneOf": [
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "user.package-registered.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "user-management"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/UserPackageRegisteredV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    },
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "friend.requested.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "user-management"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/FriendRequestedV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    },
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "map.encountered.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "map"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/MapEncounteredV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    },
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "battle.requested.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "battle"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/BattleRequestedV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    },
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "battle.finished.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "battle"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/BattleFinishedV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    },
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "pet.used.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "tamagotchi"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/PetUsedV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    },
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "pet.captured.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "tamagotchi"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/PetCapturedV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    },
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "guild.invited.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "guild"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/GuildInvitedV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    },
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "raid.started.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "monster-raid"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/RaidStartedV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    },
+    {
+      "description": "Every broker message has stable identity and producer resource revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/ID"
+        },
+        "type": {
+          "const": "raid.finished.v1"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "producer": {
+          "const": "monster-raid"
+        },
+        "aggregateId": {
+          "$ref": "#/$defs/ID"
+        },
+        "aggregateVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "data": {
+          "$ref": "#/$defs/RaidFinishedV1Data"
+        }
+      },
+      "required": [
+        "eventId",
+        "type",
+        "schemaVersion",
+        "occurredAt",
+        "producer",
+        "aggregateId",
+        "aggregateVersion",
+        "correlationId",
+        "data"
+      ]
+    }
+  ],
+  "$defs": {
+    "ID": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID string identifying an existing resource."
+    },
+    "Time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp, e.g. 2026-09-09T10:00:00Z."
+    },
+    "Version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "UserPackageRegisteredV1Data": {
+      "description": "Payload for user.package-registered.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "userId": {
+          "$ref": "#/$defs/ID"
+        },
+        "packageId": {
+          "$ref": "#/$defs/ID"
+        },
+        "enrollmentVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Time"
+        }
+      },
+      "required": [
+        "userId",
+        "packageId",
+        "enrollmentVersion",
+        "createdAt"
+      ]
+    },
+    "FriendRequestedV1Data": {
+      "description": "Payload for friend.requested.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/ID"
+        },
+        "senderId": {
+          "$ref": "#/$defs/ID"
+        },
+        "recipientId": {
+          "$ref": "#/$defs/ID"
+        }
+      },
+      "required": [
+        "requestId",
+        "senderId",
+        "recipientId"
+      ]
+    },
+    "MapEncounteredV1Data": {
+      "description": "Payload for map.encountered.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "userIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "distanceMeters": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 6
+        }
+      },
+      "required": [
+        "userIds",
+        "distanceMeters"
+      ]
+    },
+    "BattleRequestedV1Data": {
+      "description": "Payload for battle.requested.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "battleId": {
+          "$ref": "#/$defs/ID"
+        },
+        "challengerId": {
+          "$ref": "#/$defs/ID"
+        },
+        "opponentId": {
+          "$ref": "#/$defs/ID"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Time"
+        }
+      },
+      "required": [
+        "battleId",
+        "challengerId",
+        "opponentId",
+        "expiresAt"
+      ]
+    },
+    "BattleFinishedV1Data": {
+      "description": "Payload for battle.finished.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "battleId": {
+          "$ref": "#/$defs/ID"
+        },
+        "winnerId": {
+          "$ref": "#/$defs/ID"
+        },
+        "loserId": {
+          "$ref": "#/$defs/ID"
+        }
+      },
+      "required": [
+        "battleId",
+        "winnerId",
+        "loserId"
+      ]
+    },
+    "PetUsedV1Data": {
+      "description": "Payload for pet.used.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activityId": {
+          "$ref": "#/$defs/ID"
+        },
+        "petIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "minItems": 1
+        },
+        "ownerIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "activityId",
+        "petIds",
+        "ownerIds"
+      ]
+    },
+    "PetCapturedV1Data": {
+      "description": "Payload for pet.captured.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "battleId": {
+          "$ref": "#/$defs/ID"
+        },
+        "petId": {
+          "$ref": "#/$defs/ID"
+        },
+        "previousOwnerId": {
+          "$ref": "#/$defs/ID"
+        },
+        "newOwnerId": {
+          "$ref": "#/$defs/ID"
+        }
+      },
+      "required": [
+        "battleId",
+        "petId",
+        "previousOwnerId",
+        "newOwnerId"
+      ]
+    },
+    "GuildInvitedV1Data": {
+      "description": "Payload for guild.invited.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "invitationId": {
+          "$ref": "#/$defs/ID"
+        },
+        "guildId": {
+          "$ref": "#/$defs/ID"
+        },
+        "inviterId": {
+          "$ref": "#/$defs/ID"
+        },
+        "recipientId": {
+          "$ref": "#/$defs/ID"
+        }
+      },
+      "required": [
+        "invitationId",
+        "guildId",
+        "inviterId",
+        "recipientId"
+      ]
+    },
+    "RaidStartedV1Data": {
+      "description": "Payload for raid.started.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "raidId": {
+          "$ref": "#/$defs/ID"
+        },
+        "guildId": {
+          "$ref": "#/$defs/ID"
+        },
+        "recipientIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "uniqueItems": true
+        },
+        "endsAt": {
+          "$ref": "#/$defs/Time"
+        }
+      },
+      "required": [
+        "raidId",
+        "guildId",
+        "recipientIds",
+        "endsAt"
+      ]
+    },
+    "RaidFinishedV1Data": {
+      "description": "Payload for raid.finished.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "raidId": {
+          "$ref": "#/$defs/ID"
+        },
+        "guildId": {
+          "$ref": "#/$defs/ID"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "won",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "recipientIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "raidId",
+        "guildId",
+        "outcome",
+        "recipientIds"
+      ]
+    }
+  }
+}
