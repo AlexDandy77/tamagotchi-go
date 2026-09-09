@@ -31,7 +31,19 @@ Each service is the authority for its own data. Other services request informati
 
 **Boundary:** pet ownership and progression belong to Tamagotchi; guild membership belongs to Guild; package definitions belong to Package Registry. User Management validates and applies currency changes, while Battle and Monster Raid determine the rewards for their activities.
 
-### 2. Tamagotchi Service
+### 2. Battle Service
+
+**Responsibility:** player-versus-player matches and turn-based combat.
+
+- Proposed boundary: owns battle challenges, acceptance, and match creation, as well as the resulting battle session.
+- Owns participants, selected primary and secondary pet references, equipped battle boosts, starting HP, current HP, turns, and battle results.
+- Calculates damage from levels, type advantages, boosts, and the interpretation of package-specific care statistics.
+- Determines winner and loser rewards and a defined XP split between primary and secondary pets.
+- Coordinates settlement: User Management applies currency changes; Tamagotchi applies XP and transfers the loser's primary pet to the winner. The winner gains global currency and XP; the loser loses some global currency and receives less XP.
+
+**Boundary:** Battle owns the combat result, but never directly edits currency balances or persistent pet records. Cooperative monster fights belong to Monster Raid.
+
+### 3. Tamagotchi Service
 
 **Responsibility:** persistent pet identity, ownership, and progression.
 
@@ -43,18 +55,6 @@ Each service is the authority for its own data. Other services request informati
 - Applies pet XP updates and ownership transfers requested after gameplay outcomes.
 
 **Boundary:** this service owns persistent pet state, not a battle's temporary HP or turn counter. Package Registry defines care and growth rules; Battle interprets pet properties for PvP combat.
-
-### 3. Battle Service
-
-**Responsibility:** player-versus-player matches and turn-based combat.
-
-- Proposed boundary: owns battle challenges, acceptance, and match creation, as well as the resulting battle session.
-- Owns participants, selected primary and secondary pet references, equipped battle boosts, starting HP, current HP, turns, and battle results.
-- Calculates damage from levels, type advantages, boosts, and the interpretation of package-specific care statistics.
-- Determines winner and loser rewards and a defined XP split between primary and secondary pets.
-- Coordinates settlement: User Management applies currency changes; Tamagotchi applies XP and transfers the loser's primary pet to the winner. The winner gains global currency and XP; the loser loses some global currency and receives less XP.
-
-**Boundary:** Battle owns the combat result, but never directly edits currency balances or persistent pet records. Cooperative monster fights belong to Monster Raid.
 
 ### 4. Notification Service
 
