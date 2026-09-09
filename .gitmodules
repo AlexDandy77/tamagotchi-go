@@ -4,3 +4,9 @@
 [submodule "services/battle"]
 	path = services/battle
 	url = https://github.com/AlexDandy77/pad-team-8-battle.git
+[submodule "services/tamagotchi"]
+	path = services/tamagotchi
+	url = https://github.com/arturtugui/pad-team-8-tamagotchi.git
+[submodule "services/notification"]
+	path = services/notification
+	url = https://github.com/arturtugui/pad-team-8-notification.git
