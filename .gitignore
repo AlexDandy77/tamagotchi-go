@@ -1,12 +1,30 @@
-.DS_Store
+# Secrets and environment
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*firebase-adminsdk*.json
+serviceAccountKey.json
+
+# Dependencies
 node_modules/
+vendor/
 .venv/
 __pycache__/
+
+# Build, test and run outputs
+dist/
+build/
+bin/
 coverage/
 coverage.out
 *.coverprofile
-dist/
-build/
+*.log
+*.tmp
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
