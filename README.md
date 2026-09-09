@@ -4,7 +4,7 @@ Team 8's project for Distributed Applications Programming (PAD), Autumn 2026.
 
 Tamagotchi Go is a shared backend for virtual-pet applications. Players care for pets, discover nearby players, fight turn-based battles, join guilds, and cooperate in monster raids. Creatures from different applications can participate in the same multiplayer ecosystem.
 
-**Contents:** [Service boundaries](#service-boundaries) · [Architecture](#architecture-and-service-communication) · [Technologies](#technologies-and-communication-patterns-grade-5) · [Communication contract](#communication-contract-grade-6) · [Endpoint catalog](#http-endpoint-catalog) · [Field dictionary](#request-and-response-field-dictionary)
+**Contents:** [Service boundaries](#service-boundaries) · [Architecture](#architecture-and-service-communication) · [Technologies](#technologies-and-communication-patterns) · [Communication contract](#communication-contract) · [Endpoint catalog](#http-endpoint-catalog) · [Field dictionary](#request-and-response-field-dictionary) · [Contribution workflow](#contribution-workflow)
 
 ## Players, client apps, and packages
 
@@ -116,7 +116,7 @@ Each service is the authority for its own data. Other services request informati
 
 The two diagrams are complementary views of the same backend. The first shows domain-service dependencies; the second shows the Notification Service and external push delivery.
 
-Arrows identify which service initiates a request or sends information to another service. A double arrow represents communication in both directions. The language, transport and endpoint choices for these relationships are defined in the Grade 5 and Grade 6 sections below.
+Arrows identify which service initiates a request or sends information to another service. A double arrow represents communication in both directions. The language, transport and endpoint choices for these relationships are defined in the technologies and communication contract sections below.
 
 ### Domain services
 
@@ -188,22 +188,22 @@ The brief leaves several boundaries open. This proposal uses the following assum
 | Packages can define different growth rates and combat-bonus thresholds. | Tamagotchi validates progression; Battle enforces shared combat limits; Registry validates package settings against those limits. The initial game rules below specify the selected limits for contract version 1.0.0. |
 | Losing a battle transfers the loser's primary pet. | Tamagotchi transfers the existing record. The winner keeps their primary; the loser must select another owned pet. Ownership changes remove the old owner's secondary reference. These rules are specified below. |
 
-## Technologies and communication patterns (Grade 5)
+## Technologies and communication patterns
 
-The team uses **Go and TypeScript**. These are the selected design choices for implementation in later labs; this repository currently contains documentation and contracts.
+The team uses **Go and TypeScript**, with each person implementing both assigned services in one language. Alexei and Artur use Go; Alexandru and Nicolae use TypeScript. These are the selected design choices for implementation in later labs; this repository currently contains documentation and contracts.
 
-| Service | Language and HTTP framework | Storage | Communication |
-| --- | --- | --- | --- |
-| User Management | TypeScript, Node.js, Fastify | PostgreSQL `users` database | HTTP/JSON accounts, relationships and settlement; publishes enrollment/friend events |
-| Tamagotchi | Go, `net/http` | PostgreSQL `pets` database; JSONB for package-local statistics | HTTP/JSON care, reservations and pet settlement; consumes enrollment events; publishes pet events |
-| Battle | Go, `net/http` | PostgreSQL `battles` database | HTTP/JSON challenges, turns, dependency requests and result polling; publishes battle events |
-| Notification | TypeScript, Node.js, Fastify | PostgreSQL `notifications` database | HTTP/JSON device registration; consumes RabbitMQ events; Firebase Cloud Messaging push |
-| Map | Go, `net/http` | PostgreSQL `locations` database | HTTP/JSON location updates and map queries; reads relationships; publishes encounter events |
-| Monster Raid | Go, `net/http` | PostgreSQL `raids` database | HTTP/JSON scheduling commands, joins, attacks and result polling; publishes raid events |
-| Guild | TypeScript, Node.js, Fastify | PostgreSQL `guilds` database | HTTP/JSON membership/history; WebSocket chat; publishes invitation events |
-| Package Registry | TypeScript, Node.js, Fastify | PostgreSQL `registry` database; JSONB for configuration | HTTP/JSON configuration and scheduler commands; consumes enrollment events |
+| Person | Service | Language and HTTP framework | Storage | Communication |
+| --- | --- | --- | --- | --- |
+| Alexei | User Management | Go, `net/http` | PostgreSQL `users` database | HTTP/JSON accounts, relationships and settlement; publishes enrollment/friend events |
+| Alexei | Battle | Go, `net/http` | PostgreSQL `battles` database | HTTP/JSON challenges, turns, dependency requests and result polling; publishes battle events |
+| Artur | Tamagotchi | TypeScript, Node.js, Fastify | PostgreSQL `pets` database; JSONB for package-local statistics | HTTP/JSON care, reservations and pet settlement; consumes enrollment events; publishes pet events |
+| Artur | Notification | TypeScript, Node.js, Fastify | PostgreSQL `notifications` database | HTTP/JSON device registration; consumes RabbitMQ events; Firebase Cloud Messaging push |
+| Alexandru | Map | Go, `net/http` | PostgreSQL `locations` database | HTTP/JSON location updates and map queries; reads relationships; publishes encounter events |
+| Alexandru | Monster Raid | Go, `net/http` | PostgreSQL `raids` database | HTTP/JSON scheduling commands, joins, attacks and result polling; publishes raid events |
+| Nicolae | Guild | TypeScript, Node.js, Fastify | PostgreSQL `guilds` database | HTTP/JSON membership/history; WebSocket chat; publishes invitation events |
+| Nicolae | Package Registry | TypeScript, Node.js, Fastify | PostgreSQL `registry` database; JSONB for configuration | HTTP/JSON configuration and scheduler commands; consumes enrollment events |
 
-Go is our choice for game-state services and concurrent location/attack requests. TypeScript is our choice for account, configuration and notification APIs, with shared typed request definitions helping those services evolve together. The cost of two languages is maintaining equivalent validation and serialization; the language-independent contract below is the shared reference. Go's HTTP library and Fastify provide the HTTP foundations. [Go HTTP documentation](https://pkg.go.dev/net/http), [Fastify documentation](https://fastify.dev/docs/latest/).
+Go is our choice for the User Management/Battle and Map/Monster Raid pairs, keeping account settlement, combat, location processing and raid coordination in the same language for their respective owners. TypeScript is our choice for Tamagotchi/Notification and Guild/Package Registry, supporting typed pet-care, notification, membership and configuration interfaces. One language per person reduces context switching, while each service retains its own responsibilities and data ownership. The cost of two languages is maintaining equivalent validation and serialization; the language-independent contract below is the shared reference. Go's HTTP library and Fastify provide the HTTP foundations. [Go HTTP documentation](https://pkg.go.dev/net/http), [Fastify documentation](https://fastify.dev/docs/latest/).
 
 PostgreSQL provides local transactions for balances, ownership and combat state. JSONB preserves differently named package statistics and supports querying them; it does not require every package to have the same pet-care fields. Separate databases give clear ownership at the cost of cross-service consistency work. For a lab deployment, the databases may share one PostgreSQL server, with separate credentials and no cross-service table access. [PostgreSQL JSON documentation](https://www.postgresql.org/docs/current/datatype-json.html).
 
@@ -213,7 +213,7 @@ RabbitMQ carries domain events through a durable topic exchange named `tamagotch
 
 Firebase Cloud Messaging is the required push provider. Notification sends a short notification plus string-valued data containing `eventId`, `type` and `targetId`; the client fetches authoritative state after opening it. Full battle objects and credentials are never put into a push payload. [Firebase message types](https://firebase.google.com/docs/cloud-messaging/customize-messages/set-message-type).
 
-## Communication contract (Grade 6)
+## Communication contract
 
 Contract version: **1.0.0**. This is the proposed complete interface for the scope above, not a claim that the endpoints are already running.
 
@@ -1692,4 +1692,88 @@ message: string
 
 </details>
 
-Source: *FAF.PAD21.1 Autumn 2026, PAD_LAB_0_2026.pdf* — Lab 0 grading criteria, pages 2–4, and Topic 2: Tamagotchi Go, pages 8–11.
+## Contribution workflow
+
+### Branches and merge rules
+
+| Branch | Purpose | How changes arrive |
+| --- | --- | --- |
+| `main` | Approved releases and the default repository branch | A reviewed release PR, using **Rebase and merge** |
+| `dev` | Integration of completed work for the next release | A reviewed task PR, using **Rebase and merge** |
+| Task branches | One issue or a small, related set of changes | Created from the latest `dev`; open the PR against `dev` |
+| `release/<version>` | Promote reviewed development work to a release | Created from the latest `main`; open the PR against `main` |
+
+Both `main` and `dev` are protected. Changes require a pull request, **three approving reviews from other collaborators**, resolution of review conversations, and a passing **Validate contracts** check. The branch must be up to date with its target. New reviewable changes dismiss stale approvals, and the latest push needs approval from someone other than its pusher. These rules also apply to administrators. Direct pushes, force pushes and deletion of these two branches are blocked.
+
+The repository allows **rebase merging only**. Merge commits and squash merging are disabled, preserving the individual commits in a linear history. Reviewers check the actual changes, the explanation, validation results and consistency with the shared service contracts before approving.
+
+### Branch naming and normal development
+
+Use lowercase names with hyphens: `<type>/<issue-number>-<short-description>`.
+
+| Type | Example |
+| --- | --- |
+| `feat` | `feat/12-battle-challenges` |
+| `fix` | `fix/15-prevent-duplicate-rewards` |
+| `docs` | `docs/3-service-contracts` |
+| `ci`, `test`, `refactor`, `chore` | `ci/4-contract-validation` |
+| Release | `release/1.0.0` |
+
+Start each task from an updated `dev`, make focused commits on its own branch, push that branch and open a PR targeting `dev`. Avoid mixing unrelated issues. To update a PR branch, fetch the target and rebase your task branch onto it; resolve conflicts and rerun validation before requesting fresh reviews. If the branch has already been pushed, use `--force-with-lease` only on your own task branch, never on `main` or `dev` or a branch another teammate is using. Delete the task branch after it is merged.
+
+For a release, create `release/<version>` from the current `main` and cherry-pick only the reviewed, not-yet-released commits from `dev`, in their original order. Record their source commit IDs in the release PR so the next release does not replay them. Merge that PR into `main` using Rebase and merge. GitHub rebasing creates new commit IDs, so do not rely on identical hashes between `main` and `dev` or repeatedly promote the long-lived `dev` branch directly. [GitHub merge behavior](https://docs.github.com/en/pull-requests/reference/pull-request-merges).
+
+### Commit messages
+
+Use a single-line Conventional Commit title:
+
+```text
+type(optional-scope): explain the change in imperative form
+```
+
+Types are `feat`, `fix`, `docs`, `refactor`, `test`, `ci` and `chore`. Scopes, when helpful, identify a service or shared area, such as `battle`, `guild` or `contracts`. Keep the title concise; put the detailed explanation in the PR. Reference the issue when completing its work, for example:
+
+```text
+docs: define stack and API contracts (closes #2, closes #3)
+```
+
+An issue-closing reference takes effect when the commit reaches the default branch, `main`; merging a task into `dev` does not close its issue automatically. The PR and issue can still show the development work before release.
+
+### Pull request content and review
+
+Every PR must be **clear and explanatory**. Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md) to explain:
+
+1. The problem or requirement being addressed, what changed, and why that approach was chosen.
+2. The resulting behavior or contract changes, with a concrete example when it helps the reviewer.
+3. Which validation/tests ran and their results; include coverage for service-code changes.
+4. The related issue, plus any compatibility implications, migrations or remaining work. Release PRs also list source development commits and the intended version.
+
+The author answers review comments and updates the PR description when its scope changes. Reviewers must understand the affected common services and interfaces. Approval is a review of the final changes; obtain the required approvals again after changes invalidate them.
+
+### Validation and test coverage
+
+The [Contract validation workflow](.github/workflows/validate-contracts.yml) runs on every PR targeting `main` or `dev`, and on pushes to those branches. It publishes the required job named **Validate contracts**. It validates OpenAPI and JSON Schemas, resolves references, checks the README endpoint/type catalog, validates message examples, and verifies rejection of malformed or excessive values. It runs for documentation changes too, avoiding a missing required check caused by path filters.
+
+Run the same checks locally from the repository root:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r .github/scripts/requirements.txt
+.venv/bin/python .github/scripts/check_contracts.py
+```
+
+Python is used only for repository validation tooling; the application services remain Go and TypeScript. The check uses public repository files and does not require credentials for private service submodules.
+
+For future service code, the agreed minimum is **80% statement coverage per service**, plus **70% branch coverage for TypeScript services**. Measure Go coverage with `go test -coverprofile=coverage.out ./...` and TypeScript coverage with the service's test runner. Each service's CI must enforce these thresholds when implementation is introduced. Exclude generated code, dependencies and test fixtures, not application logic. New and changed behavior needs meaningful tests, including failures and boundary cases; a percentage alone is insufficient.
+
+Tests must cover relevant authorization/ownership checks, valid actions, invalid input, conflicting state and duplicate/retried operations. Cross-service changes need contract or integration checks covering affected callers and responses. Documentation-only changes require the contract check; runtime coverage does not apply while no service code exists. Never claim unrun checks passed—record any limitation in the PR.
+
+### Versioning and repository hygiene
+
+Use Semantic Versioning for releases: `MAJOR.MINOR.PATCH`, tagged on the approved `main` commit as `vMAJOR.MINOR.PATCH`. A breaking public contract change increments the major version; a backward-compatible feature increments minor; a compatible correction increments patch. During initial `0.x` development, document compatibility changes explicitly. Tags identify releases and are never moved to different commits.
+
+The HTTP contract's `info.version` tracks that contract; `/v1` changes only for breaking HTTP interfaces, and event types receive a new version suffix for incompatible payloads. Package/configuration revisions are distinct from release tags. Update the relevant contract, README and examples together whenever an interface changes, and keep each future microservice's own version and contract documentation consistent.
+
+Commit source, documentation and dependency lockfiles. Keep secrets, real `.env` files, installed dependencies, build outputs and coverage artifacts out of Git. Use `.env.example` only for placeholders. Keep changes small enough for meaningful review and document each contributor's work through issues, commits and PRs.
+
+Source: *FAF.PAD21.1 Autumn 2026, PAD_LAB_0_2026.pdf* — Lab 0 requirements, pages 2–4, and Topic 2: Tamagotchi Go, pages 8–11.
