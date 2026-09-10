@@ -29,7 +29,7 @@ Each service lives in its own private repository, linked under [`services/`](ser
 
 ![Shared backend architecture](images/architecture.png)
 
-Client apps reach every service through a single **API Gateway**, and each service owns its own PostgreSQL database with its own credentials — services never share a database. Neither of these is drawn as a separate box per service in the diagram above but both apply to all eight backend services. The one exception on the gateway side is Guild's chat: client apps hold a direct WebSocket connection to Guild Service for real-time messages, shown as the green line bypassing the gateway. Firebase Cloud Messaging is also reached directly by client apps for push delivery, independent of the gateway.
+Client apps reach every service through a single **API Gateway**, and each service owns its database and credentials: MongoDB for Package Registry, PostgreSQL for the other seven services. Services never share a database. Neither of these is drawn as a separate box per service in the diagram above but both apply to all eight backend services. The one exception on the gateway side is Guild's chat: client apps hold a direct WebSocket connection to Guild Service for real-time messages, shown as the green line bypassing the gateway. Firebase Cloud Messaging is also reached directly by client apps for push delivery, independent of the gateway.
 
 Black arrows are direct HTTP calls between services. Orange arrows are events flowing through Kafka.
 
@@ -54,7 +54,7 @@ The service dependencies are the black arrows above — direct HTTP calls, not r
 
 The event flow is represented with orange arrows above. Anything that doesn't have to happen before a response is sent travels as an event through Kafka instead of a direct call.
 
-User Management publishes `user.package-registered.v1` on enrollment; Package Registry and Tamagotchi both consume it independently to provision their own side of a new enrollment. Six services — User Management, Map, Battle, Tamagotchi, Guild and Monster Raid — publish their own domain events (friend requests, encounters, battle results, pet use/capture, guild invites, raid results) onto a shared topic that Notification consumes exclusively; Notification turns every one of those into a push message and hands it to Firebase Cloud Messaging, which delivers it straight to the client app.
+User Management publishes `user.package-registered.v1` on enrollment; Package Registry and Tamagotchi consume it independently: Registry updates its enrollment projection, while Tamagotchi provisions the starter pet. Six services — User Management, Map, Battle, Tamagotchi, Guild and Monster Raid — publish their own domain events (friend requests, encounters, battle results, pet use/capture, guild invites, raid results) onto one Kafka topic per event type, consumed by Notification; Notification turns every one of those into a push message and hands it to Firebase Cloud Messaging, which delivers it straight to the client app.
 
 ### Example: finishing a battle
 
@@ -160,11 +160,13 @@ The team works in **Go and TypeScript**. Each person implements both of their se
 | Map | Alexandru | Go, `net/http` | PostgreSQL `locations` | HTTP/JSON; publishes encounter events |
 | Monster Raid | Alexandru | Go, `net/http` | PostgreSQL `raids` | HTTP/JSON with client polling of raid state; publishes raid events |
 | Guild | Nicolae | TypeScript, Fastify | PostgreSQL `guilds` | HTTP/JSON; WebSocket chat; publishes invitation events |
-| Package Registry | Nicolae | TypeScript, Fastify | PostgreSQL `registry` (JSONB for configurations) | HTTP/JSON; consumes enrollment events |
+| Package Registry | Nicolae | TypeScript, Fastify | MongoDB `registry` (versioned configuration documents) | HTTP/JSON; consumes enrollment events |
 
 **Why two languages, and these two.** Go's standard library gives small, fast binaries with built-in concurrency, which fits the request-heavy, timer-driven services (settlement, combat, location updates, raid attacks). TypeScript with Fastify gives schema-validated routes, JSON-native handling of package-specific statistics and easy WebSocket support, which fits pets, notifications, chat and configuration. One language per person avoids context switching. The cost is keeping validation and serialization equivalent in both stacks; the language-neutral contract below is the shared reference.
 
-**PostgreSQL per service.** Balances, ownership, holds and combat state need local transactions; PostgreSQL gives them, and JSONB stores each package's differently named statistics without a shared schema. Separate databases make ownership explicit at the cost of cross-service consistency work, handled with the outbox and settlement flows below. For the lab, one PostgreSQL server can host all databases with separate credentials.
+**PostgreSQL for seven services.** Balances, ownership, holds and combat state need local transactions; PostgreSQL gives them, and JSONB stores each package's differently named statistics without a shared schema. Separate databases make ownership explicit at the cost of cross-service consistency work, handled with the outbox and settlement flows below. For the lab, one PostgreSQL server can host the seven relational databases with separate credentials.
+
+**MongoDB for Package Registry.** Store each immutable configuration version as a document containing starter pets, statistics and care actions. Keep packages, enrollments, monsters and schedules in separate collections, with unique indexes for identity and version pairs. Publish configurations and advance their current-version pointer atomically; persist enrollment projections and processed-event inbox entries in one transaction before committing Kafka offsets. Run MongoDB as a replica set to support these transactions. See the [Registry storage design](services/package-registry/README.md#storage-design).
 
 **HTTP/JSON for requests.** Synchronous calls handle decisions the caller must know immediately, such as reserving pets or checking eligibility. JSON is inspectable from both languages and from any client app. Calls time out after two seconds and unfinished work stays visible for retry. Clients poll battle and raid resources; guild chat uses WebSockets because it needs continuous delivery, and therefore reconnect and history replay.
 
@@ -450,7 +452,7 @@ The server assigns sender, guild, timestamp and a per-guild increasing sequence.
 
 In this common repository, `main` requires two approving reviews from other collaborators, all review conversations resolved, a passing **Validate contracts** check and a branch that is up to date with its target. A new push dismisses earlier approvals. Direct pushes, force pushes and deletion of `main` are blocked, including for administrators.
 
-User Management and Battle use the same task-branch-to-`main` flow, with **no required approving reviews** while each private repository has a single maintainer. Their `main` branches still require a PR and block force pushes and deletion.
+User Management, Battle, Guild and Package Registry use the same task-branch-to-`main` flow, with **no required approving reviews** while each private repository has a single maintainer. Their `main` branches still require a PR and block force pushes and deletion.
 
 - **Rebase and merge** focused PRs to keep a linear history.
 - **Squash and merge** PRs with many commits or fix-up commits; use a Conventional Commit title.
@@ -505,8 +507,8 @@ These apply to every service in both languages; reviewers request changes for an
 | --- | --- |
 | Layers: transport, application, domain, persistence | Handlers decode, validate, call an application function and encode. Game rules live in plain functions with no HTTP or SQL, so they are unit-testable. |
 | Validate at the boundary | Every body, path and query value is checked against the contract before any logic; unknown fields are rejected. |
-| Repository interface per aggregate | One component talks to PostgreSQL; application code depends on an interface so tests can use a fake. |
-| Explicit transactions | Multi-row operations (hold, settlement, outbox row) run in one transaction opened by the application layer. |
+| Repository interface per aggregate | One component talks to the service's database (PostgreSQL or MongoDB); application code depends on an interface so tests can use a fake. |
+| Explicit transactions | Multi-record operations (hold, settlement, configuration publication, inbox/outbox) run in one transaction opened by the application layer. |
 | Shared middleware for cross-cutting behavior | Authentication, idempotency replay and error mapping are written once and applied to every route. |
 | Outbox for events | Business change and event row are written together; a worker publishes. No direct publish from a handler. |
 | Timeouts on every outbound call | Go `context.Context` deadlines; TypeScript `AbortSignal.timeout()`. |
