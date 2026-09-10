@@ -27,75 +27,34 @@ Each service lives in its own private repository, linked under [`services/`](ser
 
 ### System overview
 
-Client apps call the service that owns the action: User Management for accounts and friends, Tamagotchi for pets, Battle for PvP, Map for location, Monster Raid for raids, Guild for membership and chat, Notification for push devices, and Package Registry for app configuration. Every service owns its own PostgreSQL database with its own credentials; services never share a database. Events between services travel through Kafka (see [Event flow](#event-flow)), and Notification delivers push messages through Firebase Cloud Messaging.
+![Shared backend architecture](images/architecture.png)
 
-```mermaid
-flowchart LR
-    Client(["Client apps"]) --> UM["User Management"] --> UMDB[("users DB")]
-    Client --> BT["Battle"] --> BTDB[("battles DB")]
-    Client --> TM["Tamagotchi"] --> TMDB[("pets DB")]
-    Client --> NT["Notification"] --> NTDB[("notifications DB")]
-    Client --> MP["Map"] --> MPDB[("locations DB")]
-    Client --> MR["Monster Raid"] --> MRDB[("raids DB")]
-    Client --> GD["Guild"] --> GDDB[("guilds DB")]
-    Client --> PR["Package Registry"] --> PRDB[("registry DB")]
-    NT -->|"push"| FCM["Firebase Cloud Messaging"]
-```
+Client apps reach every service through a single **API Gateway**, and each service owns its own PostgreSQL database with its own credentials — services never share a database. Neither of these is drawn as a separate box per service in the diagram above but both apply to all eight backend services. The one exception on the gateway side is Guild's chat: client apps hold a direct WebSocket connection to Guild Service for real-time messages, shown as the green line bypassing the gateway. Firebase Cloud Messaging is also reached directly by client apps for push delivery, independent of the gateway.
+
+Black arrows are direct HTTP calls between services. Orange arrows are events flowing through Kafka.
 
 ### Service dependencies
 
-Arrows show which service calls which over HTTP. Authentication calls (every service verifies JWTs with User Management's public keys) are omitted for readability.
+The service dependencies are the black arrows above — direct HTTP calls, not routed through the API Gateway. Authentication calls (every service verifies JWTs with User Management's public keys) aren't drawn, for the same readability reason.
 
-```mermaid
-flowchart LR
-    Map["Map"]
-    Guild["Guild"]
-    Battle["Battle"]
-    Raid["Monster Raid"]
-    User["User Management"]
-    Pet["Tamagotchi"]
-    Registry["Package Registry"]
-
-    Map -->|"friends and enemies"| User
-    Guild -->|"identity, relationships"| User
-    Battle -->|"currency holds and settlement"| User
-    Battle -->|"pet reservations, XP, capture"| Pet
-    Battle -->|"combat rules"| Registry
-    Raid -->|"membership, eligibility"| Guild
-    Raid -->|"currency rewards"| User
-    Raid -->|"primary pet, XP"| Pet
-    Raid <-->|"schedule start and cancel, pinned config"| Registry
-    Pet -->|"starter pets, care rules"| Registry
-    Pet -->|"enrollment check, local rewards"| User
-    User -->|"starter provisioning"| Pet
-    User -->|"package status, rules"| Registry
-```
+- **Monster Raid → Package Registry** — raid configuration and lifecycle, plus reward rule lookups.
+- **Tamagotchi → Package Registry** — starter pet definitions, care and growth rules.
+- **Battle → Package Registry** — package combat rules, plus reward rule lookups.
+- **Battle → Tamagotchi** — pet properties, XP and capture at battle settlement.
+- **Monster Raid → Tamagotchi** — primary pet properties and XP for participating members.
+- **Tamagotchi → User Management** — enrollment checks and local reward settlement.
+- **User Management → Tamagotchi** — starter-pet provisioning recovery, a fallback if the enrollment event was missed.
+- **Monster Raid → User Management** — currency reward settlement.
+- **Battle → User Management** — currency and boost settlement.
+- **Map → User Management** — friends/enemies lookups, used to decide what an encounter should trigger.
+- **Guild → User Management** — identity and relationship lookups for membership and invite eligibility.
+- **Monster Raid → Guild** — membership and permission checks before a member can join a raid.
 
 ### Event flow
 
-Anything that does not have to happen before a response is sent travels as an event through Kafka. Notification turns events into push messages; Package Registry and Tamagotchi react to enrollments.
+The event flow is represented with orange arrows above. Anything that doesn't have to happen before a response is sent travels as an event through Kafka instead of a direct call.
 
-```mermaid
-flowchart LR
-    subgraph Producers
-        UM["User Management"]
-        MP["Map"]
-        BT["Battle"]
-        TM["Tamagotchi"]
-        GD["Guild"]
-        MR["Monster Raid"]
-    end
-    subgraph Kafka["Kafka: one topic per event type, keyed by aggregateId"]
-        T1["user.package-registered.v1"]
-        T2["friend, map, battle, pet, guild and raid events"]
-    end
-    UM --> T1
-    UM & MP & BT & TM & GD & MR --> T2
-    T1 -->|"group: package-registry"| PR["Package Registry"]
-    T1 -->|"group: tamagotchi"| TM2["Tamagotchi"]
-    T2 -->|"group: notification"| NT["Notification"]
-    NT -->|"push"| FCM["Firebase Cloud Messaging"] --> Apps["Client apps"]
-```
+User Management publishes `user.package-registered.v1` on enrollment; Package Registry and Tamagotchi both consume it independently to provision their own side of a new enrollment. Six services — User Management, Map, Battle, Tamagotchi, Guild and Monster Raid — publish their own domain events (friend requests, encounters, battle results, pet use/capture, guild invites, raid results) onto a shared topic that Notification consumes exclusively; Notification turns every one of those into a push message and hands it to Firebase Cloud Messaging, which delivers it straight to the client app.
 
 ### Example: finishing a battle
 
