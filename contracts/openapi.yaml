@@ -1,0 +1,6483 @@
+openapi: 3.1.1
+info:
+  title: Tamagotchi Go communication contract
+  version: 1.0.0
+  description: Lab 0 proposed API contract, not an implemented backend. Paths are relative to the owning service
+    origin; this document does not require a gateway.
+tags:
+- name: User Management
+- name: Tamagotchi
+- name: Battle
+- name: Notification
+- name: Map
+- name: Monster Raid
+- name: Guild
+- name: Package Registry
+paths:
+  /v1/auth/register:
+    post:
+      tags:
+      - User Management
+      summary: Register a user and enroll in a package
+      operationId: POST_v1_auth_register
+      description: Validate an active package; create account/enrollment atomically. Grant one initial power boost
+        per account. Publish enrollment for Registry and starter provisioning. New accounts have zero currency and
+        must earn a raid reward before staking a PvP battle.
+      x-audience: public
+      responses:
+        '201':
+          description: Register a user and enroll in a package
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Register'
+      security: []
+  /v1/auth/login:
+    post:
+      tags:
+      - User Management
+      summary: Create a session
+      operationId: POST_v1_auth_login
+      description: Create a session
+      x-audience: public
+      responses:
+        '200':
+          description: Create a session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+      security: []
+  /v1/auth/refresh:
+    post:
+      tags:
+      - User Management
+      summary: Rotate the refresh token
+      operationId: POST_v1_auth_refresh
+      description: Rotate the refresh token
+      x-audience: public
+      responses:
+        '200':
+          description: Rotate the refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Refresh'
+      security: []
+  /v1/auth/logout:
+    post:
+      tags:
+      - User Management
+      summary: Revoke the refresh session
+      operationId: POST_v1_auth_logout
+      description: Revoke the refresh session
+      x-audience: public
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Refresh'
+      security: []
+  /.well-known/jwks.json:
+    get:
+      tags:
+      - User Management
+      summary: Read public token verification keys
+      operationId: GET_well_known_jwks_json
+      description: Read public token verification keys
+      x-audience: public
+      responses:
+        '200':
+          description: Read public token verification keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JWKS'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      security: []
+  /v1/users/me:
+    get:
+      tags:
+      - User Management
+      summary: Read your private profile
+      operationId: GET_v1_users_me
+      description: Read your private profile
+      x-audience: player
+      responses:
+        '200':
+          description: Read your private profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+    patch:
+      tags:
+      - User Management
+      summary: Update your public username
+      operationId: PATCH_v1_users_me
+      description: Update your public username
+      x-audience: player
+      responses:
+        '200':
+          description: Update your public username
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+  /v1/users/{userId}:
+    get:
+      tags:
+      - User Management
+      summary: Read a public user profile
+      operationId: GET_v1_users_userId
+      description: Read a public user profile
+      x-audience: player
+      responses:
+        '200':
+          description: Read a public user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicUser'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+  /v1/users/me/packages/{packageId}:
+    put:
+      tags:
+      - User Management
+      summary: Enroll in an active package
+      operationId: PUT_v1_users_me_packages_packageId
+      description: Unique user/package pair. Publishes user.package-registered.v1 for Registry and Tamagotchi. Repeated
+        enrollment does not create another starter.
+      x-audience: player
+      responses:
+        '200':
+          description: Enroll in an active package
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrollment'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/friend-requests:
+    post:
+      tags:
+      - User Management
+      summary: Send a friend request
+      operationId: POST_v1_friend_requests
+      description: Send a friend request
+      x-audience: player
+      responses:
+        '201':
+          description: Send a friend request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FriendRequest'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FriendRequestInput'
+    get:
+      tags:
+      - User Management
+      summary: List your sent and received requests
+      operationId: GET_v1_friend_requests
+      description: List your sent and received requests
+      x-audience: player
+      responses:
+        '200':
+          description: List your sent and received requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FriendRequestPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/friend-requests/{requestId}/decision:
+    put:
+      tags:
+      - User Management
+      summary: Accept or decline a request
+      operationId: PUT_v1_friend_requests_requestId_decision
+      description: Only the recipient may decide. Acceptance creates mutual friendship atomically and removes enemy
+        markers for this pair.
+      x-audience: player
+      responses:
+        '200':
+          description: Accept or decline a request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FriendRequest'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: requestId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestDecision'
+  /v1/friend-requests/{requestId}:
+    delete:
+      tags:
+      - User Management
+      summary: Cancel your pending friend request
+      operationId: DELETE_v1_friend_requests_requestId
+      description: Sender only; atomically changes pending to cancelled.
+      x-audience: player
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: requestId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/friends/{userId}:
+    delete:
+      tags:
+      - User Management
+      summary: Remove a mutual friendship
+      operationId: DELETE_v1_friends_userId
+      description: Remove a mutual friendship
+      x-audience: player
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/relationships:
+    get:
+      tags:
+      - User Management
+      summary: List your friends and enemies
+      operationId: GET_v1_relationships
+      description: List your friends and enemies
+      x-audience: player
+      responses:
+        '200':
+          description: List your friends and enemies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelationshipPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/enemies/{userId}:
+    put:
+      tags:
+      - User Management
+      summary: Mark a user as an enemy
+      operationId: PUT_v1_enemies_userId
+      description: Directed enemy relationship; removes an existing mutual friendship atomically. Self-relations
+        are rejected.
+      x-audience: player
+      responses:
+        '200':
+          description: Mark a user as an enemy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Relationship'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+    delete:
+      tags:
+      - User Management
+      summary: Remove your enemy marker
+      operationId: DELETE_v1_enemies_userId
+      description: Remove your enemy marker
+      x-audience: player
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/wallet:
+    get:
+      tags:
+      - User Management
+      summary: Read your currencies and available boosts
+      operationId: GET_v1_wallet
+      description: Read your currencies and available boosts
+      x-audience: player
+      responses:
+        '200':
+          description: Read your currencies and available boosts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Wallet'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /internal/v1/relationships:
+    get:
+      tags:
+      - User Management
+      summary: Read a relationship for another service
+      operationId: GET_internal_v1_relationships
+      description: Read a relationship for another service
+      x-audience: internal
+      responses:
+        '200':
+          description: Read a relationship for another service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Relationship'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: userId
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: otherUserId
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - map
+      - guild
+      - battle
+  /internal/v1/users/{userId}/relationships:
+    get:
+      tags:
+      - User Management
+      summary: List user relationships for map visibility
+      operationId: GET_internal_v1_users_userId_relationships
+      description: List user relationships for map visibility
+      x-audience: internal
+      responses:
+        '200':
+          description: List user relationships for map visibility
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelationshipPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - map
+  /internal/v1/users/{userId}/packages/{packageId}:
+    get:
+      tags:
+      - User Management
+      summary: Verify canonical package enrollment
+      operationId: GET_internal_v1_users_userId_packages_packageId
+      description: Verify canonical package enrollment
+      x-audience: internal
+      responses:
+        '200':
+          description: Verify canonical package enrollment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrollment'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - tamagotchi
+      - package-registry
+      - notification
+  /internal/v1/battle-holds/{battleId}:
+    put:
+      tags:
+      - User Management
+      summary: Reserve both stakes and chosen boosts
+      operationId: PUT_internal_v1_battle_holds_battleId
+      description: Reserve both stakes and chosen boosts
+      x-audience: internal
+      responses:
+        '200':
+          description: Reserve both stakes and chosen boosts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hold'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BattleHoldInput'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - battle
+    delete:
+      tags:
+      - User Management
+      summary: Release an aborted battle reservation
+      operationId: DELETE_internal_v1_battle_holds_battleId
+      description: Release an aborted battle reservation
+      x-audience: internal
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - battle
+  /internal/v1/battle-settlements/{battleId}:
+    put:
+      tags:
+      - User Management
+      summary: Apply battle currency transfer and consume boosts
+      operationId: PUT_internal_v1_battle_settlements_battleId
+      description: Apply battle currency transfer and consume boosts
+      x-audience: internal
+      responses:
+        '200':
+          description: Apply battle currency transfer and consume boosts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResult'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BattleMoneyResult'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - battle
+  /internal/v1/raid-settlements/{raidId}:
+    put:
+      tags:
+      - User Management
+      summary: Apply raid currency rewards
+      operationId: PUT_internal_v1_raid_settlements_raidId
+      description: Apply raid currency rewards
+      x-audience: internal
+      responses:
+        '200':
+          description: Apply raid currency rewards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResult'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: raidId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RaidMoneyInput'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - monster-raid
+  /internal/v1/local-rewards/{operationId}:
+    put:
+      tags:
+      - User Management
+      summary: Apply one validated care-action currency reward
+      operationId: PUT_internal_v1_local_rewards_operationId
+      description: Apply one validated care-action currency reward
+      x-audience: internal
+      responses:
+        '200':
+          description: Apply one validated care-action currency reward
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalRewardResult'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: operationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocalRewardInput'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - tamagotchi
+  /v1/pets:
+    get:
+      tags:
+      - Tamagotchi
+      summary: Read your owned pets and active primary
+      operationId: GET_v1_pets
+      description: Read your owned pets and active primary
+      x-audience: player
+      responses:
+        '200':
+          description: Read your owned pets and active primary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetRoster'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /v1/pets/{petId}:
+    get:
+      tags:
+      - Tamagotchi
+      summary: Read an owned pet
+      operationId: GET_v1_pets_petId
+      description: Only the current owner. Battle/Raid use reserved snapshots instead of this player endpoint.
+      x-audience: player
+      responses:
+        '200':
+          description: Read an owned pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: petId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+  /v1/pets/primary:
+    put:
+      tags:
+      - Tamagotchi
+      summary: Select your primary pet
+      operationId: PUT_v1_pets_primary
+      description: Select your primary pet
+      x-audience: player
+      responses:
+        '200':
+          description: Select your primary pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetRoster'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrimaryInput'
+  /v1/pets/{petId}/care:
+    post:
+      tags:
+      - Tamagotchi
+      summary: Perform a package-defined care action
+      operationId: POST_v1_pets_petId_care
+      description: Owner only. Reject reserved pets. Validate action against the pinned package configuration, elapsed
+        server time, cooldown and daily XP/currency caps.
+      x-audience: player
+      responses:
+        '200':
+          description: Perform a package-defined care action
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CareResult'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: petId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CareInput'
+  /v1/care-actions/{operationId}:
+    get:
+      tags:
+      - Tamagotchi
+      summary: Read care-action currency settlement progress
+      operationId: GET_v1_care_actions_operationId
+      description: Only the user who performed the action. operationId is the returned actionInstanceId; the pet
+        snapshot is the original action result and settlement status may advance.
+      x-audience: player
+      responses:
+        '200':
+          description: Read care-action currency settlement progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CareResult'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: operationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+  /v1/pet-types:
+    get:
+      tags:
+      - Tamagotchi
+      summary: Read the six combat types and advantage cycle
+      operationId: GET_v1_pet_types
+      description: Read the six combat types and advantage cycle
+      x-audience: player
+      responses:
+        '200':
+          description: Read the six combat types and advantage cycle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TypeCatalog'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /internal/v1/starter-pets/{operationId}:
+    put:
+      tags:
+      - Tamagotchi
+      summary: Provision a starter pet once
+      operationId: PUT_internal_v1_starter_pets_operationId
+      description: operationId identifies a provisioning attempt/replay; uniqueness is enforced by userId/packageId
+        as well. Set primary only if the user has none. The same logic handles the enrollment event.
+      x-audience: internal
+      responses:
+        '200':
+          description: Provision a starter pet once
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: operationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StarterInput'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - user-management
+  /internal/v1/pet-reservations/{activityId}:
+    put:
+      tags:
+      - Tamagotchi
+      summary: Reserve pets and return frozen combat properties
+      operationId: PUT_internal_v1_pet_reservations_activityId
+      description: Reserve pets and return frozen combat properties
+      x-audience: internal
+      responses:
+        '200':
+          description: Reserve pets and return frozen combat properties
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetReservation'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: activityId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PetReserveInput'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - battle
+      - monster-raid
+    delete:
+      tags:
+      - Tamagotchi
+      summary: Release unused pets without rewards
+      operationId: DELETE_internal_v1_pet_reservations_activityId
+      description: Release unused pets without rewards
+      x-audience: internal
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: activityId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - battle
+      - monster-raid
+  /internal/v1/pet-battle-settlements/{battleId}:
+    put:
+      tags:
+      - Tamagotchi
+      summary: Apply XP, transfer the loser primary and release pets
+      operationId: PUT_internal_v1_pet_battle_settlements_battleId
+      description: Apply XP, transfer the loser primary and release pets
+      x-audience: internal
+      responses:
+        '200':
+          description: Apply XP, transfer the loser primary and release pets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetResult'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PetBattleResult'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - battle
+  /internal/v1/pet-raid-settlements/{activityId}:
+    put:
+      tags:
+      - Tamagotchi
+      summary: Apply raid pet reward and release the primary
+      operationId: PUT_internal_v1_pet_raid_settlements_activityId
+      description: Apply raid pet reward and release the primary
+      x-audience: internal
+      responses:
+        '200':
+          description: Apply raid pet reward and release the primary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetResult'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: activityId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PetRaidResult'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - monster-raid
+  /v1/battles:
+    post:
+      tags:
+      - Battle
+      summary: Challenge another player
+      operationId: POST_v1_battles
+      description: Challenge another player
+      x-audience: player
+      responses:
+        '201':
+          description: Challenge another player
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Battle'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BattleCreate'
+    get:
+      tags:
+      - Battle
+      summary: List your battles
+      operationId: GET_v1_battles
+      description: List your battles
+      x-audience: player
+      responses:
+        '200':
+          description: List your battles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BattlePage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/battles/{battleId}:
+    get:
+      tags:
+      - Battle
+      summary: Read battle progress and settlement
+      operationId: GET_v1_battles_battleId
+      description: Read battle progress and settlement
+      x-audience: player
+      responses:
+        '200':
+          description: Read battle progress and settlement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Battle'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+    delete:
+      tags:
+      - Battle
+      summary: Cancel your pending challenge
+      operationId: DELETE_v1_battles_battleId
+      description: Challenger only, before preparation/active combat.
+      x-audience: player
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/battles/{battleId}/accept:
+    post:
+      tags:
+      - Battle
+      summary: Accept and reserve both loadouts
+      operationId: POST_v1_battles_battleId_accept
+      description: Opponent only. Returns preparing while dependencies reserve resources. Starts combat only after
+        all holds succeed; on failure compensates reservations and cancels.
+      x-audience: player
+      responses:
+        '202':
+          description: Accept and reserve both loadouts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Battle'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BattleAccept'
+  /v1/battles/{battleId}/decline:
+    post:
+      tags:
+      - Battle
+      summary: Decline a pending challenge
+      operationId: POST_v1_battles_battleId_decline
+      description: Opponent only, pending status only.
+      x-audience: player
+      responses:
+        '200':
+          description: Decline a pending challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Battle'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/battles/{battleId}/actions:
+    post:
+      tags:
+      - Battle
+      summary: Attack or forfeit
+      operationId: POST_v1_battles_battleId_actions
+      description: Attack or forfeit
+      x-audience: player
+      responses:
+        '200':
+          description: Attack or forfeit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Battle'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BattleAction'
+  /v1/notification-devices/{deviceId}:
+    put:
+      tags:
+      - Notification
+      summary: Register or refresh your push device
+      operationId: PUT_v1_notification_devices_deviceId
+      description: Register or refresh your push device
+      x-audience: player
+      responses:
+        '200':
+          description: Register or refresh your push device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceInput'
+    delete:
+      tags:
+      - Notification
+      summary: Remove your push device
+      operationId: DELETE_v1_notification_devices_deviceId
+      description: Remove your push device
+      x-audience: player
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/notifications:
+    get:
+      tags:
+      - Notification
+      summary: List your notifications
+      operationId: GET_v1_notifications
+      description: List your notifications
+      x-audience: player
+      responses:
+        '200':
+          description: List your notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/notifications/{notificationId}/read:
+    put:
+      tags:
+      - Notification
+      summary: Mark your notification as read
+      operationId: PUT_v1_notifications_notificationId_read
+      description: Mark your notification as read
+      x-audience: player
+      responses:
+        '200':
+          description: Mark your notification as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: notificationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/map/location:
+    put:
+      tags:
+      - Map
+      summary: Update your latest location
+      operationId: PUT_v1_map_location
+      description: Ignore recordedAt <= stored timestamp. Reject timestamps more than 30 seconds in the future.
+        Only authenticated user location can be updated.
+      x-audience: player
+      responses:
+        '200':
+          description: Update your latest location
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationResult'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationInput'
+  /v1/map/nearby:
+    get:
+      tags:
+      - Map
+      summary: Read friends, enemies and nearby strangers
+      operationId: GET_v1_map_nearby
+      description: Unknown users require fresh locations from both users, within 6 meters. Friends/enemies remain
+        listed with stale or null locations. Map computes distance; the client cannot set the detection threshold.
+      x-audience: player
+      responses:
+        '200':
+          description: Read friends, enemies and nearby strangers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MapEntryPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/guilds:
+    post:
+      tags:
+      - Guild
+      summary: Create a guild and become leader
+      operationId: POST_v1_guilds
+      description: Create a guild and become leader
+      x-audience: player
+      responses:
+        '201':
+          description: Create a guild and become leader
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guild'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GuildInput'
+    get:
+      tags:
+      - Guild
+      summary: List guilds you belong to
+      operationId: GET_v1_guilds
+      description: List guilds you belong to
+      x-audience: player
+      responses:
+        '200':
+          description: List guilds you belong to
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuildPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/guilds/{guildId}:
+    get:
+      tags:
+      - Guild
+      summary: Read a guild you belong to
+      operationId: GET_v1_guilds_guildId
+      description: Read a guild you belong to
+      x-audience: player
+      responses:
+        '200':
+          description: Read a guild you belong to
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guild'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+    patch:
+      tags:
+      - Guild
+      summary: Edit guild details
+      operationId: PATCH_v1_guilds_guildId
+      description: Leader or officer only.
+      x-audience: player
+      responses:
+        '200':
+          description: Edit guild details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guild'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GuildInput'
+  /v1/guilds/{guildId}/members:
+    get:
+      tags:
+      - Guild
+      summary: List guild members
+      operationId: GET_v1_guilds_guildId_members
+      description: List guild members
+      x-audience: player
+      responses:
+        '200':
+          description: List guild members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/guilds/{guildId}/invitations:
+    post:
+      tags:
+      - Guild
+      summary: Invite another user
+      operationId: POST_v1_guilds_guildId_invitations
+      description: Leader/officer only; reject enemy relationship in either direction.
+      x-audience: player
+      responses:
+        '201':
+          description: Invite another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuildInvite'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FriendRequestInput'
+  /v1/guild-invitations:
+    get:
+      tags:
+      - Guild
+      summary: List your received guild invitations
+      operationId: GET_v1_guild_invitations
+      description: List your received guild invitations
+      x-audience: player
+      responses:
+        '200':
+          description: List your received guild invitations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuildInvitePage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/guild-invitations/{invitationId}/decision:
+    put:
+      tags:
+      - Guild
+      summary: Accept or decline a guild invitation
+      operationId: PUT_v1_guild_invitations_invitationId_decision
+      description: Recipient only. Acceptance creates membership atomically. A user may belong to multiple guilds.
+      x-audience: player
+      responses:
+        '200':
+          description: Accept or decline a guild invitation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuildInvite'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: invitationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestDecision'
+  /v1/guild-invitations/{invitationId}:
+    delete:
+      tags:
+      - Guild
+      summary: Revoke a pending guild invitation
+      operationId: DELETE_v1_guild_invitations_invitationId
+      description: Leader or officer of the invitation guild only; atomically changes pending to revoked.
+      x-audience: player
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: invitationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/guilds/{guildId}/members/{userId}/role:
+    put:
+      tags:
+      - Guild
+      summary: Change an officer/member role
+      operationId: PUT_v1_guilds_guildId_members_userId_role
+      description: Leader only; target must be an existing non-leader member.
+      x-audience: player
+      responses:
+        '200':
+          description: Change an officer/member role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleInput'
+  /v1/guilds/{guildId}/leader:
+    put:
+      tags:
+      - Guild
+      summary: Transfer guild leadership
+      operationId: PUT_v1_guilds_guildId_leader
+      description: Current leader only. Demote previous leader to officer atomically.
+      x-audience: player
+      responses:
+        '200':
+          description: Transfer guild leadership
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guild'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaderInput'
+  /v1/guilds/{guildId}/members/{userId}:
+    delete:
+      tags:
+      - Guild
+      summary: Leave a guild or remove a member
+      operationId: DELETE_v1_guilds_guildId_members_userId
+      description: Self may leave unless leader. Leader can remove officers/members; officers can remove ordinary
+        members. A leader must transfer leadership first. End removed member chat access.
+      x-audience: player
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/guilds/{guildId}/messages:
+    get:
+      tags:
+      - Guild
+      summary: Replay guild chat history
+      operationId: GET_v1_guilds_guildId_messages
+      description: Replay guild chat history
+      x-audience: player
+      responses:
+        '200':
+          description: Replay guild chat history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistory'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: afterSequence
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+  /v1/guilds/{guildId}/chat:
+    get:
+      tags:
+      - Guild
+      summary: Upgrade to guild chat WebSocket
+      operationId: GET_v1_guilds_guildId_chat
+      description: Upgrade has no JSON body. First application frame must be ChatAuthenticate within 5 seconds;
+        no messages/data are permitted before authentication and membership checks. See realtime.schema.json and
+        README.
+      x-audience: public
+      responses:
+        '101':
+          description: Upgrade to guild chat WebSocket
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      security: []
+  /internal/v1/guilds/{guildId}/members/{userId}/eligibility:
+    get:
+      tags:
+      - Guild
+      summary: Check current raid eligibility
+      operationId: GET_internal_v1_guilds_guildId_members_userId_eligibility
+      description: Check current raid eligibility
+      x-audience: internal
+      responses:
+        '200':
+          description: Check current raid eligibility
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Eligibility'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - monster-raid
+  /internal/v1/guilds/{guildId}/members:
+    get:
+      tags:
+      - Guild
+      summary: Read guild members for raid announcements
+      operationId: GET_internal_v1_guilds_guildId_members
+      description: Read guild members for raid announcements
+      x-audience: internal
+      responses:
+        '200':
+          description: Read guild members for raid announcements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - monster-raid
+  /v1/packages:
+    post:
+      tags:
+      - Package Registry
+      summary: Register a participating app
+      operationId: POST_v1_packages
+      description: Register a participating app
+      x-audience: admin
+      responses:
+        '201':
+          description: Register a participating app
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PackageInput'
+    get:
+      tags:
+      - Package Registry
+      summary: List active packages
+      operationId: GET_v1_packages
+      description: List active packages
+      x-audience: public
+      responses:
+        '200':
+          description: List active packages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackagePage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      security: []
+  /v1/packages/{packageId}:
+    get:
+      tags:
+      - Package Registry
+      summary: Read package metadata
+      operationId: GET_v1_packages_packageId
+      description: Read package metadata
+      x-audience: public
+      responses:
+        '200':
+          description: Read package metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      security: []
+    patch:
+      tags:
+      - Package Registry
+      summary: Update package metadata or status
+      operationId: PATCH_v1_packages_packageId
+      description: Update package metadata or status
+      x-audience: moderator/admin
+      responses:
+        '200':
+          description: Update package metadata or status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PackageUpdate'
+  /v1/packages/{packageId}/moderators/{userId}:
+    put:
+      tags:
+      - Package Registry
+      summary: Assign a package moderator
+      operationId: PUT_v1_packages_packageId_moderators_userId
+      description: Assign a package moderator
+      x-audience: admin
+      responses:
+        '200':
+          description: Assign a package moderator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+    delete:
+      tags:
+      - Package Registry
+      summary: Remove a package moderator
+      operationId: DELETE_v1_packages_packageId_moderators_userId
+      description: Remove a package moderator
+      x-audience: admin
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/packages/{packageId}/configurations:
+    post:
+      tags:
+      - Package Registry
+      summary: Publish immutable package rules
+      operationId: POST_v1_packages_packageId_configurations
+      description: Publish immutable package rules
+      x-audience: moderator/admin
+      responses:
+        '201':
+          description: Publish immutable package rules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageConfig'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PackageConfigInput'
+  /v1/packages/{packageId}/configurations/{configVersion}:
+    get:
+      tags:
+      - Package Registry
+      summary: Read a pinned package configuration
+      operationId: GET_v1_packages_packageId_configurations_configVersion
+      description: Read a pinned package configuration
+      x-audience: public
+      responses:
+        '200':
+          description: Read a pinned package configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageConfig'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: configVersion
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Version'
+      security: []
+  /v1/packages/{packageId}/users:
+    get:
+      tags:
+      - Package Registry
+      summary: List the package registration view
+      operationId: GET_v1_packages_packageId_users
+      description: List the package registration view
+      x-audience: moderator/admin
+      responses:
+        '200':
+          description: List the package registration view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/combat-rules/{rulesVersion}:
+    get:
+      tags:
+      - Package Registry
+      summary: Read versioned global combat and progression rules
+      operationId: GET_v1_combat_rules_rulesVersion
+      description: Read versioned global combat and progression rules
+      x-audience: public
+      responses:
+        '200':
+          description: Read versioned global combat and progression rules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CombatRules'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: rulesVersion
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Version'
+      security: []
+  /v1/monsters:
+    post:
+      tags:
+      - Package Registry
+      summary: Create a monster definition
+      operationId: POST_v1_monsters
+      description: Create a monster definition
+      x-audience: admin
+      responses:
+        '201':
+          description: Create a monster definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Monster'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MonsterInput'
+    get:
+      tags:
+      - Package Registry
+      summary: List monster definitions
+      operationId: GET_v1_monsters
+      description: List monster definitions
+      x-audience: player
+      responses:
+        '200':
+          description: List monster definitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonsterPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/monsters/{monsterId}:
+    get:
+      tags:
+      - Package Registry
+      summary: Read a monster definition
+      operationId: GET_v1_monsters_monsterId
+      description: Read a monster definition
+      x-audience: player
+      responses:
+        '200':
+          description: Read a monster definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Monster'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: monsterId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+  /internal/v1/monsters/{monsterId}/versions/{monsterVersion}:
+    get:
+      tags:
+      - Package Registry
+      summary: Read the pinned monster configuration
+      operationId: GET_internal_v1_monsters_monsterId_versions_monsterVersion
+      description: Read the pinned monster configuration
+      x-audience: internal
+      responses:
+        '200':
+          description: Read the pinned monster configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Monster'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: monsterId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: monsterVersion
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Version'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - monster-raid
+  /v1/raid-schedules:
+    post:
+      tags:
+      - Package Registry
+      summary: Configure and schedule a guild raid
+      operationId: POST_v1_raid_schedules
+      description: Configure and schedule a guild raid
+      x-audience: admin
+      responses:
+        '201':
+          description: Configure and schedule a guild raid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleInput'
+    get:
+      tags:
+      - Package Registry
+      summary: List raid schedules
+      operationId: GET_v1_raid_schedules
+      description: List raid schedules
+      x-audience: admin
+      responses:
+        '200':
+          description: List raid schedules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulePage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/raid-schedules/{scheduleId}:
+    get:
+      tags:
+      - Package Registry
+      summary: Read a schedule
+      operationId: GET_v1_raid_schedules_scheduleId
+      description: Read a schedule
+      x-audience: admin
+      responses:
+        '200':
+          description: Read a schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: scheduleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+  /v1/raid-schedules/{scheduleId}/status:
+    put:
+      tags:
+      - Package Registry
+      summary: Activate, deactivate or cancel a schedule
+      operationId: PUT_v1_raid_schedules_scheduleId_status
+      description: Activate, deactivate or cancel a schedule
+      x-audience: admin
+      responses:
+        '200':
+          description: Activate, deactivate or cancel a schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: scheduleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleStatus'
+  /internal/v1/raid-schedules/{scheduleId}/versions/{scheduleVersion}:
+    get:
+      tags:
+      - Package Registry
+      summary: Read an immutable raid reward/configuration snapshot
+      operationId: GET_internal_v1_raid_schedules_scheduleId_versions_scheduleVersion
+      description: Read an immutable raid reward/configuration snapshot
+      x-audience: internal
+      responses:
+        '200':
+          description: Read an immutable raid reward/configuration snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: scheduleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: scheduleVersion
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Version'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - monster-raid
+      - user-management
+      - tamagotchi
+  /internal/v1/raids/{raidId}:
+    put:
+      tags:
+      - Monster Raid
+      summary: Start a scheduled raid once
+      operationId: PUT_internal_v1_raids_raidId
+      description: raidId must equal scheduleId. Fetch and pin the schedule and monster configuration. Reject early
+        starts and inactive/cancelled schedules. One instance per schedule.
+      x-audience: internal
+      responses:
+        '200':
+          description: Start a scheduled raid once
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Raid'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: raidId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RaidStart'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - package-registry
+    delete:
+      tags:
+      - Monster Raid
+      summary: Cancel a raid and release reservations
+      operationId: DELETE_internal_v1_raids_raidId
+      description: Idempotently record a cancellation tombstone even if start has not arrived; reject later starts.
+        If already won/settling after victory, return 409 and retain the result. Cancellation rewards nobody.
+      x-audience: internal
+      responses:
+        '204':
+          description: Success; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: raidId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - package-registry
+  /v1/raids:
+    get:
+      tags:
+      - Monster Raid
+      summary: List raids for a guild
+      operationId: GET_v1_raids
+      description: Caller must currently belong to the guild.
+      x-audience: player
+      responses:
+        '200':
+          description: List raids for a guild
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RaidPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: guildId
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/raids/{raidId}:
+    get:
+      tags:
+      - Monster Raid
+      summary: Read raid state and reward progress
+      operationId: GET_v1_raids_raidId
+      description: Current guild members and recorded participants may view results.
+      x-audience: player
+      responses:
+        '200':
+          description: Read raid state and reward progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Raid'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: raidId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+  /v1/raids/{raidId}/participants:
+    post:
+      tags:
+      - Monster Raid
+      summary: Join using your primary pet
+      operationId: POST_v1_raids_raidId_participants
+      description: Join using your primary pet
+      x-audience: player
+      responses:
+        '201':
+          description: Join using your primary pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RaidParticipant'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: raidId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RaidJoin'
+  /v1/raids/{raidId}/attacks:
+    post:
+      tags:
+      - Monster Raid
+      summary: Contribute damage to the monster
+      operationId: POST_v1_raids_raidId_attacks
+      description: 'No body: caller identity, path and Idempotency-Key identify the attack. Require current guild
+        eligibility, active timer and a one-second per-user cooldown. Compute damage on the server and update HP/version
+        atomically; simultaneous participants do not submit a shared expectedVersion.'
+      x-audience: player
+      responses:
+        '200':
+          description: Contribute damage to the monster
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Raid'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: raidId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+components:
+  securitySchemes:
+    userBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    serviceTLS:
+      type: mutualTLS
+      description: Service certificate identity plus endpoint caller allowlist. A player JWT cannot authorize an
+        internal command.
+  schemas:
+    ID:
+      type: string
+      format: uuid
+      description: UUID string identifying an existing resource.
+    Time:
+      type: string
+      format: date-time
+      description: RFC 3339 UTC timestamp, e.g. 2026-09-09T10:00:00Z.
+    URI:
+      type: string
+      format: uri
+      pattern: ^https://
+      description: HTTPS asset reference; binary assets are not embedded in JSON.
+    Name:
+      type: string
+      minLength: 1
+      maxLength: 80
+    Version:
+      type: integer
+      minimum: 1
+    Coins:
+      type: integer
+      minimum: 0
+      maximum: 9007199254740991
+      description: Whole currency units, within JavaScript safe-integer range.
+    Type:
+      type: string
+      enum:
+      - flame
+      - nature
+      - earth
+      - electric
+      - water
+      - shadow
+    Stats:
+      type: object
+      additionalProperties:
+        type: number
+    SettlementState:
+      type: string
+      enum:
+      - pending
+      - complete
+      - blocked
+    Error:
+      description: Standard non-success JSON response. Never contains credentials.
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            requestId:
+              $ref: '#/components/schemas/ID'
+            details:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                properties:
+                  field:
+                    type: string
+                  reason:
+                    type: string
+                required:
+                - field
+                - reason
+          required:
+          - code
+          - message
+          - requestId
+          - details
+      required:
+      - error
+    User:
+      description: Private profile; returned only to its owner.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        username:
+          $ref: '#/components/schemas/Name'
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            type: string
+            enum:
+            - player
+            - admin
+        packageIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+        createdAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - id
+      - username
+      - email
+      - roles
+      - packageIds
+      - createdAt
+    PublicUser:
+      description: Profile visible to other users; excludes email and credentials.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        username:
+          $ref: '#/components/schemas/Name'
+      required:
+      - id
+      - username
+    Register:
+      description: Creates an account and starts package enrollment.
+      type: object
+      additionalProperties: false
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: ^[A-Za-z0-9_]+$
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+          writeOnly: true
+        packageId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - username
+      - email
+      - password
+      - packageId
+    Login:
+      description: Password is input only.
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - email
+      - password
+    Refresh:
+      description: Opaque refresh token; rotated on refresh, revoked on logout.
+      type: object
+      additionalProperties: false
+      properties:
+        refreshToken:
+          type: string
+          minLength: 1
+          writeOnly: true
+      required:
+      - refreshToken
+    Session:
+      description: Access token lifetime 900 seconds. Store refresh tokens securely; never publish in events.
+      type: object
+      additionalProperties: false
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          enum:
+          - Bearer
+        expiresIn:
+          type: integer
+          minimum: 900
+          maximum: 900
+        user:
+          $ref: '#/components/schemas/User'
+      required:
+      - accessToken
+      - refreshToken
+      - tokenType
+      - expiresIn
+      - user
+    ProfileUpdate:
+      description: Only editable public username.
+      type: object
+      additionalProperties: false
+      properties:
+        username:
+          $ref: '#/components/schemas/Name'
+      required:
+      - username
+    JWK:
+      description: RSA public verification key; no private key fields.
+      type: object
+      additionalProperties: false
+      properties:
+        kty:
+          type: string
+          enum:
+          - RSA
+        use:
+          type: string
+          enum:
+          - sig
+        alg:
+          type: string
+          enum:
+          - RS256
+        kid:
+          type: string
+        n:
+          type: string
+        e:
+          type: string
+      required:
+      - kty
+      - use
+      - alg
+      - kid
+      - n
+      - e
+    JWKS:
+      description: Public signing keys for offline access-token validation.
+      type: object
+      additionalProperties: false
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/JWK'
+      required:
+      - keys
+    Enrollment:
+      description: One record per user and package; pet provisioning is eventually consistent.
+      type: object
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/ID'
+        packageId:
+          $ref: '#/components/schemas/ID'
+        version:
+          $ref: '#/components/schemas/Version'
+        createdAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - userId
+      - packageId
+      - version
+      - createdAt
+    FriendRequestInput:
+      description: The sender is the authenticated user.
+      type: object
+      additionalProperties: false
+      properties:
+        recipientId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - recipientId
+    FriendRequest:
+      description: Only sender and recipient can view the request.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        senderId:
+          $ref: '#/components/schemas/ID'
+        recipientId:
+          $ref: '#/components/schemas/ID'
+        status:
+          type: string
+          enum:
+          - pending
+          - accepted
+          - declined
+          - cancelled
+        createdAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - id
+      - senderId
+      - recipientId
+      - status
+      - createdAt
+    RequestDecision:
+      description: Recipient decides a pending invitation/request.
+      type: object
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum:
+          - accept
+          - decline
+      required:
+      - decision
+    Relationship:
+      description: Friends are mutual; enemies are a directed relation from userId to otherUserId.
+      type: object
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/ID'
+        otherUserId:
+          $ref: '#/components/schemas/ID'
+        kind:
+          type: string
+          enum:
+          - friend
+          - enemy
+          - unknown
+      required:
+      - userId
+      - otherUserId
+      - kind
+    Wallet:
+      description: available excludes reservations; local balances are keyed by enrolled package UUID.
+      type: object
+      additionalProperties: false
+      properties:
+        globalBalance:
+          $ref: '#/components/schemas/Coins'
+        globalAvailable:
+          $ref: '#/components/schemas/Coins'
+        localBalances:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Coins'
+        boosts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              boostId:
+                type: string
+                enum:
+                - power
+              quantity:
+                type: integer
+                minimum: 0
+              available:
+                type: integer
+                minimum: 0
+            required:
+            - boostId
+            - quantity
+            - available
+      required:
+      - globalBalance
+      - globalAvailable
+      - localBalances
+      - boosts
+    ParticipantLoadout:
+      description: Primary and secondary must be distinct, owned by this user, and available.
+      type: object
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/ID'
+        primaryPetId:
+          $ref: '#/components/schemas/ID'
+        secondaryPetId:
+          $ref: '#/components/schemas/ID'
+        boostIds:
+          type: array
+          items:
+            type: string
+            enum:
+            - power
+          maxItems: 1
+          uniqueItems: true
+      required:
+      - userId
+      - primaryPetId
+      - secondaryPetId
+      - boostIds
+    BattleHoldInput:
+      description: Battle-only command. Reserve fixed stake and selected boosts for both users atomically.
+      type: object
+      additionalProperties: false
+      properties:
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParticipantLoadout'
+          minItems: 2
+          maxItems: 2
+        rulesVersion:
+          $ref: '#/components/schemas/Version'
+      required:
+      - participants
+      - rulesVersion
+    Hold:
+      description: A durable reservation retained until explicit release or successful settlement.
+      type: object
+      additionalProperties: false
+      properties:
+        activityId:
+          $ref: '#/components/schemas/ID'
+        status:
+          type: string
+          enum:
+          - reserved
+          - released
+          - settled
+      required:
+      - activityId
+      - status
+    BattleMoneyResult:
+      description: User Management checks winner/loser against the reservation and computes stake transfer.
+      type: object
+      additionalProperties: false
+      properties:
+        winnerId:
+          $ref: '#/components/schemas/ID'
+        loserId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - winnerId
+      - loserId
+    WalletResult:
+      description: Exactly one settlement per activity; reward amounts are server-validated.
+      type: object
+      additionalProperties: false
+      properties:
+        activityId:
+          $ref: '#/components/schemas/ID'
+        status:
+          type: string
+          enum:
+          - complete
+        balances:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              userId:
+                $ref: '#/components/schemas/ID'
+              balance:
+                $ref: '#/components/schemas/Coins'
+            required:
+            - userId
+            - balance
+      required:
+      - activityId
+      - status
+      - balances
+    RaidMoneyInput:
+      description: Raid-only command. Uses the pinned admin-created schedule; no client-chosen amount.
+      type: object
+      additionalProperties: false
+      properties:
+        scheduleId:
+          $ref: '#/components/schemas/ID'
+        scheduleVersion:
+          $ref: '#/components/schemas/Version'
+        recipientIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+          minItems: 1
+          uniqueItems: true
+      required:
+      - scheduleId
+      - scheduleVersion
+      - recipientIds
+    LocalRewardInput:
+      description: Tamagotchi-only command, one grant per completed care action.
+      type: object
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/ID'
+        packageId:
+          $ref: '#/components/schemas/ID'
+        configVersion:
+          $ref: '#/components/schemas/Version'
+        actionId:
+          $ref: '#/components/schemas/Name'
+      required:
+      - userId
+      - packageId
+      - configVersion
+      - actionId
+    LocalRewardResult:
+      description: Result of one package-local currency grant.
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          $ref: '#/components/schemas/ID'
+        userId:
+          $ref: '#/components/schemas/ID'
+        packageId:
+          $ref: '#/components/schemas/ID'
+        balance:
+          $ref: '#/components/schemas/Coins'
+      required:
+      - operationId
+      - userId
+      - packageId
+      - balance
+    Pet:
+      description: Persistent pet; primary assignment is separate. packageStats preserve package-specific keys and
+        units.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        packageId:
+          $ref: '#/components/schemas/ID'
+        configVersion:
+          $ref: '#/components/schemas/Version'
+        ownerId:
+          $ref: '#/components/schemas/ID'
+        name:
+          $ref: '#/components/schemas/Name'
+        combatType:
+          $ref: '#/components/schemas/Type'
+        level:
+          type: integer
+          minimum: 1
+          maximum: 100
+        xp:
+          type: integer
+          minimum: 0
+        spriteUrls:
+          type: array
+          items:
+            $ref: '#/components/schemas/URI'
+        packageStats:
+          $ref: '#/components/schemas/Stats'
+        version:
+          $ref: '#/components/schemas/Version'
+      required:
+      - id
+      - packageId
+      - configVersion
+      - ownerId
+      - name
+      - combatType
+      - level
+      - xp
+      - spriteUrls
+      - packageStats
+      - version
+    PetRoster:
+      description: Owned pets and selected primary. All secondary entries are existing pet IDs.
+      type: object
+      additionalProperties: false
+      properties:
+        pets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pet'
+        primaryPetId:
+          anyOf:
+          - $ref: '#/components/schemas/ID'
+          - type: 'null'
+        secondaryPetIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+          uniqueItems: true
+      required:
+      - pets
+      - primaryPetId
+      - secondaryPetIds
+    PrimaryInput:
+      description: Select another owned, unreserved pet.
+      type: object
+      additionalProperties: false
+      properties:
+        petId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - petId
+    CareInput:
+      description: Server applies configured effects, XP/currency caps and cooldown; client supplies no stat deltas.
+      type: object
+      additionalProperties: false
+      properties:
+        actionId:
+          $ref: '#/components/schemas/Name'
+        expectedVersion:
+          $ref: '#/components/schemas/Version'
+      required:
+      - actionId
+      - expectedVersion
+    CareResult:
+      description: Pet update is durable; local currency settlement may still be pending.
+      type: object
+      additionalProperties: false
+      properties:
+        actionInstanceId:
+          $ref: '#/components/schemas/ID'
+        pet:
+          $ref: '#/components/schemas/Pet'
+        localRewardStatus:
+          $ref: '#/components/schemas/SettlementState'
+      required:
+      - actionInstanceId
+      - pet
+      - localRewardStatus
+    StarterInput:
+      description: User Management only; requires a canonical enrollment. Unique by user and package.
+      type: object
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/ID'
+        packageId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - userId
+      - packageId
+    TypeCatalog:
+      description: Directed cycle means each type has advantage over the next one.
+      type: object
+      additionalProperties: false
+      properties:
+        types:
+          type: array
+          items:
+            $ref: '#/components/schemas/Type'
+          minItems: 6
+          maxItems: 6
+          uniqueItems: true
+        advantages:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              attacker:
+                $ref: '#/components/schemas/Type'
+              defender:
+                $ref: '#/components/schemas/Type'
+              multiplier:
+                type: number
+                minimum: 0
+            required:
+            - attacker
+            - defender
+            - multiplier
+      required:
+      - types
+      - advantages
+    PetReserveInput:
+      description: Coordinator reserves all pets atomically. Battle uses two loadouts; raid uses one primary per
+        reservation.
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum:
+          - battle
+          - raid
+        users:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              userId:
+                $ref: '#/components/schemas/ID'
+              primaryPetId:
+                $ref: '#/components/schemas/ID'
+              secondaryPetId:
+                anyOf:
+                - $ref: '#/components/schemas/ID'
+                - type: 'null'
+            required:
+            - userId
+            - primaryPetId
+            - secondaryPetId
+          minItems: 1
+          maxItems: 2
+      required:
+      - kind
+      - users
+    PetReservation:
+      description: Frozen combat inputs. Each returned pet includes its package configuration version.
+      type: object
+      additionalProperties: false
+      properties:
+        activityId:
+          $ref: '#/components/schemas/ID'
+        status:
+          type: string
+          enum:
+          - reserved
+          - released
+          - settled
+        pets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pet'
+      required:
+      - activityId
+      - status
+      - pets
+    PetBattleResult:
+      description: 'Battle-only: split XP and transfer the existing loser primary atomically, then release holds.'
+      type: object
+      additionalProperties: false
+      properties:
+        winnerId:
+          $ref: '#/components/schemas/ID'
+        loserId:
+          $ref: '#/components/schemas/ID'
+        rulesVersion:
+          $ref: '#/components/schemas/Version'
+      required:
+      - winnerId
+      - loserId
+      - rulesVersion
+    PetRaidResult:
+      description: 'Raid-only: award the configured XP to one reserved primary, then release its hold.'
+      type: object
+      additionalProperties: false
+      properties:
+        raidId:
+          $ref: '#/components/schemas/ID'
+        scheduleId:
+          $ref: '#/components/schemas/ID'
+        scheduleVersion:
+          $ref: '#/components/schemas/Version'
+        rewarded:
+          type: boolean
+      required:
+      - raidId
+      - scheduleId
+      - scheduleVersion
+      - rewarded
+    PetResult:
+      description: Pet changes applied once per reservation.
+      type: object
+      additionalProperties: false
+      properties:
+        activityId:
+          $ref: '#/components/schemas/ID'
+        status:
+          type: string
+          enum:
+          - complete
+        pets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pet'
+      required:
+      - activityId
+      - status
+      - pets
+    BattleCreate:
+      description: Challenge a different user using an owned primary, an owned secondary and optional boost.
+      type: object
+      additionalProperties: false
+      properties:
+        opponentId:
+          $ref: '#/components/schemas/ID'
+        primaryPetId:
+          $ref: '#/components/schemas/ID'
+        secondaryPetId:
+          $ref: '#/components/schemas/ID'
+        boostIds:
+          type: array
+          items:
+            type: string
+            enum:
+            - power
+          maxItems: 1
+          uniqueItems: true
+      required:
+      - opponentId
+      - primaryPetId
+      - secondaryPetId
+      - boostIds
+    BattleAccept:
+      description: Recipient selects their loadout. Validation and all reservations precede active combat.
+      type: object
+      additionalProperties: false
+      properties:
+        primaryPetId:
+          $ref: '#/components/schemas/ID'
+        secondaryPetId:
+          $ref: '#/components/schemas/ID'
+        boostIds:
+          type: array
+          items:
+            type: string
+            enum:
+            - power
+          maxItems: 1
+          uniqueItems: true
+      required:
+      - primaryPetId
+      - secondaryPetId
+      - boostIds
+    BattleAction:
+      description: Only the current player can attack. Forfeit is allowed for either participant while active.
+      type: object
+      additionalProperties: false
+      properties:
+        expectedTurn:
+          type: integer
+          minimum: 1
+        action:
+          type: string
+          enum:
+          - attack
+          - forfeit
+      required:
+      - expectedTurn
+      - action
+    Battle:
+      description: Only participants may read. Currency/pet effects become final when settlement is complete.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        challengerId:
+          $ref: '#/components/schemas/ID'
+        opponentId:
+          $ref: '#/components/schemas/ID'
+        status:
+          type: string
+          enum:
+          - pending
+          - preparing
+          - active
+          - settling
+          - finished
+          - declined
+          - cancelled
+          - expired
+        loadouts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParticipantLoadout'
+          maxItems: 2
+        rulesVersion:
+          $ref: '#/components/schemas/Version'
+        turn:
+          type: integer
+          minimum: 0
+        currentPlayerId:
+          anyOf:
+          - $ref: '#/components/schemas/ID'
+          - type: 'null'
+        turnDeadline:
+          anyOf:
+          - $ref: '#/components/schemas/Time'
+          - type: 'null'
+        hp:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              userId:
+                $ref: '#/components/schemas/ID'
+              current:
+                type: integer
+                minimum: 0
+              maximum:
+                type: integer
+                minimum: 1
+            required:
+            - userId
+            - current
+            - maximum
+        winnerId:
+          anyOf:
+          - $ref: '#/components/schemas/ID'
+          - type: 'null'
+        loserId:
+          anyOf:
+          - $ref: '#/components/schemas/ID'
+          - type: 'null'
+        settlement:
+          anyOf:
+          - $ref: '#/components/schemas/SettlementState'
+          - type: 'null'
+        createdAt:
+          $ref: '#/components/schemas/Time'
+        expiresAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - id
+      - challengerId
+      - opponentId
+      - status
+      - loadouts
+      - rulesVersion
+      - turn
+      - currentPlayerId
+      - turnDeadline
+      - hp
+      - winnerId
+      - loserId
+      - settlement
+      - createdAt
+      - expiresAt
+    DeviceInput:
+      description: Token is delivered only to Firebase; unique per owner/device. Never echoed.
+      type: object
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          minLength: 1
+          writeOnly: true
+        platform:
+          type: string
+          enum:
+          - web
+          - android
+          - ios
+        packageId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - token
+      - platform
+      - packageId
+    Device:
+      description: Safe push-registration response.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        packageId:
+          $ref: '#/components/schemas/ID'
+        platform:
+          type: string
+          enum:
+          - web
+          - android
+          - ios
+        updatedAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - id
+      - packageId
+      - platform
+      - updatedAt
+    Notification:
+      description: Durable notification generated from a domain event.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        eventId:
+          $ref: '#/components/schemas/ID'
+        type:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        targetId:
+          $ref: '#/components/schemas/ID'
+        createdAt:
+          $ref: '#/components/schemas/Time'
+        readAt:
+          anyOf:
+          - $ref: '#/components/schemas/Time'
+          - type: 'null'
+      required:
+      - id
+      - eventId
+      - type
+      - title
+      - body
+      - targetId
+      - createdAt
+      - readAt
+    LocationInput:
+      description: Measured coordinates from the current client; older timestamps are ignored.
+      type: object
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        accuracyMeters:
+          type: number
+          minimum: 0
+        recordedAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - latitude
+      - longitude
+      - accuracyMeters
+      - recordedAt
+    LocationResult:
+      description: An ignored stale update does not replace the stored location.
+      type: object
+      additionalProperties: false
+      properties:
+        accepted:
+          type: boolean
+        latest:
+          $ref: '#/components/schemas/LocationInput'
+      required:
+      - accepted
+      - latest
+    MapEntry:
+      description: Friends/enemies stay listed even with missing or stale location. Only fresh nearby strangers
+        appear.
+      type: object
+      additionalProperties: false
+      properties:
+        user:
+          $ref: '#/components/schemas/PublicUser'
+        relationship:
+          type: string
+          enum:
+          - friend
+          - enemy
+          - unknown
+        location:
+          anyOf:
+          - $ref: '#/components/schemas/LocationInput'
+          - type: 'null'
+        distanceMeters:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        stale:
+          type: boolean
+      required:
+      - user
+      - relationship
+      - location
+      - distanceMeters
+      - stale
+    GuildInput:
+      description: Guild name and description.
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        description:
+          type: string
+          maxLength: 1000
+      required:
+      - name
+      - description
+    Guild:
+      description: Guild leader is also a member; exactly one leader per guild.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        name:
+          $ref: '#/components/schemas/Name'
+        description:
+          type: string
+        leaderId:
+          $ref: '#/components/schemas/ID'
+        memberCount:
+          type: integer
+          minimum: 1
+        createdAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - id
+      - name
+      - description
+      - leaderId
+      - memberCount
+      - createdAt
+    Member:
+      description: Guild-local role, independent of global privileges.
+      type: object
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/ID'
+        role:
+          type: string
+          enum:
+          - leader
+          - officer
+          - member
+        joinedAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - userId
+      - role
+      - joinedAt
+    RoleInput:
+      description: Leader-only; use the leadership endpoint to change leader.
+      type: object
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum:
+          - officer
+          - member
+      required:
+      - role
+    LeaderInput:
+      description: Transfer leadership to an existing member.
+      type: object
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - userId
+    GuildInvite:
+      description: Only guild officers/leader and the invited user may read.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        guildId:
+          $ref: '#/components/schemas/ID'
+        inviterId:
+          $ref: '#/components/schemas/ID'
+        recipientId:
+          $ref: '#/components/schemas/ID'
+        status:
+          type: string
+          enum:
+          - pending
+          - accepted
+          - declined
+          - revoked
+        createdAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - id
+      - guildId
+      - inviterId
+      - recipientId
+      - status
+      - createdAt
+    Eligibility:
+      description: Guild authority response. eligible is false for a non-member.
+      type: object
+      additionalProperties: false
+      properties:
+        guildId:
+          $ref: '#/components/schemas/ID'
+        userId:
+          $ref: '#/components/schemas/ID'
+        eligible:
+          type: boolean
+        role:
+          anyOf:
+          - type: string
+            enum:
+            - leader
+            - officer
+            - member
+          - type: 'null'
+      required:
+      - guildId
+      - userId
+      - eligible
+      - role
+    ChatMessage:
+      description: Sequence is monotonically increasing within a guild.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        guildId:
+          $ref: '#/components/schemas/ID'
+        authorId:
+          $ref: '#/components/schemas/ID'
+        sequence:
+          type: integer
+          minimum: 1
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        createdAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - id
+      - guildId
+      - authorId
+      - sequence
+      - content
+      - createdAt
+    ChatHistory:
+      description: Replay messages after a known sequence; hasMore controls continuation.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        hasMore:
+          type: boolean
+      required:
+      - items
+      - hasMore
+    PackageInput:
+      description: Admin registers a participating app. Moderator assignments are separate.
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        appVersion:
+          type: string
+          minLength: 1
+          maxLength: 32
+        description:
+          type: string
+          maxLength: 2000
+      required:
+      - name
+      - appVersion
+      - description
+    Package:
+      description: Package metadata; configVersion identifies immutable game rules, independently of appVersion.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        name:
+          $ref: '#/components/schemas/Name'
+        appVersion:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+          - draft
+          - active
+          - suspended
+        configVersion:
+          anyOf:
+          - $ref: '#/components/schemas/Version'
+          - type: 'null'
+        moderatorIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+        version:
+          $ref: '#/components/schemas/Version'
+      required:
+      - id
+      - name
+      - appVersion
+      - description
+      - status
+      - configVersion
+      - moderatorIds
+      - version
+    PackageUpdate:
+      description: Admin controls status; moderators may edit name, description and appVersion for their package.
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Version'
+        name:
+          $ref: '#/components/schemas/Name'
+        appVersion:
+          type: string
+          minLength: 1
+          maxLength: 32
+        description:
+          type: string
+          maxLength: 2000
+        status:
+          type: string
+          enum:
+          - draft
+          - active
+          - suspended
+      required:
+      - expectedVersion
+    BonusRule:
+      description: Package-defined interpretation; aggregate care bonus is capped by global combat rules.
+      type: object
+      additionalProperties: false
+      properties:
+        threshold:
+          type: number
+        direction:
+          type: string
+          enum:
+          - gte
+          - lte
+        percent:
+          type: number
+          minimum: 0
+          maximum: 10
+      required:
+      - threshold
+      - direction
+      - percent
+    StatDefinition:
+      description: Values are package-local; min <= initial <= max. changePerMinute is applied using server elapsed
+        time.
+      type: object
+      additionalProperties: false
+      properties:
+        minimum:
+          type: number
+        maximum:
+          type: number
+        initial:
+          type: number
+        changePerMinute:
+          type: number
+        bonus:
+          anyOf:
+          - $ref: '#/components/schemas/BonusRule'
+          - type: 'null'
+      required:
+      - minimum
+      - maximum
+      - initial
+      - changePerMinute
+      - bonus
+    CareDefinition:
+      description: Server-selected effects for an action. Currency grants and XP are subject to global caps.
+      type: object
+      additionalProperties: false
+      properties:
+        statChanges:
+          $ref: '#/components/schemas/Stats'
+        cooldownSeconds:
+          type: integer
+          minimum: 1
+        xp:
+          type: integer
+          minimum: 0
+          maximum: 10
+        localCurrency:
+          $ref: '#/components/schemas/Coins'
+      required:
+      - statChanges
+      - cooldownSeconds
+      - xp
+      - localCurrency
+    PackageConfigInput:
+      description: Publish a new immutable revision. First publication expects version 0; later publications expect
+        the current revision.
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 0
+        starter:
+          type: object
+          additionalProperties: false
+          properties:
+            name:
+              $ref: '#/components/schemas/Name'
+            combatType:
+              $ref: '#/components/schemas/Type'
+            spriteUrls:
+              type: array
+              items:
+                $ref: '#/components/schemas/URI'
+              minItems: 1
+          required:
+          - name
+          - combatType
+          - spriteUrls
+        statistics:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/StatDefinition'
+        careActions:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CareDefinition'
+        localCurrencyName:
+          $ref: '#/components/schemas/Name'
+      required:
+      - expectedVersion
+      - starter
+      - statistics
+      - careActions
+      - localCurrencyName
+    PackageConfig:
+      description: Immutable snapshot. Existing pets keep their creation version; migrations require a future explicit
+        contract.
+      type: object
+      additionalProperties: false
+      properties:
+        packageId:
+          $ref: '#/components/schemas/ID'
+        version:
+          $ref: '#/components/schemas/Version'
+        starter:
+          type: object
+          additionalProperties: false
+          properties:
+            name:
+              $ref: '#/components/schemas/Name'
+            combatType:
+              $ref: '#/components/schemas/Type'
+            spriteUrls:
+              type: array
+              items:
+                $ref: '#/components/schemas/URI'
+              minItems: 1
+          required:
+          - name
+          - combatType
+          - spriteUrls
+        statistics:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/StatDefinition'
+        careActions:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CareDefinition'
+        localCurrencyName:
+          $ref: '#/components/schemas/Name'
+      required:
+      - packageId
+      - version
+      - starter
+      - statistics
+      - careActions
+      - localCurrencyName
+    CombatRules:
+      description: Global, admin-controlled server rules; initial version 1 is fixed by this contract.
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          $ref: '#/components/schemas/Version'
+        stake:
+          $ref: '#/components/schemas/Coins'
+        winnerXp:
+          type: integer
+          minimum: 0
+        loserXp:
+          type: integer
+          minimum: 0
+        primaryXpPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        careBonusCapPercent:
+          type: integer
+          minimum: 0
+        powerBoostPercent:
+          type: integer
+          minimum: 0
+        turnTimeoutSeconds:
+          type: integer
+          minimum: 1
+        maxLevel:
+          type: integer
+          minimum: 1
+        dailyCareXpCap:
+          type: integer
+          minimum: 0
+        dailyLocalCurrencyCap:
+          $ref: '#/components/schemas/Coins'
+      required:
+      - version
+      - stake
+      - winnerXp
+      - loserXp
+      - primaryXpPercent
+      - careBonusCapPercent
+      - powerBoostPercent
+      - turnTimeoutSeconds
+      - maxLevel
+      - dailyCareXpCap
+      - dailyLocalCurrencyCap
+    MonsterInput:
+      description: Admin-created monster definition. Resistances/weaknesses use the six global types.
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        description:
+          type: string
+          maxLength: 2000
+        spriteUrls:
+          type: array
+          items:
+            $ref: '#/components/schemas/URI'
+          minItems: 1
+        maxHp:
+          type: integer
+          minimum: 1
+        baseAttack:
+          type: integer
+          minimum: 0
+        weaknesses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Type'
+          uniqueItems: true
+        resistances:
+          type: array
+          items:
+            $ref: '#/components/schemas/Type'
+          uniqueItems: true
+        specialProperties:
+          type: array
+          items:
+            type: string
+            enum:
+            - none
+            - armored
+          uniqueItems: true
+      required:
+      - name
+      - description
+      - spriteUrls
+      - maxHp
+      - baseAttack
+      - weaknesses
+      - resistances
+      - specialProperties
+    Monster:
+      description: Immutable versioned monster configuration.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        version:
+          $ref: '#/components/schemas/Version'
+        name:
+          $ref: '#/components/schemas/Name'
+        description:
+          type: string
+        spriteUrls:
+          type: array
+          items:
+            $ref: '#/components/schemas/URI'
+        maxHp:
+          type: integer
+          minimum: 1
+        baseAttack:
+          type: integer
+          minimum: 0
+        weaknesses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Type'
+        resistances:
+          type: array
+          items:
+            $ref: '#/components/schemas/Type'
+        specialProperties:
+          type: array
+          items:
+            type: string
+            enum:
+            - none
+            - armored
+      required:
+      - id
+      - version
+      - name
+      - description
+      - spriteUrls
+      - maxHp
+      - baseAttack
+      - weaknesses
+      - resistances
+      - specialProperties
+    RaidRewards:
+      description: Each participant who dealt damage receives this reward on victory; no reward on failure/cancellation.
+      type: object
+      additionalProperties: false
+      properties:
+        globalCurrencyPerParticipant:
+          $ref: '#/components/schemas/Coins'
+        xpPerParticipant:
+          type: integer
+          minimum: 0
+      required:
+      - globalCurrencyPerParticipant
+      - xpPerParticipant
+    ScheduleInput:
+      description: One guild and one immutable monster version per scheduled raid.
+      type: object
+      additionalProperties: false
+      properties:
+        guildId:
+          $ref: '#/components/schemas/ID'
+        monsterId:
+          $ref: '#/components/schemas/ID'
+        monsterVersion:
+          $ref: '#/components/schemas/Version'
+        startsAt:
+          $ref: '#/components/schemas/Time'
+        durationSeconds:
+          type: integer
+          minimum: 30
+          maximum: 86400
+        participantLimit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        rewards:
+          $ref: '#/components/schemas/RaidRewards'
+      required:
+      - guildId
+      - monsterId
+      - monsterVersion
+      - startsAt
+      - durationSeconds
+      - participantLimit
+      - rewards
+    Schedule:
+      description: Desired lifecycle configuration; actual raid state is owned by Monster Raid.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        version:
+          $ref: '#/components/schemas/Version'
+        guildId:
+          $ref: '#/components/schemas/ID'
+        monsterId:
+          $ref: '#/components/schemas/ID'
+        monsterVersion:
+          $ref: '#/components/schemas/Version'
+        startsAt:
+          $ref: '#/components/schemas/Time'
+        durationSeconds:
+          type: integer
+          minimum: 30
+          maximum: 86400
+        participantLimit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        rewards:
+          $ref: '#/components/schemas/RaidRewards'
+        status:
+          type: string
+          enum:
+          - scheduled
+          - inactive
+          - cancelled
+        dispatchStatus:
+          type: string
+          enum:
+          - pending
+          - applied
+      required:
+      - id
+      - version
+      - guildId
+      - monsterId
+      - monsterVersion
+      - startsAt
+      - durationSeconds
+      - participantLimit
+      - rewards
+      - status
+      - dispatchStatus
+    ScheduleStatus:
+      description: Reactivation requires no previous start/cancellation dispatch; deactivating a live instance cancels
+        it.
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Version'
+        status:
+          type: string
+          enum:
+          - scheduled
+          - inactive
+          - cancelled
+      required:
+      - expectedVersion
+      - status
+    RaidStart:
+      description: Registry-only command; uses the immutable schedule ID and version.
+      type: object
+      additionalProperties: false
+      properties:
+        scheduleId:
+          $ref: '#/components/schemas/ID'
+        scheduleVersion:
+          $ref: '#/components/schemas/Version'
+      required:
+      - scheduleId
+      - scheduleVersion
+    RaidJoin:
+      description: Reserves the caller primary pet for this raid.
+      type: object
+      additionalProperties: false
+      properties:
+        primaryPetId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - primaryPetId
+    RaidParticipant:
+      description: One member per raid. reservationId identifies the exclusive primary-pet hold.
+      type: object
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/ID'
+        primaryPetId:
+          $ref: '#/components/schemas/ID'
+        reservationId:
+          $ref: '#/components/schemas/ID'
+        damageDealt:
+          type: integer
+          minimum: 0
+        joinedAt:
+          $ref: '#/components/schemas/Time'
+        rewardStatus:
+          anyOf:
+          - $ref: '#/components/schemas/SettlementState'
+          - type: 'null'
+      required:
+      - userId
+      - primaryPetId
+      - reservationId
+      - damageDealt
+      - joinedAt
+      - rewardStatus
+    Raid:
+      description: Current raid state; version changes when HP/status changes.
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        scheduleId:
+          $ref: '#/components/schemas/ID'
+        scheduleVersion:
+          $ref: '#/components/schemas/Version'
+        guildId:
+          $ref: '#/components/schemas/ID'
+        monster:
+          $ref: '#/components/schemas/Monster'
+        hp:
+          type: integer
+          minimum: 0
+        startsAt:
+          $ref: '#/components/schemas/Time'
+        endsAt:
+          $ref: '#/components/schemas/Time'
+        status:
+          type: string
+          enum:
+          - active
+          - settling
+          - won
+          - failed
+          - cancelled
+        version:
+          $ref: '#/components/schemas/Version'
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/RaidParticipant'
+        settlement:
+          anyOf:
+          - $ref: '#/components/schemas/SettlementState'
+          - type: 'null'
+      required:
+      - id
+      - scheduleId
+      - scheduleVersion
+      - guildId
+      - monster
+      - hp
+      - startsAt
+      - endsAt
+      - status
+      - version
+      - participants
+      - settlement
+    FriendRequestPage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FriendRequest'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    RelationshipPage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Relationship'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    BattlePage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Battle'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    NotificationPage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    MapEntryPage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MapEntry'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    GuildPage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Guild'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    MemberPage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    GuildInvitePage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuildInvite'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    PackagePage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Package'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    EnrollmentPage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Enrollment'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    MonsterPage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Monster'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    SchedulePage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Schedule'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    RaidPage:
+      description: Cursor page; nextCursor is null at the end.
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Raid'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - items
+      - nextCursor
+    EventEnvelope:
+      description: Every broker message has stable identity and producer resource revision.
+      type: object
+      additionalProperties: false
+      properties:
+        eventId:
+          $ref: '#/components/schemas/ID'
+        type:
+          type: string
+        schemaVersion:
+          type: string
+          enum:
+          - '1'
+        occurredAt:
+          $ref: '#/components/schemas/Time'
+        producer:
+          type: string
+          enum:
+          - user-management
+          - tamagotchi
+          - battle
+          - map
+          - guild
+          - monster-raid
+        aggregateId:
+          $ref: '#/components/schemas/ID'
+        aggregateVersion:
+          $ref: '#/components/schemas/Version'
+        correlationId:
+          $ref: '#/components/schemas/ID'
+        data:
+          type: object
+      required:
+      - eventId
+      - type
+      - schemaVersion
+      - occurredAt
+      - producer
+      - aggregateId
+      - aggregateVersion
+      - correlationId
+      - data
+    UserPackageRegisteredV1Data:
+      description: Payload for user.package-registered.v1
+      type: object
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/ID'
+        packageId:
+          $ref: '#/components/schemas/ID'
+        enrollmentVersion:
+          $ref: '#/components/schemas/Version'
+        createdAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - userId
+      - packageId
+      - enrollmentVersion
+      - createdAt
+    FriendRequestedV1Data:
+      description: Payload for friend.requested.v1
+      type: object
+      additionalProperties: false
+      properties:
+        requestId:
+          $ref: '#/components/schemas/ID'
+        senderId:
+          $ref: '#/components/schemas/ID'
+        recipientId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - requestId
+      - senderId
+      - recipientId
+    MapEncounteredV1Data:
+      description: Payload for map.encountered.v1
+      type: object
+      additionalProperties: false
+      properties:
+        userIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+          minItems: 2
+          maxItems: 2
+          uniqueItems: true
+        distanceMeters:
+          type: number
+          minimum: 0
+          maximum: 6
+      required:
+      - userIds
+      - distanceMeters
+    BattleRequestedV1Data:
+      description: Payload for battle.requested.v1
+      type: object
+      additionalProperties: false
+      properties:
+        battleId:
+          $ref: '#/components/schemas/ID'
+        challengerId:
+          $ref: '#/components/schemas/ID'
+        opponentId:
+          $ref: '#/components/schemas/ID'
+        expiresAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - battleId
+      - challengerId
+      - opponentId
+      - expiresAt
+    BattleFinishedV1Data:
+      description: Payload for battle.finished.v1
+      type: object
+      additionalProperties: false
+      properties:
+        battleId:
+          $ref: '#/components/schemas/ID'
+        winnerId:
+          $ref: '#/components/schemas/ID'
+        loserId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - battleId
+      - winnerId
+      - loserId
+    PetUsedV1Data:
+      description: Payload for pet.used.v1
+      type: object
+      additionalProperties: false
+      properties:
+        activityId:
+          $ref: '#/components/schemas/ID'
+        petIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+          minItems: 1
+        ownerIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+          minItems: 1
+          uniqueItems: true
+      required:
+      - activityId
+      - petIds
+      - ownerIds
+    PetCapturedV1Data:
+      description: Payload for pet.captured.v1
+      type: object
+      additionalProperties: false
+      properties:
+        battleId:
+          $ref: '#/components/schemas/ID'
+        petId:
+          $ref: '#/components/schemas/ID'
+        previousOwnerId:
+          $ref: '#/components/schemas/ID'
+        newOwnerId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - battleId
+      - petId
+      - previousOwnerId
+      - newOwnerId
+    GuildInvitedV1Data:
+      description: Payload for guild.invited.v1
+      type: object
+      additionalProperties: false
+      properties:
+        invitationId:
+          $ref: '#/components/schemas/ID'
+        guildId:
+          $ref: '#/components/schemas/ID'
+        inviterId:
+          $ref: '#/components/schemas/ID'
+        recipientId:
+          $ref: '#/components/schemas/ID'
+      required:
+      - invitationId
+      - guildId
+      - inviterId
+      - recipientId
+    RaidStartedV1Data:
+      description: Payload for raid.started.v1
+      type: object
+      additionalProperties: false
+      properties:
+        raidId:
+          $ref: '#/components/schemas/ID'
+        guildId:
+          $ref: '#/components/schemas/ID'
+        recipientIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+          uniqueItems: true
+        endsAt:
+          $ref: '#/components/schemas/Time'
+      required:
+      - raidId
+      - guildId
+      - recipientIds
+      - endsAt
+    RaidFinishedV1Data:
+      description: Payload for raid.finished.v1
+      type: object
+      additionalProperties: false
+      properties:
+        raidId:
+          $ref: '#/components/schemas/ID'
+        guildId:
+          $ref: '#/components/schemas/ID'
+        outcome:
+          type: string
+          enum:
+          - won
+          - failed
+          - cancelled
+        recipientIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+          uniqueItems: true
+      required:
+      - raidId
+      - guildId
+      - outcome
+      - recipientIds
+    ChatAuthenticate:
+      description: First client frame, before any chat data. Do not persist or echo the token.
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+          - authenticate
+        accessToken:
+          type: string
+          writeOnly: true
+      required:
+      - type
+      - accessToken
+    ChatAuthenticated:
+      description: Server confirms membership and current sequence; replay uses REST.
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+          - authenticated
+        guildId:
+          $ref: '#/components/schemas/ID'
+        userId:
+          $ref: '#/components/schemas/ID'
+        latestSequence:
+          type: integer
+          minimum: 0
+      required:
+      - type
+      - guildId
+      - userId
+      - latestSequence
+    ChatSend:
+      description: Client frame. requestId is also its deduplication key within the guild/user.
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+          - message.send
+        requestId:
+          $ref: '#/components/schemas/ID'
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required:
+      - type
+      - requestId
+      - content
+    ChatAck:
+      description: Server replies to the sender after durable persistence.
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+          - message.ack
+        requestId:
+          $ref: '#/components/schemas/ID'
+        message:
+          $ref: '#/components/schemas/ChatMessage'
+      required:
+      - type
+      - requestId
+      - message
+    ChatCreated:
+      description: Server broadcast to current guild members; deduplicate by message.id.
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+          - message.created
+        message:
+          $ref: '#/components/schemas/ChatMessage'
+      required:
+      - type
+      - message
+    ChatError:
+      description: Server protocol/business error; requestId is null for handshake errors.
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+          - error
+        requestId:
+          anyOf:
+          - $ref: '#/components/schemas/ID'
+          - type: 'null'
+        code:
+          type: string
+          enum:
+          - UNAUTHENTICATED
+          - FORBIDDEN
+          - INVALID_MESSAGE
+          - RATE_LIMITED
+          - IDEMPOTENCY_CONFLICT
+        message:
+          type: string
+      required:
+      - type
+      - requestId
+      - code
+      - message
+  responses:
+    Error400:
+      description: Malformed request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error401:
+      description: Missing or invalid authentication.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error403:
+      description: Caller lacks permission.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error404:
+      description: Resource does not exist or is not visible.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error409:
+      description: Conflicting state, version, reservation or idempotency key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error422:
+      description: Well-formed request violates a game or data rule.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error429:
+      description: Rate or action limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error503:
+      description: Required dependency unavailable; retry with the same key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+security:
+- userBearer: []

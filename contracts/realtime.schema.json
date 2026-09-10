@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tamagotchi Go guild chat frames v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ChatAuthenticate"
+    },
+    {
+      "$ref": "#/$defs/ChatAuthenticated"
+    },
+    {
+      "$ref": "#/$defs/ChatSend"
+    },
+    {
+      "$ref": "#/$defs/ChatAck"
+    },
+    {
+      "$ref": "#/$defs/ChatCreated"
+    },
+    {
+      "$ref": "#/$defs/ChatError"
+    }
+  ],
+  "$defs": {
+    "ChatAuthenticate": {
+      "description": "First client frame, before any chat data. Do not persist or echo the token.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "authenticate"
+          ]
+        },
+        "accessToken": {
+          "type": "string",
+          "writeOnly": true
+        }
+      },
+      "required": [
+        "type",
+        "accessToken"
+      ]
+    },
+    "ChatAuthenticated": {
+      "description": "Server confirms membership and current sequence; replay uses REST.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "authenticated"
+          ]
+        },
+        "guildId": {
+          "$ref": "#/$defs/ID"
+        },
+        "userId": {
+          "$ref": "#/$defs/ID"
+        },
+        "latestSequence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "guildId",
+        "userId",
+        "latestSequence"
+      ]
+    },
+    "ID": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID string identifying an existing resource."
+    },
+    "ChatSend": {
+      "description": "Client frame. requestId is also its deduplication key within the guild/user.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "message.send"
+          ]
+        },
+        "requestId": {
+          "$ref": "#/$defs/ID"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "content"
+      ]
+    },
+    "ChatAck": {
+      "description": "Server replies to the sender after durable persistence.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "message.ack"
+          ]
+        },
+        "requestId": {
+          "$ref": "#/$defs/ID"
+        },
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "message"
+      ]
+    },
+    "ChatMessage": {
+      "description": "Sequence is monotonically increasing within a guild.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "guildId": {
+          "$ref": "#/$defs/ID"
+        },
+        "authorId": {
+          "$ref": "#/$defs/ID"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Time"
+        }
+      },
+      "required": [
+        "id",
+        "guildId",
+        "authorId",
+        "sequence",
+        "content",
+        "createdAt"
+      ]
+    },
+    "Time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp, e.g. 2026-09-09T10:00:00Z."
+    },
+    "ChatCreated": {
+      "description": "Server broadcast to current guild members; deduplicate by message.id.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "message.created"
+          ]
+        },
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        }
+      },
+      "required": [
+        "type",
+        "message"
+      ]
+    },
+    "ChatError": {
+      "description": "Server protocol/business error; requestId is null for handshake errors.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "error"
+          ]
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "UNAUTHENTICATED",
+            "FORBIDDEN",
+            "INVALID_MESSAGE",
+            "RATE_LIMITED",
+            "IDEMPOTENCY_CONFLICT"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "code",
+        "message"
+      ]
+    }
+  }
+}

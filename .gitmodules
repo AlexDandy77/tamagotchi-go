@@ -1,0 +1,24 @@
+[submodule "services/user-management"]
+	path = services/user-management
+	url = https://github.com/AlexDandy77/pad-team-8-user-management.git
+[submodule "services/battle"]
+	path = services/battle
+	url = https://github.com/AlexDandy77/pad-team-8-battle.git
+[submodule "services/tamagotchi"]
+	path = services/tamagotchi
+	url = https://github.com/arturtugui/pad-team-8-tamagotchi.git
+[submodule "services/notification"]
+	path = services/notification
+	url = https://github.com/arturtugui/pad-team-8-notification.git
+[submodule "services/map"]
+	path = services/map
+	url = https://github.com/AlexandruRudoi/pad-team-8-map.git
+[submodule "services/monster-raid"]
+	path = services/monster-raid
+	url = https://github.com/AlexandruRudoi/pad-team-8-monster-raid.git
+[submodule "services/guild"]
+	path = services/guild
+	url = https://github.com/xnikug/pad-team-8-guild.git
+[submodule "services/package-registry"]
+	path = services/package-registry
+	url = https://github.com/xnikug/pad-team-8-package-registry.git
