@@ -477,7 +477,7 @@ Start from an updated `dev`, keep commits focused, and open the PR against `dev`
 
 Commit titles are single-line Conventional Commits: `type(scope): imperative summary`, with types `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `chore` and an optional service scope. Reference the issue in the commit that completes it, for example `docs: define stack and API contracts (closes #2, closes #3)`. An issue closes when the commit reaches `main`.
 
-Every PR uses the [PR template](.github/PULL_REQUEST_TEMPLATE.md) and explains the problem and the change, the resulting behavior with an example when useful, which checks and tests ran with their results and coverage, the related issue, and any compatibility impact or follow-up. The author answers review comments and keeps the description current. Reviewers check the actual diff against the shared contract; approvals are dismissed by new pushes and must be obtained again.
+Every PR uses the [PR template](.github/PULL_REQUEST_TEMPLATE.md) and explains the problem and the change, as well as the related issue if exists. Reviewers check the actual diff against the shared contract; approvals are dismissed by new pushes and must be obtained again.
 
 ### Validation and test coverage
 
