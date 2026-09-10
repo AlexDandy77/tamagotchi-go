@@ -445,19 +445,16 @@ The server assigns sender, guild, timestamp and a per-guild increasing sequence.
 
 | Branch | Purpose | How changes arrive |
 | --- | --- | --- |
-| `main` | Approved releases; the default branch | Release PR from `dev`, **2 approvals** |
-| `dev` | Integration of finished work | Task PR, **2 approvals** |
-| `<type>/<scope>/<description>` | One task | Branched from the latest `dev`; PR into `dev` |
+| `main` | Stable code and releases; the default and only protected branch | Task PR, **2 approvals** in this common repository |
+| `<type>/<scope>/<description>` | One task | Branched from the latest `main`; PR into `main` |
 
-Both `main` and `dev` are protected: changes arrive only through a pull request with two approving reviews from other collaborators, all review conversations resolved, a passing **Validate contracts** check and a branch that is up to date with its target. A new push dismisses earlier approvals. Direct pushes, force pushes and branch deletion are blocked for everyone, including administrators.
+In this common repository, `main` requires two approving reviews from other collaborators, all review conversations resolved, a passing **Validate contracts** check and a branch that is up to date with its target. A new push dismisses earlier approvals. Direct pushes, force pushes and deletion of `main` are blocked, including for administrators.
 
-Merge strategies:
+User Management and Battle use the same task-branch-to-`main` flow, with **no required approving reviews** while each private repository has a single maintainer. Their `main` branches still require a PR and block force pushes and deletion.
 
-- **Rebase and merge** is the default. Use it for a PR with a few focused commits; they land unchanged, keeping a linear history.
-- **Squash and merge** is used when a PR has about ten or more commits or is full of fix-up commits. The squashed title follows the commit rules below; the original commits stay visible in the PR.
-- **Create a merge commit** is used only for release PRs from `dev` to `main`, so `main` keeps the same commits as `dev` and the next release contains only the new work.
-
-A release is a PR from `dev` to `main`, opened once the work for that release is merged into `dev` and validated. The PR lists the version and the notable changes. After the merge, the `main` commit is tagged `vMAJOR.MINOR.PATCH`.
+- **Rebase and merge** focused PRs to keep a linear history.
+- **Squash and merge** PRs with many commits or fix-up commits; use a Conventional Commit title.
+- Release by tagging a validated commit on `main` as `vMAJOR.MINOR.PATCH`. There is no separate integration or release branch.
 
 ### Branch naming
 
@@ -471,17 +468,17 @@ A release is a PR from `dev` to `main`, opened once the work for that release is
 | `test` | `test/monster-raid/attack-cooldown` |
 | `ci`, `refactor`, `chore` | `ci/common/contract-validation` |
 
-Start from an updated `dev`, keep commits focused, and open the PR against `dev`. To update a PR, rebase your branch onto the target and push with `--force-with-lease`; never force-push `main`, `dev` or someone else's branch. Delete the branch after it merges.
+Start from an updated `main`, keep commits focused, and open the PR against `main`. To update a PR, rebase your branch onto the target and push with `--force-with-lease`; never force-push `main` or someone else's branch. Delete the branch after it merges.
 
 ### Commits and pull requests
 
 Commit titles are single-line Conventional Commits: `type(scope): imperative summary`, with types `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `chore` and an optional service scope. Reference the issue in the commit that completes it, for example `docs: define stack and API contracts (closes #2, closes #3)`. An issue closes when the commit reaches `main`.
 
-Every PR uses the [PR template](.github/PULL_REQUEST_TEMPLATE.md) and explains the problem and the change, the resulting behavior with an example when useful, which checks and tests ran with their results and coverage, the related issue, and any compatibility impact or follow-up. The author answers review comments and keeps the description current. Reviewers check the actual diff against the shared contract; approvals are dismissed by new pushes and must be obtained again.
+Every PR uses the [PR template](.github/PULL_REQUEST_TEMPLATE.md), explains what changed and why, and links the related issue when one exists. Include validation results or compatibility notes when relevant. Reviewers check the diff against the shared contract; this common repository requires fresh approvals after new pushes.
 
 ### Validation and test coverage
 
-The [Contract validation workflow](.github/workflows/validate-contracts.yml) runs on every PR to `main` or `dev` and publishes the required **Validate contracts** check. It validates the OpenAPI and JSON Schema files, checks that this README lists every route and event and that the field dictionary defines every type, validates the examples, and confirms that malformed payloads are rejected. Run it locally with:
+The [Contract validation workflow](.github/workflows/validate-contracts.yml) runs on every PR to `main` and publishes the required **Validate contracts** check. It validates the OpenAPI and JSON Schema files, checks that this README lists every route and event and that the field dictionary defines every type, validates the examples, and confirms that malformed payloads are rejected. Run it locally with:
 
 ```sh
 python3 -m venv .venv
@@ -543,7 +540,7 @@ The lab rules are explicit: pushing `.env` files, exposing API keys or committin
 
 - **Never commit:** secrets of any kind (`.env` and `.env.*` except `.env.example`, API keys, JWT signing keys, TLS keys, database passwords, Firebase service-account JSON, Kafka credentials, tokens in code or fixtures); installed dependencies (`node_modules/`, `.venv/`, Go module caches, `vendor/` unless agreed); build and run outputs (`dist/`, `build/`, `bin/`, binaries, coverage, logs, local database files, Docker volumes); editor and OS files (`.idea/`, `.vscode/` except agreed shared settings, `.DS_Store`); large or regenerable artifacts.
 - **Always commit:** source, tests, documentation, `.env.example` with placeholders and a comment per variable, manifests and lockfiles (`go.mod`, `go.sum`, `package.json`, `package-lock.json`), Dockerfiles, compose files and CI configuration.
-- **If a secret slips in:** rotate it immediately, rewrite the history of your task branch and push with `--force-with-lease`, and say so in the PR. A secret that reached `dev` or `main` needs a coordinated history rewrite by the repository owner plus a new secret; deleting the file later is not enough.
+- **If a secret slips in:** rotate it immediately, rewrite the history of your task branch and push with `--force-with-lease`, and say so in the PR. A secret that reached `main` needs a coordinated history rewrite by the repository owner plus a new secret; deleting the file later is not enough.
 
 Keep changes small enough to review well, and document each contributor's work through issues, commits and PRs.
 
