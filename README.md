@@ -443,6 +443,8 @@ The server assigns sender, guild, timestamp and a per-guild increasing sequence.
 
 ## Contribution workflow
 
+Agents must follow [AGENTS.md](AGENTS.md) for task setup, validation, commits, PRs and releases.
+
 ### Branches and merge rules
 
 | Branch | Purpose | How changes arrive |
