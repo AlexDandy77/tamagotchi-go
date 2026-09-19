@@ -1,0 +1,4 @@
+[
+  {"database": "users", "role": "users", "password_env": "USERS_DB_PASSWORD"},
+  {"database": "battles", "role": "battles", "password_env": "BATTLES_DB_PASSWORD"}
+]

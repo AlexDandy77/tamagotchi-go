@@ -28,3 +28,8 @@ coverage.out
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local Lab 1 signing keys
+.secrets/
+
+__pycache__/
