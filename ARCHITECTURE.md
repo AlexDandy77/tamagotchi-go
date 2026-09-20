@@ -8,7 +8,7 @@ Docker Compose runs two Go services, one PostgreSQL server and one single-node K
 flowchart LR
   C[Client / Postman] -->|localhost:8081| U[User Management]
   C -->|localhost:8082| B[Battle]
-  B -->|JWKS: verify JWT| U
+  B -->|JWT keys + mTLS relationships/wallet| U
   U -->|users database| P[(PostgreSQL)]
   B -->|battles database| P
   U -->|transactional outbox| K[Kafka KRaft]
@@ -17,7 +17,7 @@ flowchart LR
 
 | Container | Responsibility | Storage |
 | --- | --- | --- |
-| User Management | Accounts, sessions, profiles, friendships, enrollment events | `users`, owned by role `users` |
+| User Management | Accounts, relationships, enrollments, wallets and rewards | `users`, owned by role `users` |
 | Battle | Challenges, turns, deadlines, outcomes and settlement progress | `battles`, owned by role `battles` |
 | PostgreSQL | Hosts isolated databases; services never read/write the other database | `postgres-data` named volume |
 | Kafka | One topic per event type; no consumers are deployed yet | `kafka-data` named volume |
@@ -26,7 +26,7 @@ flowchart LR
 
 The APIs use Go 1.26, `net/http`, pgx, RS256 JWTs and franz-go. JSON payloads are validated against copies of the common schemas. PostgreSQL owns durability; Kafka delivers events asynchronously. Docker Compose provides service discovery (`postgres`, `kafka`, `user-management`, `battle`). Only API ports are published, bound to localhost. PostgreSQL and Kafka have no host ports.
 
-This is a local teaching deployment, not a cloud or multi-PC cluster. Kafka has one broker and replication factor one; a volume survives container recreation but not loss of the host disk. Kafka uses distinct SASL credentials and producer topic ACLs; its private controller listener is unauthenticated. The development Docker network uses plaintext transport. Before deployment outside a trusted local machine, add TLS/mTLS as specified in the future architecture below.
+This is a local teaching deployment, not a cloud or multi-PC cluster. Kafka has one broker and replication factor one; a volume survives container recreation but not loss of the host disk. Kafka uses distinct SASL credentials and producer topic ACLs; its private controller listener is unauthenticated. Internal service calls use TLS 1.3 with verified service certificates and caller allowlists. Public local HTTP, PostgreSQL and Kafka use plaintext on the development network; use encrypted transport when deploying across hosts.
 
 Compose is sufficient for the current four containers. Kubernetes, Swarm, autoscaling, an API gateway and teammates' services are deferred. Running on four PCs would require a separate cluster/network/storage design; sharing a Compose file does not form a cluster.
 
@@ -36,13 +36,15 @@ Each service stores JSONB aggregates in its own database, with indexed owners an
 
 Business changes and outbox events commit atomically. A worker deletes an outbox row only after Kafka acknowledges it. Failed publication retries from persisted rows; a crash after broker acknowledgement can repeat an event with the same ID. Future consumers must deduplicate it. No event consumers or dead-letter processors are required by these two publisher-only services.
 
-Battle stores deadlines and settlement progress. A process restart resumes work from PostgreSQL. Explicit dependency mocks keep simulated wallet/pet effects in Battle's own `mock-*` records; they never modify User Management balances or another service's database. Authentication uses real User Management tokens and JWKS. `DEPENDENCY_MODE=mock` is mandatory; unsupported live mode fails at startup.
+Battle stores each reservation, compensation and settlement step. Remote calls happen outside database transactions; stable activity IDs make crash recovery safe. `paired` mode uses real User Management JWTs, relationships and wallets. Package Registry and Tamagotchi are explicit fixtures. `live` mode uses their real HTTP contracts and never falls back to fixtures.
 
 ### Fixtures and limitations
 
-Seeding populates only empty service data. It creates Alice and Bob (`alice@demo.invalid`, `bob@demo.invalid`) with the locally generated `SEED_PASSWORD`. The mock Package Registry accepts package `11111111-1111-4111-8111-111111111111`. Battle's pet fixtures exist only for those two users. Registration works for other users, but they cannot battle until real pet provisioning is implemented.
+Seeding creates Alice and Bob (`alice@demo.invalid`, `bob@demo.invalid`) with `SEED_PASSWORD`. Each starts at zero, then receives 20 coins from one recorded fixture raid; repeated seeding does not credit them again. New registrations always start at zero. Package fixture: `11111111-1111-4111-8111-111111111111`.
 
-Mock wallet balances are synthetic (winner 110, loser 90), not the users' actual balances. Pet XP and capture are persisted mock effects: after losing a primary pet the original loadout is no longer valid. Rerunning seed never resets that state. Use a separate disposable Compose project for fresh demonstrations.
+Battle's pet fixtures exist only for Alice/Bob. Pet XP and capture persist in Battle's fixture records; a captured pet invalidates its original owner's loadout. Other registered players need real Tamagotchi provisioning to battle. Use a separate disposable Compose project for fresh demonstrations.
+
+Setup creates a one-year development CA/certificate bundle in ignored `.secrets/tls`. Each container receives only its own private key and the CA certificate. Internal HTTPS uses port 8443 without a host mapping. Replace the full bundle before expiry; use your deployment's certificate authority for live services.
 
 ### Extending the environment
 

@@ -39,18 +39,18 @@ python3 scripts/lab.py up
 python3 scripts/lab.py status
 ```
 
-Setup generates ignored local credentials and an RSA signing key, preserving existing ones. `up` pulls images, starts PostgreSQL/Kafka, provisions databases and topics, runs migrations and empty-database seeds, then starts both APIs.
+Setup generates ignored local credentials, an RSA signing key and local service certificates, preserving existing ones. `up` pulls images, starts PostgreSQL/Kafka, provisions databases and topics, runs migrations and empty-database seeds, then starts both APIs.
 
 - User Management: `http://localhost:8081`; Battle: `http://localhost:8082`.
 - Liveness: `/healthz`; database readiness: `/readyz` on either service.
 - Import the [Postman collection](postman/lab1.postman_collection.json) and [environment](postman/local.postman_environment.json). Set the local seed password from `.env` in Postman; never export credentials to Git.
 - `python3 scripts/lab.py provision`, `migrate` and `seed` are repeatable. `down` stops containers and retains data volumes.
 - On fresh disposable fixtures, `python3 scripts/smoke.py` runs an API workflow. `python3 scripts/verify_runtime.py` briefly stops containers to check persistence, isolation and Kafka recovery; it creates a test account.
-- See each service README for route status. Deferred wallet/internal APIs remain in the agreed contract, without working handlers.
+- See each service README for route status. Both services implement their existing routes; paired mode mocks only absent Package Registry and Tamagotchi dependencies.
 
 ## Communication contract
 
-Contract version **1.0.0**. This is the proposed interface, not a running system.
+Contract version **1.0.0**. User Management and Battle implement their portions; other owners implement the remaining services.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).

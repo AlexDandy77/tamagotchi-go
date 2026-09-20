@@ -55,6 +55,18 @@ def setup():
         with key.open('xb') as stream:
             os.chmod(key, 0o600)
             stream.write(result.stdout)
+    tls_dir = directory / 'tls'
+    if not tls_dir.exists():
+        result = run(['docker', 'run', '--rm', environment()['USER_MANAGEMENT_IMAGE'], 'gen-tls'], stdout=subprocess.PIPE)
+        files = json.loads(result.stdout)
+        tls_dir.mkdir(mode=0o700)
+        for name, value in files.items():
+            if name not in ('ca.pem', 'user-management.pem', 'user-management-key.pem', 'battle.pem', 'battle-key.pem'):
+                raise ValueError('Unexpected certificate filename')
+            target = tls_dir / name
+            with target.open('x') as stream:
+                os.chmod(target, 0o600)
+                stream.write(value)
     print('Local configuration ready; existing credentials and keys preserved.')
 
 def provision():
