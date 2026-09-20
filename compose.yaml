@@ -55,10 +55,16 @@ services:
       KAFKA_USERNAME: users
       KAFKA_PASSWORD: ${KAFKA_USERS_PASSWORD}
       DEPENDENCY_MODE: mock
+      SERVICE_TLS_CERT_FILE: /run/tls/user-management.pem
+      SERVICE_TLS_KEY_FILE: /run/tls/user-management-key.pem
+      SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       JWT_PRIVATE_KEY_FILE: /run/secrets/jwt.pem
       SEED_PASSWORD: ${SEED_PASSWORD:?Run setup}
     volumes:
       - ./.secrets/jwt.pem:/run/secrets/jwt.pem:ro
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/user-management.pem:/run/tls/user-management.pem:ro
+      - ./.secrets/tls/user-management-key.pem:/run/tls/user-management-key.pem:ro
     ports: [127.0.0.1:8081:8080]
     depends_on:
       postgres: {condition: service_healthy}
@@ -76,9 +82,17 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: battles
       KAFKA_PASSWORD: ${KAFKA_BATTLES_PASSWORD}
-      DEPENDENCY_MODE: mock
+      DEPENDENCY_MODE: paired
+      SERVICE_TLS_CERT_FILE: /run/tls/battle.pem
+      SERVICE_TLS_KEY_FILE: /run/tls/battle-key.pem
+      SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+      USER_MANAGEMENT_INTERNAL_URL: https://user-management:8443
       JWKS_URL: http://user-management:8080/.well-known/jwks.json
       MOCK_FAIL_OPERATION: ${MOCK_FAIL_OPERATION:-}
+    volumes:
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/battle.pem:/run/tls/battle.pem:ro
+      - ./.secrets/tls/battle-key.pem:/run/tls/battle-key.pem:ro
     ports: [127.0.0.1:8082:8080]
     depends_on:
       user-management: {condition: service_healthy}

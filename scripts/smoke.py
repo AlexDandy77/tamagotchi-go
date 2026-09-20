@@ -36,7 +36,8 @@ def main():
     a, b = alice['accessToken'], bob['accessToken']
     request(USERS, 'GET', '/v1/users/me', token=a)
     request(USERS, 'GET', '/v1/users/me', expected=401)
-    request(USERS, 'GET', '/v1/wallet', token=a, expected=404)
+    before = request(USERS, 'GET', '/v1/wallet', token=a)
+    assert before['globalAvailable'] >= 10
     key = str(uuid.uuid4())
     profile = {'username': 'alice'}
     first = request(USERS, 'PATCH', '/v1/users/me', profile, a, key)
@@ -67,6 +68,9 @@ def main():
             break
         time.sleep(.2)
     assert state['status'] == 'finished' and state['winnerId'] == alice['user']['id']
+    after = request(USERS, 'GET', '/v1/wallet', token=a)
+    assert after['globalBalance'] == before['globalBalance'] + 10
+    assert after['globalAvailable'] == after['globalBalance']
     print('Live authentication, friendship, battle, authorization and idempotency checks passed.')
 
 if __name__ == '__main__':
