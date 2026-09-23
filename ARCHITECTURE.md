@@ -2,7 +2,7 @@
 
 ## Running Lab 1 environment
 
-Docker Compose runs two Go services, one PostgreSQL server and one single-node Kafka KRaft broker. Clients call the services directly. Each API process also runs its background workers; no extra worker containers are needed.
+Docker Compose runs two Go services, two TypeScript services, one PostgreSQL server, one single-node MongoDB replica set and one single-node Kafka KRaft broker. Clients call the services directly. Each API process also runs its background workers; no extra worker containers are needed.
 
 ```mermaid
 flowchart LR
@@ -13,22 +13,35 @@ flowchart LR
   B -->|battles database| P
   U -->|transactional outbox| K[Kafka KRaft]
   B -->|transactional outbox| K
+  C -->|localhost:8087 HTTP + WebSocket chat| G[Guild]
+  C -->|localhost:8088| R[Package Registry]
+  G -->|JWT keys + mTLS relationships| U
+  R -->|JWT keys| U
+  G -->|guilds database| P
+  G -->|transactional outbox| K
+  R -->|registry database| M[(MongoDB replica set)]
+  K -->|user.package-registered.v1| R
 ```
 
 | Container | Responsibility | Storage |
 | --- | --- | --- |
 | User Management | Accounts, relationships, enrollments, wallets and rewards | `users`, owned by role `users` |
 | Battle | Challenges, turns, deadlines, outcomes and settlement progress | `battles`, owned by role `battles` |
+| Guild | Guilds, invitations, membership, roles and WebSocket chat | `guilds`, owned by role `guilds` |
+| Package Registry | Packages, immutable configurations, combat rules, monsters, raid schedules and the enrollment projection | MongoDB `registry`, user `registry` |
 | PostgreSQL | Hosts isolated databases; services never read/write the other database | `postgres-data` named volume |
-| Kafka | One topic per event type; no consumers are deployed yet | `kafka-data` named volume |
+| MongoDB | Single-node replica set so the Registry can use multi-document transactions | `mongo-data`, `mongo-config` named volumes |
+| Kafka | One topic per event type; Package Registry consumes enrollments (group `package-registry`) | `kafka-data` named volume |
 
 ### Technology and networking
 
 The APIs use Go 1.26, `net/http`, pgx, RS256 JWTs and franz-go. JSON payloads are validated against copies of the common schemas. PostgreSQL owns durability; Kafka delivers events asynchronously. Docker Compose provides service discovery (`postgres`, `kafka`, `user-management`, `battle`). Only API ports are published, bound to localhost. PostgreSQL and Kafka have no host ports.
 
+Guild and Package Registry use Node.js 24, TypeScript, Fastify, Ajv (against copies of the common schemas), jose and kafkajs; Guild stores data with `pg` and Registry with the MongoDB driver. Their internal APIs listen on port 8443 with the same mutual-TLS rules; Package Registry reads User Management's Snappy-compressed events through a registered Snappy codec.
+
 This is a local teaching deployment, not a cloud or multi-PC cluster. Kafka has one broker and replication factor one; a volume survives container recreation but not loss of the host disk. Kafka uses distinct SASL credentials and producer topic ACLs; its private controller listener is unauthenticated. Internal service calls use TLS 1.3 with verified service certificates and caller allowlists. Public local HTTP, PostgreSQL and Kafka use plaintext on the development network; use encrypted transport when deploying across hosts.
 
-Compose is sufficient for the current four containers. Kubernetes, Swarm, autoscaling, an API gateway and teammates' services are deferred. Running on four PCs would require a separate cluster/network/storage design; sharing a Compose file does not form a cluster.
+Compose is sufficient for the current seven containers. Kubernetes, Swarm, autoscaling, an API gateway and teammates' services are deferred. Running on four PCs would require a separate cluster/network/storage design; sharing a Compose file does not form a cluster.
 
 ### Ownership and consistency
 
@@ -44,14 +57,16 @@ Seeding creates Alice and Bob (`alice@demo.invalid`, `bob@demo.invalid`) with `S
 
 Battle's pet fixtures exist only for Alice/Bob. Pet XP and capture persist in Battle's fixture records; a captured pet invalidates its original owner's loadout. Other registered players need real Tamagotchi provisioning to battle. Use a separate disposable Compose project for fresh demonstrations.
 
-Setup creates a one-year development CA/certificate bundle in ignored `.secrets/tls`. Each container receives only its own private key and the CA certificate. Internal HTTPS uses port 8443 without a host mapping. Replace the full bundle before expiry; use your deployment's certificate authority for live services.
+Guild seeds the *Night Owls* guild (`22222222-2222-4222-8222-222222222222`: Alice leader, Bob officer, two chat messages). Package Registry seeds the fixture package above as active with configuration 1 and Bob as moderator, the monster `33333333-3333-4333-8333-333333333333` and a raid schedule for Night Owls one hour after seeding; its enrollment projection fills from User Management's real events. User Management tokens carry no admin role yet, so the Registry treats the users listed in `REGISTRY_ADMIN_USER_IDS` as global admins (empty by default: set it in your local `.env`, for example to Alice's ID, to use the admin routes); a `roles: ["admin"]` claim also works once issued. Registry raid commands go to a Monster Raid fixture until that service is deployed. Guild chat broadcasts reach sockets on its single instance only.
+
+Setup creates a one-year development CA and one certificate per service (CN and DNS name = service name) in ignored `.secrets/tls`, using OpenSSL inside the already-required PostgreSQL image; the CA key never leaves that container. Each container receives only its own private key and the CA certificate. Internal HTTPS uses port 8443 without a host mapping. To add a service or before expiry, setup replaces the full bundle; restart every service afterwards. Use your deployment's certificate authority for live services.
 
 ### Extending the environment
 
-1. Add a database/role/password-variable entry to `deployment/databases.json`; generate its ignored local password and document the placeholder in `.env.example`.
+1. Add a database/role/password-variable entry to `deployment/databases.json` (PostgreSQL) or extend `deployment/mongo-init.js` (MongoDB); add the password placeholder to `.env.example` and `SECRET_KEYS` in `scripts/lab.py`, and the service name to `TLS_SERVICES`. Setup appends missing variables to existing `.env` files.
 2. Run `python3 scripts/lab.py provision` against the existing PostgreSQL volume. This creates missing roles/databases without deleting or resetting existing data or passwords.
 3. Add the teammate's public, versioned image to Compose, its database credentials, health check and required networking. Never add private-source `build:` paths to CPR deployment.
-4. Run that service's migrations and optional empty-database seed, then add its Kafka topics and workflows.
+4. Run that service's migrations and optional empty-database seed, then add its Kafka SASL user (Compose `KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG`), topics and consumer groups in `scripts/lab.py`.
 
 Changing an existing password in `.env` does not rotate an existing database role: perform an explicit coordinated rotation. Never delete volumes to apply a schema or provisioning change.
 

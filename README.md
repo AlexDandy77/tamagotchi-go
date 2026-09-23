@@ -31,7 +31,16 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the running Lab 1 containers, databas
 
 Prerequisites: Docker with Compose v2 and Python 3. Private submodules are not needed to run published images.
 
-**Release prerequisite:** service implementation PRs must merge and validated public images must be published before the default image tags can be pulled. The initial target images are `alexdandy77/pad-team-8-user-management:0.1.0` and `alexdandy77/pad-team-8-battle:0.1.0`; these names are not a claim that a release has been published.
+**Release prerequisite:** service implementation PRs must merge and validated public images must be published before the default image tags can be pulled. These names are not a claim that a release has been published:
+
+| Service | Docker Hub image | Host port | Needs |
+| --- | --- | --- | --- |
+| User Management | [`alexdandy77/pad-team-8-user-management:0.1.0`](https://hub.docker.com/r/alexdandy77/pad-team-8-user-management) | 8081 | PostgreSQL `users`, Kafka, JWT signing key, mTLS certificate |
+| Battle | [`alexdandy77/pad-team-8-battle:0.1.0`](https://hub.docker.com/r/alexdandy77/pad-team-8-battle) | 8082 | PostgreSQL `battles`, Kafka, User Management (JWKS, mTLS) |
+| Guild | [`xnikug/pad-team-8-guild:0.1.0`](https://hub.docker.com/r/xnikug/pad-team-8-guild) | 8087 | PostgreSQL `guilds`, Kafka, User Management (JWKS, mTLS relationships) |
+| Package Registry | [`xnikug/pad-team-8-package-registry:0.1.0`](https://hub.docker.com/r/xnikug/pad-team-8-package-registry) | 8088 | MongoDB replica set `registry`, Kafka, User Management JWKS |
+
+Each image accepts `migrate`, `seed` and `healthcheck` commands besides serving; the lab script runs them. Every service's own README documents its configuration variables.
 
 ```sh
 python3 scripts/lab.py setup
@@ -39,18 +48,18 @@ python3 scripts/lab.py up
 python3 scripts/lab.py status
 ```
 
-Setup generates ignored local credentials, an RSA signing key and local service certificates, preserving existing ones. `up` pulls images, starts PostgreSQL/Kafka, provisions databases and topics, runs migrations and empty-database seeds, then starts both APIs.
+Setup generates ignored local credentials, an RSA signing key, a MongoDB replica-set keyfile and one development CA with a certificate per service, preserving existing ones. When an older checkout lacks newly added variables or certificates, setup appends only the missing `.env` entries and replaces an incomplete certificate bundle (keeping the old one as `.secrets/tls.replaced-*`); then run `down` and `up` so every service loads the new bundle. `up` pulls missing images, starts PostgreSQL, Kafka and MongoDB, provisions databases, the replica set, topics and ACLs, runs migrations and empty-database seeds, then starts the four APIs.
 
-- User Management: `http://localhost:8081`; Battle: `http://localhost:8082`.
-- Liveness: `/healthz`; database readiness: `/readyz` on either service.
-- Import the [Postman collection](postman/lab1.postman_collection.json) and [environment](postman/local.postman_environment.json). Set the local seed password from `.env` in Postman; never export credentials to Git.
+- User Management: `http://localhost:8081`; Battle: `http://localhost:8082`; Guild: `http://localhost:8087`; Package Registry: `http://localhost:8088`.
+- Liveness: `/healthz`; database readiness: `/readyz` on every service.
+- Import the [environment](postman/local.postman_environment.json) and the collections for [User Management and Battle](postman/lab1.postman_collection.json), [Guild](postman/guild.postman_collection.json) and [Package Registry](postman/package-registry.postman_collection.json). Set the local seed password from `.env` in Postman; never export credentials to Git. The Guild and Registry collections are repeatable on existing data. The Registry collection and `scripts/smoke_guild_registry.py` need an admin: set `REGISTRY_ADMIN_USER_IDS` in your local `.env` to Alice's user ID (returned by the Login alice request), then run `docker compose up -d package-registry`.
 - `python3 scripts/lab.py provision`, `migrate` and `seed` are repeatable. `down` stops containers and retains data volumes.
-- On fresh disposable fixtures, `python3 scripts/smoke.py` runs an API workflow. `python3 scripts/verify_runtime.py` briefly stops containers to check persistence, isolation and Kafka recovery; it creates a test account.
-- See each service README for route status. Both services implement their existing routes; paired mode mocks only absent Package Registry and Tamagotchi dependencies.
+- On fresh disposable fixtures, `python3 scripts/smoke.py` runs an API workflow. `python3 scripts/smoke_guild_registry.py` checks Guild and Package Registry against real User Management tokens, relationships and enrollment events. `python3 scripts/verify_runtime.py` briefly stops containers to check persistence, isolation and Kafka recovery; it creates a test account.
+- See each service README for route status. All four services implement their routes. Battle's paired mode mocks only absent Package Registry and Tamagotchi dependencies; Guild runs live against User Management; Package Registry mocks only the absent Monster Raid.
 
 ## Communication contract
 
-Contract version **1.0.0**. User Management and Battle implement their portions; other owners implement the remaining services.
+Contract version **1.0.0**. User Management, Battle, Guild and Package Registry implement their portions; other owners implement the remaining services.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
