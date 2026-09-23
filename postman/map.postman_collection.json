@@ -1,0 +1,1155 @@
+{
+ "info": {
+  "name": "Tamagotchi Go — Map",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+  "description": "Map service (localhost:8083) in the Lab 1 Compose deployment. Set seedPassword locally; tokens and relationships come from User Management. Runs repeatably: it clears both locations, makes Alice and Bob strangers, then enemies, then friends again as seeded. Current reports are dated 5 s ahead: Map accepts up to 30 s of clock skew, and the margin keeps them newer than a clear when the Docker clock runs slightly ahead of the host."
+ },
+ "item": [
+  {
+   "name": "Login alice",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/auth/login",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"email\": \"alice@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"aliceToken\",b.accessToken);pm.environment.set(\"aliceId\",b.user.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Login bob",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/auth/login",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"email\": \"bob@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"bobToken\",b.accessToken);pm.environment.set(\"bobId\",b.user.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Liveness",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{map}}/healthz"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Reports its version\", () => { const b = pm.response.json(); pm.expect(b.status).to.eql(\"ok\"); pm.expect(b.version).to.be.a(\"string\").and.not.empty; });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Readiness",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{map}}/readyz"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Database is ready\", () => pm.expect(pm.response.json().status).to.eql(\"ready\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject anonymous request",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{map}}/v1/map/nearby"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+       "pm.test(\"UNAUTHENTICATED\", () => pm.expect(pm.response.json().error.code).to.eql(\"UNAUTHENTICATED\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject forged token",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{forgedToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/nearby"
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"forgedToken\", pm.environment.get(\"aliceToken\").slice(0, -6) + \"AAAAAA\");"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+       "pm.test(\"INVALID_TOKEN\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_TOKEN\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Unknown route returns a JSON 404",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{map}}/v1/map/everything"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+       "pm.test(\"NOT_FOUND\", () => pm.expect(pm.response.json().error.code).to.eql(\"NOT_FOUND\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Make strangers: remove friendship",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{users}}/v1/friends/{{bobId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Make strangers: remove Alice's enemy mark",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{users}}/v1/enemies/{{bobId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Make strangers: remove Bob's enemy mark",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{users}}/v1/enemies/{{aliceId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Clear Alice's location",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/location"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Clear Bob's location",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/location"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Cleared location is not found",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/location"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+       "pm.test(\"NOT_FOUND\", () => pm.expect(pm.response.json().error.code).to.eql(\"NOT_FOUND\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject report older than the clear",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{map}}/v1/map/location",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"latitude\": 47.0617, \"longitude\": 28.8683, \"accuracyMeters\": 3, \"recordedAt\": \"{{recordedAt}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"recordedAt\", new Date(Date.now() - 60000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+       "pm.test(\"LOCATION_CLEARED\", () => pm.expect(pm.response.json().error.code).to.eql(\"LOCATION_CLEARED\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Report Alice's location",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{map}}/v1/map/location",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"latitude\": 47.0617, \"longitude\": 28.8683, \"accuracyMeters\": 3, \"recordedAt\": \"{{recordedAt}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"recordedAt\", new Date(Date.now() + 5000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "const b = pm.response.json();",
+       "pm.test(\"Accepted as the latest location\", () => { pm.expect(b.accepted).to.eql(true); pm.expect(b.latest.latitude).to.eql(47.0617); pm.expect(b.latest.longitude).to.eql(28.8683); });",
+       "if(pm.response.code===200)pm.environment.set(\"aliceRecordedAt\",b.latest.recordedAt);"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read own location",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/location"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Returns the stored report\", () => { const b = pm.response.json(); pm.expect(b.latitude).to.eql(47.0617); pm.expect(new Date(b.recordedAt).getTime()).to.eql(new Date(pm.environment.get(\"aliceRecordedAt\")).getTime()); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Ignore stale report",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{map}}/v1/map/location",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"latitude\": 1, \"longitude\": 1, \"accuracyMeters\": 3, \"recordedAt\": \"{{recordedAt}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"recordedAt\", new Date(Date.now() - 60000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Keeps the newer location\", () => { const b = pm.response.json(); pm.expect(b.accepted).to.eql(false); pm.expect(b.latest.latitude).to.eql(47.0617); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject report recorded 60 s ahead",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{map}}/v1/map/location",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"latitude\": 47.0617, \"longitude\": 28.8683, \"accuracyMeters\": 3, \"recordedAt\": \"{{recordedAt}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"recordedAt\", new Date(Date.now() + 60000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+       "pm.test(\"VALIDATION_ERROR\", () => pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject latitude out of range",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{map}}/v1/map/location",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"latitude\": 91, \"longitude\": 28.8683, \"accuracyMeters\": 3, \"recordedAt\": \"{{recordedAt}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"recordedAt\", new Date(Date.now() + 5000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+       "pm.test(\"VALIDATION_ERROR\", () => pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject unknown field",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{map}}/v1/map/location",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"latitude\": 47.0617, \"longitude\": 28.8683, \"accuracyMeters\": 3, \"recordedAt\": \"{{recordedAt}}\", \"xp\": 999}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"recordedAt\", new Date(Date.now() + 5000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+       "pm.test(\"VALIDATION_ERROR\", () => pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject malformed JSON",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{map}}/v1/map/location",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"latitude\": 47.0617,",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+       "pm.test(\"INVALID_JSON\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_JSON\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Report Bob 3 m north (starts an encounter)",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{map}}/v1/map/location",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"latitude\": 47.061727, \"longitude\": 28.8683, \"accuracyMeters\": 3, \"recordedAt\": \"{{recordedAt}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"recordedAt\", new Date(Date.now() + 5000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Accepted\", () => pm.expect(pm.response.json().accepted).to.eql(true));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Nearby: Bob is a stranger in range",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/nearby"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "const entry = pm.response.json().items.find(e => e.user.id === pm.environment.get(\"bobId\"));",
+       "pm.test(\"Bob is listed as a fresh stranger within 6 m\", () => { pm.expect(entry, \"Bob on the map\").to.be.an(\"object\"); pm.expect(entry.relationship).to.eql(\"unknown\"); pm.expect(entry.distanceMeters).to.be.within(0, 6); pm.expect(entry.stale).to.eql(false); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Nearby with limit=1",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/nearby?limit=1"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"One entry per page\", () => pm.expect(pm.response.json().items).to.have.lengthOf(1));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject limit=0",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/nearby?limit=0"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+       "pm.test(\"INVALID_LIMIT\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_LIMIT\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject limit=101",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/nearby?limit=101"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+       "pm.test(\"INVALID_LIMIT\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_LIMIT\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject malformed cursor",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/nearby?cursor=abc"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+       "pm.test(\"INVALID_CURSOR\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_CURSOR\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Alice marks Bob as an enemy",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{users}}/v1/enemies/{{bobId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Nearby: enemy stays listed",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/nearby"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "const entry = pm.response.json().items.find(e => e.user.id === pm.environment.get(\"bobId\"));",
+       "pm.test(\"Bob is listed as an enemy\", () => { pm.expect(entry, \"Bob on the map\").to.be.an(\"object\"); pm.expect(entry.relationship).to.eql(\"enemy\"); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Alice removes the enemy mark",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{users}}/v1/enemies/{{bobId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Friend request",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/friend-requests",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"recipientId\": \"{{bobId}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if(pm.response.code===201)pm.environment.set(\"friendRequestId\",pm.response.json().id);"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Bob accepts (seeded friendship restored)",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/friend-requests/{{friendRequestId}}/decision",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"decision\": \"accept\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Nearby: friend listed first",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/nearby"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Bob is the first entry, as a friend\", () => { const first = pm.response.json().items[0]; pm.expect(first.user.id).to.eql(pm.environment.get(\"bobId\")); pm.expect(first.relationship).to.eql(\"friend\"); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Bob stops sharing his location",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/location"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Nearby: cleared friend stays listed without a location",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{map}}/v1/map/nearby"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "const entry = pm.response.json().items.find(e => e.user.id === pm.environment.get(\"bobId\"));",
+       "pm.test(\"Bob has no location and is stale\", () => { pm.expect(entry, \"Bob on the map\").to.be.an(\"object\"); pm.expect(entry.relationship).to.eql(\"friend\"); pm.expect(entry.location).to.eql(null); pm.expect(entry.distanceMeters).to.eql(null); pm.expect(entry.stale).to.eql(true); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Report Bob after the clear",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{map}}/v1/map/location",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"latitude\": 47.061727, \"longitude\": 28.8683, \"accuracyMeters\": 3, \"recordedAt\": \"{{recordedAt}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"recordedAt\", new Date(Date.now() + 5000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Accepted\", () => pm.expect(pm.response.json().accepted).to.eql(true));"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
