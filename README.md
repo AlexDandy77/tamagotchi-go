@@ -59,7 +59,7 @@ Setup generates ignored local credentials, an RSA signing key, a MongoDB replica
 
 ## Communication contract
 
-Contract version **1.0.0**. User Management, Battle, Guild and Package Registry implement their portions; other owners implement the remaining services.
+Contract version **1.1.0**. User Management, Battle, Guild and Package Registry implement their portions; other owners implement the remaining services.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
@@ -212,6 +212,8 @@ Path parameters and listed bodies are required. `cursor?` and `limit?` are optio
 | Method and path | Caller | Body / query | Success | Purpose |
 | --- | --- | --- | --- | --- |
 | `PUT /v1/map/location` | player | `LocationInput` | `200` `LocationResult` | Report the current location |
+| `GET /v1/map/location` | player | — | `200` `LocationInput` | Read your stored location |
+| `DELETE /v1/map/location` | player | — | `204` | Stop sharing your location |
 | `GET /v1/map/nearby` | player | `cursor?`, `limit?` | `200` `MapEntryPage` | Friends, enemies and strangers within 6 meters |
 
 #### Monster Raid
