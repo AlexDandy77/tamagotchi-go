@@ -20,7 +20,8 @@ def typ(s):
   return 'struct {\n'+'\n'.join(fields)+'\n}'
  if t=='array':return '[]'+typ(s['items'])
  return {'string':'string','integer':'int','number':'float64','boolean':'bool'}.get(t,'any')
-for service,tag,extra in [('user-management','User Management',['Package','PackageConfig','CombatRules','Schedule','StarterInput','Pet']),('battle','Battle',['Package','PackageConfig','CombatRules','PetReservation','PetReserveInput','PetBattleResult','PetResult','BattleHoldInput','Hold','BattleMoneyResult','WalletResult','Relationship','ProfileUpdate'])]:
+for service,tag,extra in [('user-management','User Management',['Package','PackageConfig','CombatRules','Schedule','StarterInput','Pet']),('battle','Battle',['Package','PackageConfig','CombatRules','PetReservation','PetReserveInput','PetBattleResult','PetResult','BattleHoldInput','Hold','BattleMoneyResult','WalletResult','Relationship','ProfileUpdate']),('map','Map',['Relationship','RelationshipPage','PublicUser','EventEnvelope','MapEncounteredV1Data'])]:
+ if not (root/'services'/service/'go.mod').exists():continue
  needed=set(extra+['Error']);routes={}
  for path,ops in spec['paths'].items():
   for method,op in ops.items():
@@ -32,6 +33,7 @@ for service,tag,extra in [('user-management','User Management',['Package','Packa
   for ref in re.findall(r'#/components/schemas/(\w+)',json.dumps(defs[pending.pop()])):
    if ref not in needed:needed.add(ref);pending.append(ref)
  dest=root/'services'/service/'internal/contract'
+ dest.mkdir(parents=True,exist_ok=True)
  (dest/'types.go').write_text('// Code generated from the shared OpenAPI contract. DO NOT EDIT.\npackage contract\n\n'+'\n\n'.join('type '+n+' = '+typ(s) for n,s in defs.items() if n in needed)+'\n')
  doc={'$schema':'https://json-schema.org/draft/2020-12/schema','$defs':{n:s for n,s in defs.items() if n in needed}}
  (dest/'schema.json').write_text(json.dumps(doc,indent=2).replace('#/components/schemas/','#/$defs/')+'\n')
