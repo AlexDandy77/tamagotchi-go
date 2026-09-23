@@ -2,7 +2,7 @@
 
 ## Running Lab 1 environment
 
-Docker Compose runs two Go services, two TypeScript services, one PostgreSQL server, one single-node MongoDB replica set and one single-node Kafka KRaft broker. Clients call the services directly. Each API process also runs its background workers; no extra worker containers are needed.
+Docker Compose runs three Go services, two TypeScript services, one PostgreSQL server, one single-node MongoDB replica set and one single-node Kafka KRaft broker. Clients call the services directly. Each API process also runs its background workers; no extra worker containers are needed.
 
 ```mermaid
 flowchart LR
@@ -21,12 +21,17 @@ flowchart LR
   G -->|transactional outbox| K
   R -->|registry database| M[(MongoDB replica set)]
   K -->|user.package-registered.v1| R
+  C -->|localhost:8083| MP[Map]
+  MP -->|JWT keys + mTLS relationships| U
+  MP -->|locations database| P
+  MP -->|transactional outbox| K
 ```
 
 | Container | Responsibility | Storage |
 | --- | --- | --- |
 | User Management | Accounts, relationships, enrollments, wallets and rewards | `users`, owned by role `users` |
 | Battle | Challenges, turns, deadlines, outcomes and settlement progress | `battles`, owned by role `battles` |
+| Map | Each player's latest location, encounters between strangers and the nearby view | `locations`, owned by role `locations` |
 | Guild | Guilds, invitations, membership, roles and WebSocket chat | `guilds`, owned by role `guilds` |
 | Package Registry | Packages, immutable configurations, combat rules, monsters, raid schedules and the enrollment projection | MongoDB `registry`, user `registry` |
 | PostgreSQL | Hosts isolated databases; services never read/write the other database | `postgres-data` named volume |
@@ -35,13 +40,13 @@ flowchart LR
 
 ### Technology and networking
 
-The APIs use Go 1.26, `net/http`, pgx, RS256 JWTs and franz-go. JSON payloads are validated against copies of the common schemas. PostgreSQL owns durability; Kafka delivers events asynchronously. Docker Compose provides service discovery (`postgres`, `kafka`, `user-management`, `battle`). Only API ports are published, bound to localhost. PostgreSQL and Kafka have no host ports.
+The APIs use Go 1.26, `net/http`, pgx, RS256 JWTs and franz-go. JSON payloads are validated against copies of the common schemas. PostgreSQL owns durability; Kafka delivers events asynchronously. Docker Compose provides service discovery (`postgres`, `kafka`, `user-management`, `battle`). Only API ports are published, bound to localhost. PostgreSQL and Kafka have no host ports. Map has no internal routes; its certificate is only a client certificate for User Management's relationship lookups.
 
 Guild and Package Registry use Node.js 24, TypeScript, Fastify, Ajv (against copies of the common schemas), jose and kafkajs; Guild stores data with `pg` and Registry with the MongoDB driver. Their internal APIs listen on port 8443 with the same mutual-TLS rules; Package Registry reads User Management's Snappy-compressed events through a registered Snappy codec.
 
 This is a local teaching deployment, not a cloud or multi-PC cluster. Kafka has one broker and replication factor one; a volume survives container recreation but not loss of the host disk. Kafka uses distinct SASL credentials and producer topic ACLs; its private controller listener is unauthenticated. Internal service calls use TLS 1.3 with verified service certificates and caller allowlists. Public local HTTP, PostgreSQL and Kafka use plaintext on the development network; use encrypted transport when deploying across hosts.
 
-Compose is sufficient for the current seven containers. Kubernetes, Swarm, autoscaling, an API gateway and teammates' services are deferred. Running on four PCs would require a separate cluster/network/storage design; sharing a Compose file does not form a cluster.
+Compose is sufficient for the current eight containers. Kubernetes, Swarm, autoscaling, an API gateway and teammates' services are deferred. Running on four PCs would require a separate cluster/network/storage design; sharing a Compose file does not form a cluster.
 
 ### Ownership and consistency
 
@@ -51,6 +56,8 @@ Business changes and outbox events commit atomically. A worker deletes an outbox
 
 Battle stores each reservation, compensation and settlement step. Remote calls happen outside database transactions; stable activity IDs make crash recovery safe. `paired` mode uses real User Management JWTs, relationships and wallets. Package Registry and Tamagotchi are explicit fixtures. `live` mode uses their real HTTP contracts and never falls back to fixtures.
 
+Map keeps plain rows instead of JSONB aggregates: one per player location and one per pair of strangers. A conditional upsert drops stale reports without a service-wide advisory lock, and a report updates its encounter pairs in a fixed order. An encounter starts, with its `map.encountered.v1` event, only when two strangers come within 6 meters after being apart. The lab runs Map in `live` mode, which reads relationships and profiles from User Management and never falls back to fixtures; `mock` mode replaces only those lookups with built-in fixtures (Alice and Bob are friends) for local development.
+
 ### Fixtures and limitations
 
 Seeding creates Alice and Bob (`alice@demo.invalid`, `bob@demo.invalid`) with `SEED_PASSWORD`. Each starts at zero, then receives 20 coins from one recorded fixture raid; repeated seeding does not credit them again. New registrations always start at zero. Package fixture: `11111111-1111-4111-8111-111111111111`.
@@ -58,6 +65,8 @@ Seeding creates Alice and Bob (`alice@demo.invalid`, `bob@demo.invalid`) with `S
 Battle's pet fixtures exist only for Alice/Bob. Pet XP and capture persist in Battle's fixture records; a captured pet invalidates its original owner's loadout. Other registered players need real Tamagotchi provisioning to battle. Use a separate disposable Compose project for fresh demonstrations.
 
 Guild seeds the *Night Owls* guild (`22222222-2222-4222-8222-222222222222`: Alice leader, Bob officer, two chat messages). Package Registry seeds the fixture package above as active with configuration 1 and Bob as moderator, the monster `33333333-3333-4333-8333-333333333333` and a raid schedule for Night Owls one hour after seeding; its enrollment projection fills from User Management's real events. User Management tokens carry no admin role yet, so the Registry treats the users listed in `REGISTRY_ADMIN_USER_IDS` as global admins (empty by default: set it in your local `.env`, for example to Alice's ID, to use the admin routes); a `roles: ["admin"]` claim also works once issued. Registry raid commands go to a Monster Raid fixture until that service is deployed. Guild chat broadcasts reach sockets on its single instance only.
+
+Map seeds Alice's and Bob's locations about 3 meters apart, recorded at seeding time. They go stale two minutes later: friends and enemies stay listed, while strangers appear only near a fresh report. Marking a friend as an enemy in User Management ends the friendship, so the Map collection and `scripts/smoke_map.py` first make Alice and Bob strangers and finish by restoring their seeded friendship.
 
 Setup creates a one-year development CA and one certificate per service (CN and DNS name = service name) in ignored `.secrets/tls`, using OpenSSL inside the already-required PostgreSQL image; the CA key never leaves that container. Each container receives only its own private key and the CA certificate. Internal HTTPS uses port 8443 without a host mapping. To add a service or before expiry, setup replaces the full bundle; restart every service afterwards. Use your deployment's certificate authority for live services.
 
