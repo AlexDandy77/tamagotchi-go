@@ -26,7 +26,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: CLIENT
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
-      KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="broker" password="${KAFKA_BROKER_PASSWORD}" user_broker="${KAFKA_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_users="${KAFKA_USERS_PASSWORD}" user_battles="${KAFKA_BATTLES_PASSWORD}" user_guilds="${KAFKA_GUILDS_PASSWORD}" user_registry="${KAFKA_REGISTRY_PASSWORD}";'
+      KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="broker" password="${KAFKA_BROKER_PASSWORD}" user_broker="${KAFKA_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_users="${KAFKA_USERS_PASSWORD}" user_battles="${KAFKA_BATTLES_PASSWORD}" user_guilds="${KAFKA_GUILDS_PASSWORD}" user_registry="${KAFKA_REGISTRY_PASSWORD}" user_locations="${KAFKA_LOCATIONS_PASSWORD}";'
       KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
       KAFKA_SUPER_USERS: User:broker;User:admin;User:ANONYMOUS
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'false'
@@ -180,6 +180,9 @@ services:
     image: ${MAP_IMAGE:?Set a published Map image tag}
     environment:
       DATABASE_URL: postgres://locations:${LOCATIONS_DB_PASSWORD:?Run setup}@postgres:5432/locations?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_USERNAME: locations
+      KAFKA_PASSWORD: ${KAFKA_LOCATIONS_PASSWORD:?Run setup}
       DEPENDENCY_MODE: live
       JWKS_URL: http://user-management:8080/.well-known/jwks.json
       USER_MANAGEMENT_URL: http://user-management:8080
@@ -194,6 +197,7 @@ services:
     ports: [127.0.0.1:8083:8080]
     depends_on:
       postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
       user-management: {condition: service_healthy}
     healthcheck:
       test: [CMD, /service, healthcheck]
