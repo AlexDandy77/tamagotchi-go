@@ -176,7 +176,7 @@ Each service is the only writer of its data. Other services ask the owner throug
 ### 5. Map
 
 - **Owns:** each user's latest location and timestamp; encounter state.
-- **Does:** ignores stale updates, keeps friends and enemies visible, detects strangers within 6 meters and publishes an encounter event that may lead to a friend request or a battle.
+- **Does:** ignores stale updates, lets players read or clear their own location, keeps friends and enemies visible, detects strangers within 6 meters and publishes an encounter event that may lead to a friend request or a battle.
 - **Not here:** challenges (Battle) and alerts (Notification).
 
 ### 6. Monster Raid
