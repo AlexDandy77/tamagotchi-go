@@ -1,0 +1,1106 @@
+{
+ "info": {
+  "name": "Tamagotchi Go — Package Registry",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+  "description": "Package Registry (localhost:8088) in the Lab 1 Compose deployment. Set seedPassword locally. Before running, set REGISTRY_ADMIN_USER_IDS in your local .env to Alice's user ID so she is a global admin; Bob moderates the seeded package. Runs repeatably: each run registers its own package, monster and schedule."
+ },
+ "item": [
+  {
+   "name": "Login alice",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/auth/login",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"email\": \"alice@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"aliceToken\",b.accessToken);pm.environment.set(\"aliceId\",b.user.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Login bob",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/auth/login",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"email\": \"bob@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"bobToken\",b.accessToken);pm.environment.set(\"bobId\",b.user.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Liveness",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/healthz"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Readiness",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/readyz"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "List active packages (public)",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/v1/packages?limit=20"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"seeded package listed\", () => pm.expect(pm.response.json().items.map(p => p.id)).to.include(pm.environment.get(\"seedPackageId\")));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read seeded package (public)",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/v1/packages/{{seedPackageId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read pinned configuration (public)",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/v1/packages/{{seedPackageId}}/configurations/1"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read combat rules v1 (public)",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/v1/combat-rules/1"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"stake is 10\", () => pm.expect(pm.response.json().stake).to.eql(10));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Enrollment projection (admin Alice)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{seedPackageId}}/users?limit=20"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Alice projected from User Management events\", () => pm.expect(pm.response.json().items.map(e => e.userId)).to.include(pm.environment.get(\"aliceId\")));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Enrollment projection (moderator Bob)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{seedPackageId}}/users"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Non-admin cannot register a package",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/packages",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"Nope\", \"appVersion\": \"1.0.0\", \"description\": \"\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Register package (admin)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/packages",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"Robo Pets\", \"appVersion\": \"1.0.0\", \"description\": \"Robots with energy and discipline\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if(pm.response.code===201){const b=pm.response.json();pm.environment.set(\"packageId\",b.id);}",
+       "pm.test(\"draft\", () => pm.expect(pm.response.json().status).to.eql(\"draft\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Assign Bob as moderator",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{packageId}}/moderators/{{bobId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject invalid configuration (unknown stat)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{packageId}}/configurations",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": 0, \"starter\": {\"name\": \"Bolt\", \"combatType\": \"electric\", \"spriteUrls\": [\"https://assets.example.invalid/bolt.png\"]}, \"statistics\": {\"energy\": {\"minimum\": 0, \"maximum\": 100, \"initial\": 80, \"changePerMinute\": -1, \"bonus\": null}}, \"careActions\": {\"charge\": {\"statChanges\": {\"mood\": 5}, \"cooldownSeconds\": 60, \"xp\": 5, \"localCurrency\": 1}}, \"localCurrencyName\": \"Volts\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Moderator publishes configuration 1",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{packageId}}/configurations",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": 0, \"starter\": {\"name\": \"Bolt\", \"combatType\": \"electric\", \"spriteUrls\": [\"https://assets.example.invalid/bolt.png\"]}, \"statistics\": {\"energy\": {\"minimum\": 0, \"maximum\": 100, \"initial\": 80, \"changePerMinute\": -1, \"bonus\": {\"threshold\": 50, \"direction\": \"gte\", \"percent\": 5}}, \"discipline\": {\"minimum\": 0, \"maximum\": 10, \"initial\": 5, \"changePerMinute\": 0, \"bonus\": null}}, \"careActions\": {\"charge\": {\"statChanges\": {\"energy\": 30}, \"cooldownSeconds\": 60, \"xp\": 5, \"localCurrency\": 1}, \"train\": {\"statChanges\": {\"discipline\": 1, \"energy\": -10}, \"cooldownSeconds\": 300, \"xp\": 10, \"localCurrency\": 5}}, \"localCurrencyName\": \"Volts\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Stale configuration version",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{packageId}}/configurations",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": 0, \"starter\": {\"name\": \"Bolt\", \"combatType\": \"electric\", \"spriteUrls\": [\"https://assets.example.invalid/bolt.png\"]}, \"statistics\": {\"energy\": {\"minimum\": 0, \"maximum\": 100, \"initial\": 80, \"changePerMinute\": -1, \"bonus\": null}}, \"careActions\": {\"charge\": {\"statChanges\": {\"energy\": 30}, \"cooldownSeconds\": 60, \"xp\": 5, \"localCurrency\": 1}}, \"localCurrencyName\": \"Volts\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read package after publication",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/v1/packages/{{packageId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"packageVersion\",b.version);}",
+       "pm.test(\"configVersion 1\", () => pm.expect(pm.response.json().configVersion).to.eql(1));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Moderator cannot change status",
+   "request": {
+    "method": "PATCH",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{packageId}}",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": {{packageVersion}}, \"status\": \"active\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Moderator edits metadata",
+   "request": {
+    "method": "PATCH",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{packageId}}",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": {{packageVersion}}, \"appVersion\": \"1.1.0\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"packageVersion\",b.version);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject stale package version",
+   "request": {
+    "method": "PATCH",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{packageId}}",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": 1, \"status\": \"active\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Admin activates package",
+   "request": {
+    "method": "PATCH",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{packageId}}",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": {{packageVersion}}, \"status\": \"active\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Remove Bob as moderator",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{registry}}/v1/packages/{{packageId}}/moderators/{{bobId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject inconsistent monster",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/monsters",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"Glitch\", \"description\": \"\", \"spriteUrls\": [\"https://assets.example.invalid/glitch.png\"], \"maxHp\": 100, \"baseAttack\": 1, \"weaknesses\": [\"water\"], \"resistances\": [\"water\"], \"specialProperties\": [\"none\"]}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Create monster (admin)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/monsters",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"Storm Hydra\", \"description\": \"Three heads, all electric.\", \"spriteUrls\": [\"https://assets.example.invalid/hydra.png\"], \"maxHp\": 8000, \"baseAttack\": 20, \"weaknesses\": [\"earth\"], \"resistances\": [\"water\"], \"specialProperties\": [\"armored\"]}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if(pm.response.code===201){const b=pm.response.json();pm.environment.set(\"monsterId\",b.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "List monsters (player)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{registry}}/v1/monsters?limit=20"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read monster (player)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{registry}}/v1/monsters/{{monsterId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Schedule a raid for the seeded guild",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"guildId\": \"{{seedGuildId}}\", \"monsterId\": \"{{monsterId}}\", \"monsterVersion\": 1, \"startsAt\": \"{{raidStartsAt}}\", \"durationSeconds\": 900, \"participantLimit\": 20, \"rewards\": {\"globalCurrencyPerParticipant\": 20, \"xpPerParticipant\": 50}}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"raidStartsAt\", new Date(Date.now() + 60 * 60 * 1000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if(pm.response.code===201){const b=pm.response.json();pm.environment.set(\"scheduleId\",b.id);}",
+       "pm.test(\"pending dispatch\", () => pm.expect(pm.response.json().dispatchStatus).to.eql(\"pending\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Player cannot read schedules",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules/{{scheduleId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "List schedules (admin)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules?limit=20"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Deactivate schedule",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules/{{scheduleId}}/status",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": 1, \"status\": \"inactive\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reactivate schedule",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules/{{scheduleId}}/status",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": 2, \"status\": \"scheduled\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Cancel schedule",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules/{{scheduleId}}/status",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": 3, \"status\": \"cancelled\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"cancelled\", () => pm.expect(pm.response.json().status).to.eql(\"cancelled\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Cancelled schedule is final",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules/{{scheduleId}}/status",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\": 4, \"status\": \"scheduled\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject internal route on public port",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/internal/v1/monsters/{{monsterId}}/versions/1"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,1053 @@
+{
+ "info": {
+  "name": "Tamagotchi Go — Guild",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+  "description": "Guild service (localhost:8087) in the Lab 1 Compose deployment. Set seedPassword locally; tokens come from User Management. Runs repeatably: each run creates its own guild. Chat is a WebSocket (ws://localhost:8087/v1/guilds/{{seedGuildId}}/chat): send {\"type\":\"authenticate\",\"accessToken\":\"<token>\"} first, then {\"type\":\"message.send\",\"requestId\":\"<uuid>\",\"content\":\"hi\"}."
+ },
+ "item": [
+  {
+   "name": "Login alice",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/auth/login",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"email\": \"alice@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"aliceToken\",b.accessToken);pm.environment.set(\"aliceId\",b.user.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Login bob",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/auth/login",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"email\": \"bob@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"bobToken\",b.accessToken);pm.environment.set(\"bobId\",b.user.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Liveness",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{guild}}/healthz"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"ok\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Readiness",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{guild}}/readyz"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "List my guilds (seeded Night Owls)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds?limit=20"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"seeded guild listed\", () => pm.expect(pm.response.json().items.map(g => g.id)).to.include(pm.environment.get(\"seedGuildId\")));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read seeded guild",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{seedGuildId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Replay seeded chat history",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{seedGuildId}}/messages?afterSequence=0&limit=50"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"has hasMore flag\", () => pm.expect(pm.response.json()).to.have.property(\"hasMore\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject anonymous request",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{guild}}/v1/guilds"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject internal route on public port",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{guild}}/internal/v1/guilds/{{seedGuildId}}/members"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Create guild",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{createGuildKey}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"Postman Pack\", \"description\": \"Created by the Lab 1 collection\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"createGuildKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if(pm.response.code===201){const b=pm.response.json();pm.environment.set(\"guildId\",b.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Replay create with the same key",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{createGuildKey}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"Postman Pack\", \"description\": \"Created by the Lab 1 collection\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "pm.test(\"same guild replayed\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"guildId\")));",
+       "pm.test(\"replay header\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reuse key with another body",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{createGuildKey}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"Different\", \"description\": \"\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject missing Idempotency-Key",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"No key\", \"description\": \"\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject unknown field",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"x\", \"description\": \"\", \"leaderId\": \"{{bobId}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject too-long name",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"description\": \"\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Edit guild (leader)",
+   "request": {
+    "method": "PATCH",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"Postman Pack\", \"description\": \"Edited\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Non-member cannot read",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Invite Bob (checks User Management relationship)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}/invitations",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"recipientId\": \"{{bobId}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if(pm.response.code===201){const b=pm.response.json();pm.environment.set(\"invitationId\",b.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject duplicate pending invitation",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}/invitations",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"recipientId\": \"{{bobId}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Bob lists received invitations",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guild-invitations?limit=20"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Inviter cannot decide",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guild-invitations/{{invitationId}}/decision",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"decision\": \"accept\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Bob accepts",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guild-invitations/{{invitationId}}/decision",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"decision\": \"accept\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"accepted\", () => pm.expect(pm.response.json().status).to.eql(\"accepted\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "List members",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}/members?limit=20"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"two members\", () => pm.expect(pm.response.json().items).to.have.length(2));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Member cannot edit",
+   "request": {
+    "method": "PATCH",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\": \"Hijack\", \"description\": \"\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Promote Bob to officer",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}/members/{{bobId}}/role",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"role\": \"officer\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Transfer leadership to Bob",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}/leader",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"userId\": \"{{bobId}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Bob leads\", () => pm.expect(pm.response.json().leaderId).to.eql(pm.environment.get(\"bobId\")));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Former leader is officer and may leave",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}/members/{{aliceId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Leader cannot leave",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}/members/{{bobId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Invite Alice back",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}/invitations",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"recipientId\": \"{{aliceId}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if(pm.response.code===201){const b=pm.response.json();pm.environment.set(\"invitationId\",b.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Revoke the invitation",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guild-invitations/{{invitationId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Revoked invitation cannot be accepted",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{guild}}/v1/guild-invitations/{{invitationId}}/decision",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"decision\": \"accept\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
