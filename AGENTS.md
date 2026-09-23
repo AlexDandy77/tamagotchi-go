@@ -91,7 +91,7 @@
 
 ## Submodules and releases
 
-- Treat each service as an independent repository. Commit and push inside the service first. After its PR merges, fetch its actual merged commit (rebase/squash can change the hash), then update the common repository's submodule pointer in a separate task branch/PR. Never point the common repository at a local-only commit or silently stage existing pointer changes. Do not initialize or edit unrelated private submodules.
+- Treat each service as an independent repository. Commit and push inside the service first. After its PR merges, fetch its actual merged commit (rebase/squash can change the hash), then update the common repository's submodule pointer and/or any other lab related files in a separate task branch/PR. Never point the common repository at a local-only commit or silently stage existing pointer changes. Do not initialize or edit unrelated private submodules.
 - A documentation commit or an open PR is not automatically a release. When a release is requested and ready, fetch tags, update `main` with `--ff-only`, identify the merged release commit and confirm its checks passed. Common releases must also pin merged, available service commits.
 - Choose the next unused `vMAJOR.MINOR.PATCH` from existing tags and the README versioning rules: breaking public contract change → major, compatible feature → minor, compatible fix → patch. Tag only a validated commit on `main`, never an unmerged task branch. If the release scope/version is unclear, clarify before publishing it.
 
