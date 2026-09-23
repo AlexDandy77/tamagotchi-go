@@ -26,7 +26,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: CLIENT
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
-      KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="broker" password="${KAFKA_BROKER_PASSWORD}" user_broker="${KAFKA_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_users="${KAFKA_USERS_PASSWORD}" user_battles="${KAFKA_BATTLES_PASSWORD}";'
+      KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="broker" password="${KAFKA_BROKER_PASSWORD}" user_broker="${KAFKA_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_users="${KAFKA_USERS_PASSWORD}" user_battles="${KAFKA_BATTLES_PASSWORD}" user_guilds="${KAFKA_GUILDS_PASSWORD}" user_registry="${KAFKA_REGISTRY_PASSWORD}";'
       KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
       KAFKA_SUPER_USERS: User:broker;User:admin;User:ANONYMOUS
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'false'
@@ -45,6 +45,25 @@ services:
       test: [CMD-SHELL, /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --command-config /run/secrets/kafka-admin.properties --list >/dev/null]
       interval: 10s
       timeout: 10s
+      retries: 30
+    restart: unless-stopped
+  mongo:
+    image: mongo:8.0
+    # mongod requires an owner-only keyfile; copy the bind-mounted key before starting.
+    entrypoint: [bash, -c, 'install -m 400 -o mongodb -g mongodb /run/secrets/mongo-keyfile /data/configdb/keyfile && exec docker-entrypoint.sh "$$@"', --]
+    command: [mongod, --replSet, rs0, --keyFile, /data/configdb/keyfile, --bind_ip_all]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Run python3 scripts/lab.py setup}
+      REGISTRY_DB_PASSWORD: ${REGISTRY_DB_PASSWORD:?Run setup}
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+      - ./.secrets/mongo-keyfile:/run/secrets/mongo-keyfile:ro
+    healthcheck:
+      test: [CMD, mongosh, --quiet, --eval, "db.adminCommand('ping').ok"]
+      interval: 3s
+      timeout: 5s
       retries: 30
     restart: unless-stopped
   user-management:
@@ -102,6 +121,63 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
+  guild:
+    image: ${GUILD_IMAGE:?Set a published Guild image tag}
+    environment:
+      DATABASE_URL: postgres://guilds:${GUILDS_DB_PASSWORD:?Run setup}@postgres:5432/guilds?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_USERNAME: guilds
+      KAFKA_PASSWORD: ${KAFKA_GUILDS_PASSWORD}
+      DEPENDENCY_MODE: live
+      JWKS_URL: http://user-management:8080/.well-known/jwks.json
+      USER_MANAGEMENT_INTERNAL_URL: https://user-management:8443
+      SERVICE_TLS_CERT_FILE: /run/tls/guild.pem
+      SERVICE_TLS_KEY_FILE: /run/tls/guild-key.pem
+      SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+    volumes:
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/guild.pem:/run/tls/guild.pem:ro
+      - ./.secrets/tls/guild-key.pem:/run/tls/guild-key.pem:ro
+    ports: [127.0.0.1:8087:8080]
+    depends_on:
+      user-management: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, dist/main.js, healthcheck]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  package-registry:
+    image: ${PACKAGE_REGISTRY_IMAGE:?Set a published Package Registry image tag}
+    environment:
+      MONGODB_URL: mongodb://registry:${REGISTRY_DB_PASSWORD:?Run setup}@mongo:27017/registry?replicaSet=rs0&authSource=registry
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_USERNAME: registry
+      KAFKA_PASSWORD: ${KAFKA_REGISTRY_PASSWORD}
+      # Monster Raid is not deployed yet; raid commands go to an explicit fixture.
+      DEPENDENCY_MODE: mock
+      JWKS_URL: http://user-management:8080/.well-known/jwks.json
+      REGISTRY_ADMIN_USER_IDS: ${REGISTRY_ADMIN_USER_IDS:-}
+      SERVICE_TLS_CERT_FILE: /run/tls/package-registry.pem
+      SERVICE_TLS_KEY_FILE: /run/tls/package-registry-key.pem
+      SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+    volumes:
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/package-registry.pem:/run/tls/package-registry.pem:ro
+      - ./.secrets/tls/package-registry-key.pem:/run/tls/package-registry-key.pem:ro
+    ports: [127.0.0.1:8088:8080]
+    depends_on:
+      mongo: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      user-management: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, dist/main.js, healthcheck]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 volumes:
   postgres-data:
   kafka-data:
+  mongo-data:
+  mongo-config:
