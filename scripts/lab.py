@@ -13,7 +13,7 @@ import tarfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map')
+SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid')
 # Topic -> Kafka principal allowed to produce it.
 TOPICS = {
     'user.package-registered.v1': 'users',
@@ -28,13 +28,14 @@ TOPICS = {
 CONSUMERS = (('registry', 'user.package-registered.v1', 'package-registry'),)
 SECRET_KEYS = (
     'POSTGRES_PASSWORD', 'USERS_DB_PASSWORD', 'BATTLES_DB_PASSWORD', 'GUILDS_DB_PASSWORD', 'LOCATIONS_DB_PASSWORD',
+    'RAIDS_DB_PASSWORD',
     'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD',
     'KAFKA_BROKER_PASSWORD', 'KAFKA_ADMIN_PASSWORD', 'KAFKA_USERS_PASSWORD', 'KAFKA_BATTLES_PASSWORD',
     'KAFKA_GUILDS_PASSWORD', 'KAFKA_REGISTRY_PASSWORD', 'KAFKA_LOCATIONS_PASSWORD',
 )
-TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map')
+TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid')
 # These images run as an unprivileged user that must read its bind-mounted key.
-NON_ROOT_SERVICES = ('guild', 'package-registry', 'map')
+NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid')
 # Already required by Compose; provides the openssl CLI so the host needs no OpenSSL.
 TOOLS_IMAGE = 'postgres:17.9'
 TLS_SCRIPT = r'''set -eu
