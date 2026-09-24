@@ -22,6 +22,8 @@ TOPICS = {
     'battle.finished.v1': 'battles',
     'guild.invited.v1': 'guilds',
     'map.encountered.v1': 'locations',
+    'raid.started.v1': 'raids',
+    'raid.finished.v1': 'raids',
     'user.package-registered.v1.dlq': 'registry',
 }
 # (principal, topic, consumer group)
@@ -31,7 +33,7 @@ SECRET_KEYS = (
     'RAIDS_DB_PASSWORD',
     'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD',
     'KAFKA_BROKER_PASSWORD', 'KAFKA_ADMIN_PASSWORD', 'KAFKA_USERS_PASSWORD', 'KAFKA_BATTLES_PASSWORD',
-    'KAFKA_GUILDS_PASSWORD', 'KAFKA_REGISTRY_PASSWORD', 'KAFKA_LOCATIONS_PASSWORD',
+    'KAFKA_GUILDS_PASSWORD', 'KAFKA_REGISTRY_PASSWORD', 'KAFKA_LOCATIONS_PASSWORD', 'KAFKA_RAIDS_PASSWORD',
 )
 TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid')
 # These images run as an unprivileged user that must read its bind-mounted key.

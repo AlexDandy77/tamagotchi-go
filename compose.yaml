@@ -26,7 +26,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: CLIENT
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
-      KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="broker" password="${KAFKA_BROKER_PASSWORD}" user_broker="${KAFKA_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_users="${KAFKA_USERS_PASSWORD}" user_battles="${KAFKA_BATTLES_PASSWORD}" user_guilds="${KAFKA_GUILDS_PASSWORD}" user_registry="${KAFKA_REGISTRY_PASSWORD}" user_locations="${KAFKA_LOCATIONS_PASSWORD}";'
+      KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="broker" password="${KAFKA_BROKER_PASSWORD}" user_broker="${KAFKA_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_users="${KAFKA_USERS_PASSWORD}" user_battles="${KAFKA_BATTLES_PASSWORD}" user_guilds="${KAFKA_GUILDS_PASSWORD}" user_registry="${KAFKA_REGISTRY_PASSWORD}" user_locations="${KAFKA_LOCATIONS_PASSWORD}" user_raids="${KAFKA_RAIDS_PASSWORD}";'
       KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
       KAFKA_SUPER_USERS: User:broker;User:admin;User:ANONYMOUS
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'false'
@@ -209,6 +209,9 @@ services:
     image: ${MONSTER_RAID_IMAGE:?Set a published Monster Raid image tag}
     environment:
       DATABASE_URL: postgres://raids:${RAIDS_DB_PASSWORD:?Run setup}@postgres:5432/raids?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_USERNAME: raids
+      KAFKA_PASSWORD: ${KAFKA_RAIDS_PASSWORD:?Run setup}
       # Tamagotchi is not deployed yet; pets come from an explicit fixture.
       DEPENDENCY_MODE: paired
       JWKS_URL: http://user-management:8080/.well-known/jwks.json
