@@ -9,6 +9,18 @@ flowchart LR
   C[Client / Postman] -->|localhost:8081| U[User Management]
   C -->|localhost:8082| B[Battle]
   B -->|JWT keys + mTLS relationships/wallet| U
+  B -->|rules| R
+  B -->|mTLS reservations/settlement| T
+  U -->|package/rules/schedules| R
+  U -->|mTLS starter recovery| T
+  R -->|mTLS dispatch| MR[Monster Raid]
+  MR -->|mTLS membership| G
+  MR -->|mTLS rewards| U
+  MR -->|mTLS reservations/XP| T
+  MR -->|schedules/monster/rules| R
+  MR -->|raids database| P
+  MR -->|outbox| K
+  C -->|localhost:8084| MR
   U -->|users database| P[(PostgreSQL)]
   B -->|battles database| P
   U -->|transactional outbox| K[Kafka KRaft]
@@ -59,7 +71,7 @@ Tamagotchi and Notification also use Node.js, TypeScript, Fastify, `pg` and kafk
 
 This is a local teaching deployment, not a cloud or multi-PC cluster. Kafka has one broker and replication factor one; a volume survives container recreation but not loss of the host disk. Kafka uses distinct SASL credentials and producer topic ACLs; its private controller listener is unauthenticated. Internal service calls use TLS 1.3 with verified service certificates and caller allowlists. Public local HTTP, PostgreSQL and Kafka use plaintext on the development network; use encrypted transport when deploying across hosts.
 
-Compose is sufficient for the current nine containers. Kubernetes, Swarm, autoscaling, an API gateway and teammates' services are deferred. Running on four PCs would require a separate cluster/network/storage design; sharing a Compose file does not form a cluster.
+Compose is sufficient for the current eleven containers. Kubernetes, Swarm, autoscaling and an API gateway are deferred. Running on four PCs would require a separate cluster/network/storage design; sharing a Compose file does not form a cluster.
 
 ### Ownership and consistency
 
@@ -67,25 +79,47 @@ Each service stores JSONB aggregates in its own database, with indexed owners an
 
 Business changes and outbox events commit atomically. A worker deletes an outbox row only after Kafka acknowledges it. Failed publication retries from persisted rows; a crash after broker acknowledgement can repeat an event with the same ID. Future consumers must deduplicate it. No event consumers or dead-letter processors are required by these two publisher-only services.
 
-Battle stores each reservation, compensation and settlement step. Remote calls happen outside database transactions; stable activity IDs make crash recovery safe. `paired` mode uses real User Management JWTs, relationships and wallets. Package Registry and Tamagotchi are explicit fixtures. `live` mode uses their real HTTP contracts and never falls back to fixtures.
+Battle stores each reservation, compensation and settlement step. Remote calls happen outside database transactions; stable activity IDs make crash recovery safe. The deployment uses `live` mode: User Management handles authentication and wallets, Registry supplies rules, and Tamagotchi handles reservations and pet settlement. Calls never fall back to fixtures.
 
 Map keeps plain rows instead of JSONB aggregates: one per player location and one per pair of strangers. A conditional upsert drops stale reports without a service-wide advisory lock, and a report updates its encounter pairs in a fixed order. An encounter starts, with its `map.encountered.v1` event, only when two strangers come within 6 meters after being apart. The lab runs Map in `live` mode, which reads relationships and profiles from User Management and never falls back to fixtures; `mock` mode replaces only those lookups with built-in fixtures (Alice and Bob are friends) for local development.
 
-Monster Raid keeps one row per raid and one per participant, and serializes the changes to a raid with an advisory lock on its ID. Package Registry starts and cancels raids over mutual TLS; players read, join and attack with their tokens, Guild confirms membership, and the server computes damage from the frozen pet and the pinned monster. A timer fails raids whose time ran out. A settlement worker then asks User Management to pay the currency reward of a won raid once and Tamagotchi to reward or release each pet, keyed by raid and reservation IDs, before `raid.finished.v1` is published; `raid.started.v1` announces each start. The lab runs Monster Raid in `paired` mode: User Management, Guild and Package Registry are real, and pets come from a fixture until Tamagotchi is deployed.
+Monster Raid keeps one row per raid and one per participant, and serializes the changes to a raid with an advisory lock on its ID. Package Registry starts and cancels raids over mutual TLS; players read, join and attack with their tokens, Guild confirms membership, and the server computes damage from the frozen pet and the pinned monster. A timer fails raids whose time ran out. A settlement worker then asks User Management to pay the currency reward of a won raid once and Tamagotchi to reward or release each pet, keyed by raid and reservation IDs, before `raid.finished.v1` is published; `raid.started.v1` announces each start. Monster Raid runs in `live` mode with real User Management, Guild, Package Registry and Tamagotchi calls.
 
 ### Fixtures and limitations
 
-Seeding creates Alice and Bob (`alice@demo.invalid`, `bob@demo.invalid`) with `SEED_PASSWORD`. Each starts at zero, then receives 20 coins from one recorded fixture raid; repeated seeding does not credit them again. New registrations always start at zero. Package fixture: `11111111-1111-4111-8111-111111111111`.
+Seeding creates Alice and Bob (`alice@demo.invalid`, `bob@demo.invalid`) with `SEED_PASSWORD`. Accounts start at zero. The old mock-mode seed credited 20 fixture coins; existing balances are preserved when switching to live. New live accounts earn currency through real raids. New registrations always start at zero. Package fixture: `11111111-1111-4111-8111-111111111111`.
 
-Battle's pet fixtures exist only for Alice/Bob. Pet XP and capture persist in Battle's fixture records; a captured pet invalidates its original owner's loadout. Other registered players need real Tamagotchi provisioning to battle. Use a separate disposable Compose project for fresh demonstrations.
+Battle no longer uses its local pet fixtures. A live battle requires two real pets per player and enough wallet currency for the stake. Tamagotchi 0.4.1 only provisions one starter for the single demo package, so normal enrollment cannot yet supply a complete battle loadout.
 
-Guild seeds the *Night Owls* guild (`22222222-2222-4222-8222-222222222222`: Alice leader, Bob officer, two chat messages). Package Registry seeds the fixture package above as active with configuration 1 and Bob as moderator, the monster `33333333-3333-4333-8333-333333333333` and a raid schedule for Night Owls one hour after seeding; its enrollment projection fills from User Management's real events. User Management tokens carry no admin role yet, so the Registry treats the users listed in `REGISTRY_ADMIN_USER_IDS` as global admins (empty by default: set it in your local `.env`, for example to Alice's ID, to use the admin routes); a `roles: ["admin"]` claim also works once issued. Registry raid commands still go to its Monster Raid fixture until Package Registry is switched to the deployed service, so the lab's raids come from Monster Raid's seed. Guild chat broadcasts reach sockets on its single instance only.
+Guild seeds the *Night Owls* guild (`22222222-2222-4222-8222-222222222222`: Alice leader, Bob officer, two chat messages). Package Registry seeds the fixture package above as active with configuration 1 and Bob as moderator, the monster `33333333-3333-4333-8333-333333333333` and a raid schedule for Night Owls one hour after seeding; its enrollment projection fills from User Management's real events. User Management tokens carry no admin role yet, so the Registry treats the users listed in `REGISTRY_ADMIN_USER_IDS` as global admins (empty by default: set it in your local `.env`, for example to Alice's ID, to use the admin routes); a `roles: ["admin"]` claim also works once issued. Registry dispatches scheduled raids to Monster Raid over mTLS. Guild chat broadcasts reach sockets on its single instance only.
 
 Map seeds Alice's and Bob's locations about 3 meters apart, recorded at seeding time. They go stale two minutes later: friends and enemies stay listed, while strangers appear only near a fresh report. Marking a friend as an enemy in User Management ends the friendship, so the Map collection and `scripts/smoke_map.py` first make Alice and Bob strangers and finish by restoring their seeded friendship.
 
-Monster Raid seeds two Night Owls raids. The fixture raid (`a6c9ad3a-3890-5750-adae-a8b0a30af066`) is the one Alice and Bob won the day before seeding, whose 20 coins each User Management's seed records. The practice raid is the raid of Package Registry's seeded schedule (`44444444-4444-4444-8444-444444444444`); it is announced with `raid.started.v1` and takes joins and attacks for 30 days. Until Tamagotchi is deployed, each player joins with the primary pet of the lab convention, `uuid5(userId, "primary")`, at level 10; the Monster Raid collection and `scripts/smoke_monster_raid.py` join Alice once and attack on every run.
+Monster Raid seeds two Night Owls raids. The fixture raid (`a6c9ad3a-3890-5750-adae-a8b0a30af066`) is the one Alice and Bob won the day before seeding, whose fixture rewards were credited by the old mock-mode User Management seed. The practice raid is the raid of Package Registry's seeded schedule (`44444444-4444-4444-8444-444444444444`); it is announced with `raid.started.v1` and takes joins and attacks for 30 days. Live joins must use the actual primary pet returned by `GET /v1/pets`. The older Monster Raid collection and smoke script assume fixture pet IDs and must not be used to claim live pet integration.
 
 Setup creates a one-year development CA and one certificate per service (CN and DNS name = service name) in ignored `.secrets/tls`, using OpenSSL inside the already-required PostgreSQL image; the CA key never leaves that container. Each container receives only its own private key and the CA certificate. Internal HTTPS uses port 8443 without a host mapping. To add a service or before expiry, setup replaces the full bundle; restart every service afterwards. Use your deployment's certificate authority for live services.
+
+### Integration checks
+
+Run `python3 scripts/smoke_live.py` after startup with Alice configured as a Registry admin. It uses fresh accounts and leaves test records for inspection. A nonzero exit means at least one workflow remains incomplete.
+
+Verified with the published image tags in `.env.example`:
+
+- All eight APIs are ready; MongoDB 7 is healthy.
+- Registration checks the real Registry; starter provisioning and Kafka enrollment projection work.
+- Friend, guild and battle requests reach Notification through Kafka; Map reads real relationships. Battle challenge replay and cancellation work; full combat remains blocked below.
+- Registry starts a real raid; Guild checks membership, Tamagotchi reserves/releases the pet, User Management credits the reward, and Notification receives the result.
+
+Remaining blockers in Tamagotchi/Notification 0.4.1:
+
+- Neither supports live dependency mode; setting `live` silently selects mocks.
+- Both accept invalid bearer tokens instead of verifying JWT signatures.
+- Tamagotchi starter/care rules are hardcoded and differ from Registry configuration.
+- Care actions do not credit User Management's real wallet.
+- Tamagotchi supports only the demo package and one starter per owner. Battle needs two owned pets, so full live combat cannot yet be demonstrated through normal enrollment.
+- Firebase delivery is mocked; stored notifications work.
+
+Publish corrected teammate images before claiming a fully live system. Do not bypass these gaps with direct database writes or fake pets.
 
 ### Extending the environment
 

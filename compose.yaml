@@ -48,7 +48,7 @@ services:
       retries: 30
     restart: unless-stopped
   mongo:
-    image: mongo:8.0
+    image: mongo:7.0
     # mongod requires an owner-only keyfile; copy the bind-mounted key before starting.
     entrypoint: [bash, -c, 'install -m 400 -o mongodb -g mongodb /run/secrets/mongo-keyfile /data/configdb/keyfile && exec docker-entrypoint.sh "$$@"', --]
     command: [mongod, --replSet, rs0, --keyFile, /data/configdb/keyfile, --bind_ip_all]
@@ -73,7 +73,10 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: users
       KAFKA_PASSWORD: ${KAFKA_USERS_PASSWORD}
-      DEPENDENCY_MODE: mock
+      DEPENDENCY_MODE: live
+      REGISTRY_URL: http://package-registry:8080
+      REGISTRY_INTERNAL_URL: https://package-registry:8443
+      TAMAGOTCHI_INTERNAL_URL: https://tamagotchi:8443
       SERVICE_TLS_CERT_FILE: /run/tls/user-management.pem
       SERVICE_TLS_KEY_FILE: /run/tls/user-management-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
@@ -101,13 +104,14 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: battles
       KAFKA_PASSWORD: ${KAFKA_BATTLES_PASSWORD}
-      DEPENDENCY_MODE: paired
+      DEPENDENCY_MODE: live
+      REGISTRY_URL: http://package-registry:8080
+      TAMAGOTCHI_INTERNAL_URL: https://tamagotchi:8443
       SERVICE_TLS_CERT_FILE: /run/tls/battle.pem
       SERVICE_TLS_KEY_FILE: /run/tls/battle-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       USER_MANAGEMENT_INTERNAL_URL: https://user-management:8443
       JWKS_URL: http://user-management:8080/.well-known/jwks.json
-      MOCK_FAIL_OPERATION: ${MOCK_FAIL_OPERATION:-}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/battle.pem:/run/tls/battle.pem:ro
@@ -154,8 +158,8 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: registry
       KAFKA_PASSWORD: ${KAFKA_REGISTRY_PASSWORD}
-      # Raid commands still go to an explicit fixture until Registry is switched to the deployed Monster Raid.
-      DEPENDENCY_MODE: mock
+      DEPENDENCY_MODE: live
+      MONSTER_RAID_INTERNAL_URL: https://monster-raid:8443
       JWKS_URL: http://user-management:8080/.well-known/jwks.json
       REGISTRY_ADMIN_USER_IDS: ${REGISTRY_ADMIN_USER_IDS:-}
       SERVICE_TLS_CERT_FILE: /run/tls/package-registry.pem
@@ -212,8 +216,8 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: raids
       KAFKA_PASSWORD: ${KAFKA_RAIDS_PASSWORD:?Run setup}
-      # Tamagotchi is not deployed yet; pets come from an explicit fixture.
-      DEPENDENCY_MODE: paired
+      DEPENDENCY_MODE: live
+      TAMAGOTCHI_INTERNAL_URL: https://tamagotchi:8443
       JWKS_URL: http://user-management:8080/.well-known/jwks.json
       REGISTRY_INTERNAL_URL: https://package-registry:8443
       REGISTRY_URL: http://package-registry:8080
