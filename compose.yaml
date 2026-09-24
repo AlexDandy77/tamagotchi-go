@@ -26,7 +26,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: CLIENT
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
-      KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="broker" password="${KAFKA_BROKER_PASSWORD}" user_broker="${KAFKA_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_users="${KAFKA_USERS_PASSWORD}" user_battles="${KAFKA_BATTLES_PASSWORD}" user_guilds="${KAFKA_GUILDS_PASSWORD}" user_registry="${KAFKA_REGISTRY_PASSWORD}" user_locations="${KAFKA_LOCATIONS_PASSWORD}" user_raids="${KAFKA_RAIDS_PASSWORD}";'
+      KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="broker" password="${KAFKA_BROKER_PASSWORD}" user_broker="${KAFKA_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_users="${KAFKA_USERS_PASSWORD}" user_battles="${KAFKA_BATTLES_PASSWORD}" user_guilds="${KAFKA_GUILDS_PASSWORD}" user_registry="${KAFKA_REGISTRY_PASSWORD}" user_locations="${KAFKA_LOCATIONS_PASSWORD}" user_raids="${KAFKA_RAIDS_PASSWORD}" user_tamagotchi="${KAFKA_TAMAGOTCHI_PASSWORD}" user_notification="${KAFKA_NOTIFICATION_PASSWORD}";'
       KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
       KAFKA_SUPER_USERS: User:broker;User:admin;User:ANONYMOUS
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'false'
@@ -238,6 +238,42 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
+  tamagotchi:
+    image: ${TAMAGOTCHI_IMAGE:?Set a published Tamagotchi image tag}
+    environment:
+      DATABASE_URL: postgres://tamagotchi:${TAMAGOTCHI_DB_PASSWORD:?Run setup}@postgres:5432/tamagotchi?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_USERNAME: tamagotchi
+      KAFKA_PASSWORD: ${KAFKA_TAMAGOTCHI_PASSWORD}
+      # Package Registry and User Management's local-reward route are fixtures;
+      # this service makes no outbound calls. Internal routes: mTLS on 8443.
+      DEPENDENCY_MODE: mock
+      SERVICE_TLS_CERT_FILE: /run/tls/tamagotchi.pem
+      SERVICE_TLS_KEY_FILE: /run/tls/tamagotchi-key.pem
+      SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+    volumes:
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/tamagotchi.pem:/run/tls/tamagotchi.pem:ro
+      - ./.secrets/tls/tamagotchi-key.pem:/run/tls/tamagotchi-key.pem:ro
+    ports: [127.0.0.1:8085:8080]
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    restart: unless-stopped
+  notification:
+    image: ${NOTIFICATION_IMAGE:?Set a published Notification image tag}
+    environment:
+      DATABASE_URL: postgres://notification:${NOTIFICATION_DB_PASSWORD:?Run setup}@postgres:5432/notification?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_USERNAME: notification
+      KAFKA_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD}
+      # Firebase push is logged, not sent (no Firebase project for the lab).
+      DEPENDENCY_MODE: mock
+    ports: [127.0.0.1:8086:8080]
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
     restart: unless-stopped
 volumes:
   postgres-data:

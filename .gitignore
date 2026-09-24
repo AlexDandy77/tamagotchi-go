@@ -33,3 +33,5 @@ Thumbs.db
 .secrets/
 
 __pycache__/
+
+artur_docs/

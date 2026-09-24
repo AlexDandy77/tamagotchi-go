@@ -2,7 +2,7 @@
 
 ## Running Lab 1 environment
 
-Docker Compose runs three Go services, two TypeScript services, one PostgreSQL server, one single-node MongoDB replica set and one single-node Kafka KRaft broker. Clients call the services directly. Each API process also runs its background workers; no extra worker containers are needed.
+Docker Compose runs four Go services, four TypeScript services, one PostgreSQL server, one single-node MongoDB replica set and one single-node Kafka KRaft broker. Clients call the services directly. Each API process also runs its background workers; no extra worker containers are needed.
 
 ```mermaid
 flowchart LR
@@ -25,7 +25,16 @@ flowchart LR
   MP -->|JWT keys + mTLS relationships| U
   MP -->|locations database| P
   MP -->|transactional outbox| K
+  C -->|localhost:8085| T[Tamagotchi]
+  C -->|localhost:8086| N[Notification]
+  T -->|tamagotchi database| P
+  N -->|notification database| P
+  K -->|user.package-registered.v1| T
+  T -->|transactional outbox: pet.used / pet.captured| K
+  K -->|9 event topics| N
 ```
+
+Tamagotchi and Notification have no arrows to User Management: they make no outbound calls yet (`DEPENDENCY_MODE: mock`).
 
 | Container | Responsibility | Storage |
 | --- | --- | --- |
@@ -34,15 +43,19 @@ flowchart LR
 | Map | Each player's latest location, encounters between strangers and the nearby view | `locations`, owned by role `locations` |
 | Guild | Guilds, invitations, membership, roles and WebSocket chat | `guilds`, owned by role `guilds` |
 | Package Registry | Packages, immutable configurations, combat rules, monsters, raid schedules and the enrollment projection | MongoDB `registry`, user `registry` |
+| Tamagotchi | Pets, primary/secondary references, care progression, XP, reservations, ownership transfers | `tamagotchi`, owned by role `tamagotchi` |
+| Notification | Device tokens, notification records | `notification`, owned by role `notification` |
 | PostgreSQL | Hosts isolated databases; services never read/write the other database | `postgres-data` named volume |
 | MongoDB | Single-node replica set so the Registry can use multi-document transactions | `mongo-data`, `mongo-config` named volumes |
-| Kafka | One topic per event type; Package Registry consumes enrollments (group `package-registry`) | `kafka-data` named volume |
+| Kafka | One topic per event type; Package Registry and Tamagotchi consume enrollments (groups `package-registry`, `tamagotchi`); Notification consumes its 9 event topics (group `notification`) | `kafka-data` named volume |
 
 ### Technology and networking
 
 The APIs use Go 1.26, `net/http`, pgx, RS256 JWTs and franz-go. JSON payloads are validated against copies of the common schemas. PostgreSQL owns durability; Kafka delivers events asynchronously. Docker Compose provides service discovery (`postgres`, `kafka`, `user-management`, `battle`). Only API ports are published, bound to localhost. PostgreSQL and Kafka have no host ports. Map has no internal routes; its certificate is only a client certificate for User Management's relationship lookups.
 
 Guild and Package Registry use Node.js 24, TypeScript, Fastify, Ajv (against copies of the common schemas), jose and kafkajs; Guild stores data with `pg` and Registry with the MongoDB driver. Their internal APIs listen on port 8443 with the same mutual-TLS rules; Package Registry reads User Management's Snappy-compressed events through a registered Snappy codec.
+
+Tamagotchi and Notification also use Node.js, TypeScript, Fastify, `pg` and kafkajs (with a Snappy codec for the Go producers' batches). Tamagotchi's internal routes listen on 8443 with the same mutual-TLS rules, checking each route's `x-allowed-callers`; Notification has no internal routes.
 
 This is a local teaching deployment, not a cloud or multi-PC cluster. Kafka has one broker and replication factor one; a volume survives container recreation but not loss of the host disk. Kafka uses distinct SASL credentials and producer topic ACLs; its private controller listener is unauthenticated. Internal service calls use TLS 1.3 with verified service certificates and caller allowlists. Public local HTTP, PostgreSQL and Kafka use plaintext on the development network; use encrypted transport when deploying across hosts.
 
