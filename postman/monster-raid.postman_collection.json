@@ -1,0 +1,998 @@
+{
+ "info": {
+  "name": "Tamagotchi Go — Monster Raid",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+  "description": "Monster Raid service (localhost:8084) in the Lab 1 Compose deployment. Set seedPassword locally; tokens come from User Management and membership from Guild. The requests use the raids that Monster Raid seeds: the practice raid of the schedule Package Registry seeds, open for 30 days, and the fixture raid that Alice and Bob won. Runs repeatably: Alice joins the practice raid once and attacks it on every run, and Bob stays out of it. Package Registry starts and cancels raids over mutual TLS on the internal port, which is not published on the host, so those routes are not in this collection."
+ },
+ "item": [
+  {
+   "name": "Login alice",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/auth/login",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"email\": \"alice@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"aliceToken\",b.accessToken);pm.environment.set(\"aliceId\",b.user.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Login bob",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{users}}/v1/auth/login",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"email\": \"bob@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"bobToken\",b.accessToken);pm.environment.set(\"bobId\",b.user.id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Liveness",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{monsterRaid}}/healthz"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "pm.test(\"Reports its version\", () => { const b = pm.response.json(); pm.expect(b.status).to.eql(\"ok\"); pm.expect(b.version).to.be.a(\"string\").and.not.empty; });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Readiness",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{monsterRaid}}/readyz"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "pm.test(\"Database is ready\", () => pm.expect(pm.response.json().status).to.eql(\"ready\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject anonymous request",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 401\", () => pm.expect(pm.response.code).to.eql(401));",
+       "pm.test(\"UNAUTHENTICATED\", () => pm.expect(pm.response.json().error.code).to.eql(\"UNAUTHENTICATED\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject forged token",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{forgedToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}"
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"forgedToken\", pm.environment.get(\"aliceToken\").slice(0, -6) + \"AAAAAA\");"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 401\", () => pm.expect(pm.response.code).to.eql(401));",
+       "pm.test(\"INVALID_TOKEN\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_TOKEN\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Unknown route returns a JSON 404",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids-everywhere"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 404\", () => pm.expect(pm.response.code).to.eql(404));",
+       "pm.test(\"NOT_FOUND\", () => pm.expect(pm.response.json().error.code).to.eql(\"NOT_FOUND\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "List Night Owls raids",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "const items = pm.response.json().items;",
+       "const practice = items.find(r => r.id === pm.environment.get(\"practiceRaidId\"));",
+       "const fixture = items.find(r => r.id === pm.environment.get(\"fixtureRaidId\"));",
+       "pm.test(\"Lists the open practice raid\", () => { pm.expect(practice).to.be.an(\"object\"); pm.expect(practice.status).to.eql(\"active\"); pm.expect(practice.guildId).to.eql(pm.environment.get(\"seedGuildId\")); });",
+       "pm.test(\"Lists the won fixture raid\", () => { pm.expect(fixture).to.be.an(\"object\"); pm.expect(fixture.status).to.eql(\"won\"); pm.expect(fixture.settlement).to.eql(\"complete\"); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "List one raid per page",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}&limit=1"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "const b = pm.response.json();",
+       "pm.test(\"One raid and a cursor to the next page\", () => { pm.expect(b.items).to.have.lengthOf(1); pm.expect(b.nextCursor).to.be.a(\"string\").and.not.empty; });",
+       "if(pm.response.code===200){pm.environment.set(\"raidCursor\",b.nextCursor);pm.environment.set(\"firstRaidId\",b.items[0].id);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Follow the cursor to the next page",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}&limit=1&cursor={{raidCursor}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "pm.test(\"Another raid, newest first\", () => { const b = pm.response.json(); pm.expect(b.items).to.have.lengthOf(1); pm.expect(b.items[0].id).to.not.eql(pm.environment.get(\"firstRaidId\")); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject list without guildId",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.expect(pm.response.code).to.eql(422));",
+       "pm.test(\"VALIDATION_ERROR\", () => pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject limit=0",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}&limit=0"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.expect(pm.response.code).to.eql(422));",
+       "pm.test(\"INVALID_LIMIT\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_LIMIT\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject limit=101",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}&limit=101"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.expect(pm.response.code).to.eql(422));",
+       "pm.test(\"INVALID_LIMIT\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_LIMIT\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject malformed cursor",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}&cursor=abc"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.expect(pm.response.code).to.eql(422));",
+       "pm.test(\"INVALID_CURSOR\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_CURSOR\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject another guild's raids",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids?guildId={{$guid}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 403\", () => pm.expect(pm.response.code).to.eql(403));",
+       "pm.test(\"NOT_GUILD_MEMBER\", () => pm.expect(pm.response.json().error.code).to.eql(\"NOT_GUILD_MEMBER\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read the won fixture raid",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{fixtureRaidId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "const b = pm.response.json();",
+       "pm.test(\"Won at 0 HP and settled\", () => { pm.expect(b.status).to.eql(\"won\"); pm.expect(b.hp).to.eql(0); pm.expect(b.settlement).to.eql(\"complete\"); });",
+       "pm.test(\"Alice and Bob dealt every point of damage and got their rewards\", () => { pm.expect(b.participants).to.have.lengthOf(2); pm.expect(b.participants[0].damageDealt + b.participants[1].damageDealt).to.eql(b.monster.maxHp); b.participants.forEach(p => pm.expect(p.rewardStatus).to.eql(\"complete\")); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Unknown raid is not found",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{$guid}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 404\", () => pm.expect(pm.response.code).to.eql(404));",
+       "pm.test(\"NOT_FOUND\", () => pm.expect(pm.response.json().error.code).to.eql(\"NOT_FOUND\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject joining the ended fixture raid",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{fixtureRaidId}}/participants",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.expect(pm.response.code).to.eql(409));",
+       "pm.test(\"RAID_NOT_ACTIVE\", () => pm.expect(pm.response.json().error.code).to.eql(\"RAID_NOT_ACTIVE\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject join without Idempotency-Key",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 400\", () => pm.expect(pm.response.code).to.eql(400));",
+       "pm.test(\"IDEMPOTENCY_KEY_REQUIRED\", () => pm.expect(pm.response.json().error.code).to.eql(\"IDEMPOTENCY_KEY_REQUIRED\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject malformed JSON",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"primaryPetId\": ",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 400\", () => pm.expect(pm.response.code).to.eql(400));",
+       "pm.test(\"INVALID_JSON\", () => pm.expect(pm.response.json().error.code).to.eql(\"INVALID_JSON\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject unknown field",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\", \"xp\": 999}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 422\", () => pm.expect(pm.response.code).to.eql(422));",
+       "pm.test(\"VALIDATION_ERROR\", () => pm.expect(pm.response.json().error.code).to.eql(\"VALIDATION_ERROR\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject Bob joining with Alice's pet",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.expect(pm.response.code).to.eql(409));",
+       "pm.test(\"PET_UNAVAILABLE\", () => pm.expect(pm.response.json().error.code).to.eql(\"PET_UNAVAILABLE\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Alice joins the practice raid",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"Alice joined, in this run or an earlier one\", () => {",
+       "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+       "  if (pm.response.code === 201) { const b = pm.response.json(); pm.expect(b.userId).to.eql(pm.environment.get(\"aliceId\")); pm.expect(b.primaryPetId).to.eql(pm.environment.get(\"alicePrimary\")); }",
+       "  else pm.expect(pm.response.json().error.code).to.eql(\"ALREADY_JOINED\");",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject joining twice",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.expect(pm.response.code).to.eql(409));",
+       "pm.test(\"ALREADY_JOINED\", () => pm.expect(pm.response.json().error.code).to.eql(\"ALREADY_JOINED\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read the practice raid",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "const b = pm.response.json();",
+       "pm.test(\"Alice is a participant of the active raid\", () => { pm.expect(b.status).to.eql(\"active\"); pm.expect(b.participants.map(p => p.userId)).to.include(pm.environment.get(\"aliceId\")); });",
+       "if(pm.response.code===200)pm.environment.set(\"hpBefore\",b.hp);"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject an attack by a member who did not join",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 403\", () => pm.expect(pm.response.code).to.eql(403));",
+       "pm.test(\"NOT_PARTICIPANT\", () => pm.expect(pm.response.json().error.code).to.eql(\"NOT_PARTICIPANT\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Alice attacks",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{attackKey}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.environment.set(\"attackKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "const b = pm.response.json();",
+       "pm.test(\"The monster lost HP\", () => pm.expect(b.hp).to.be.below(Number(pm.environment.get(\"hpBefore\"))));",
+       "if(pm.response.code===200)pm.environment.set(\"hpAfter\",b.hp);"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Replay the attack with the same key",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{attackKey}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "pm.test(\"Replays the stored outcome\", () => { pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"); pm.expect(pm.response.json().hp).to.eql(Number(pm.environment.get(\"hpAfter\"))); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject an attack within the cooldown",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 429\", () => pm.expect(pm.response.code).to.eql(429));",
+       "pm.test(\"ATTACK_COOLDOWN\", () => pm.expect(pm.response.json().error.code).to.eql(\"ATTACK_COOLDOWN\"));",
+       "pm.test(\"Says when to retry\", () => pm.expect(Number(pm.response.headers.get(\"Retry-After\"))).to.be.above(0));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject attack without Idempotency-Key",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 400\", () => pm.expect(pm.response.code).to.eql(400));",
+       "pm.test(\"IDEMPOTENCY_KEY_REQUIRED\", () => pm.expect(pm.response.json().error.code).to.eql(\"IDEMPOTENCY_KEY_REQUIRED\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject the attack's key on another request",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{attackKey}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.expect(pm.response.code).to.eql(409));",
+       "pm.test(\"IDEMPOTENCY_CONFLICT\", () => pm.expect(pm.response.json().error.code).to.eql(\"IDEMPOTENCY_CONFLICT\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Reject attacking the ended fixture raid",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{fixtureRaidId}}/attacks"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 409\", () => pm.expect(pm.response.code).to.eql(409));",
+       "pm.test(\"RAID_NOT_ACTIVE\", () => pm.expect(pm.response.json().error.code).to.eql(\"RAID_NOT_ACTIVE\"));"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
