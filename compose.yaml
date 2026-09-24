@@ -154,7 +154,7 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: registry
       KAFKA_PASSWORD: ${KAFKA_REGISTRY_PASSWORD}
-      # Monster Raid is not deployed yet; raid commands go to an explicit fixture.
+      # Raid commands still go to an explicit fixture until Registry is switched to the deployed Monster Raid.
       DEPENDENCY_MODE: mock
       JWKS_URL: http://user-management:8080/.well-known/jwks.json
       REGISTRY_ADMIN_USER_IDS: ${REGISTRY_ADMIN_USER_IDS:-}
@@ -199,6 +199,37 @@ services:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
       user-management: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, /service, healthcheck]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  monster-raid:
+    image: ${MONSTER_RAID_IMAGE:?Set a published Monster Raid image tag}
+    environment:
+      DATABASE_URL: postgres://raids:${RAIDS_DB_PASSWORD:?Run setup}@postgres:5432/raids?sslmode=disable
+      # Tamagotchi is not deployed yet; pets come from an explicit fixture.
+      DEPENDENCY_MODE: paired
+      JWKS_URL: http://user-management:8080/.well-known/jwks.json
+      REGISTRY_INTERNAL_URL: https://package-registry:8443
+      REGISTRY_URL: http://package-registry:8080
+      GUILD_INTERNAL_URL: https://guild:8443
+      USER_MANAGEMENT_INTERNAL_URL: https://user-management:8443
+      SERVICE_TLS_CERT_FILE: /run/tls/monster-raid.pem
+      SERVICE_TLS_KEY_FILE: /run/tls/monster-raid-key.pem
+      SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+    volumes:
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/monster-raid.pem:/run/tls/monster-raid.pem:ro
+      - ./.secrets/tls/monster-raid-key.pem:/run/tls/monster-raid-key.pem:ro
+    ports: [127.0.0.1:8084:8080]
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      user-management: {condition: service_healthy}
+      guild: {condition: service_healthy}
+      package-registry: {condition: service_healthy}
     healthcheck:
       test: [CMD, /service, healthcheck]
       interval: 5s
