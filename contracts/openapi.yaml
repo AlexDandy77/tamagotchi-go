@@ -2103,8 +2103,8 @@ paths:
       - Map
       summary: Update your latest location
       operationId: PUT_v1_map_location
-      description: Ignore recordedAt <= stored timestamp. Reject timestamps more than 30 seconds in the future.
-        Only authenticated user location can be updated.
+      description: Ignore recordedAt <= stored timestamp. Reject recordedAt at or before your last clear with 409.
+        Reject timestamps more than 30 seconds in the future. Only authenticated user location can be updated.
       x-audience: player
       responses:
         '200':
@@ -2171,8 +2171,9 @@ paths:
       summary: Stop sharing your location
       operationId: DELETE_v1_map_location
       description: Clears the caller's stored location. Friends and enemies then see a null location and the caller
-        is no longer detected as nearby. Reports recorded at or before the clear are ignored. Repeating the call has
-        the same effect, so no Idempotency-Key is required.
+        is no longer detected as nearby. A report recorded at or before the clear is rejected with 409, so a delayed
+        report cannot share the location again. Repeating the call has the same effect, so no Idempotency-Key is
+        required.
       x-audience: player
       responses:
         '204':
