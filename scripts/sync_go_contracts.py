@@ -20,7 +20,7 @@ def typ(s):
   return 'struct {\n'+'\n'.join(fields)+'\n}'
  if t=='array':return '[]'+typ(s['items'])
  return {'string':'string','integer':'int','number':'float64','boolean':'bool'}.get(t,'any')
-for service,tag,extra in [('user-management','User Management',['Package','PackageConfig','CombatRules','Schedule','StarterInput','Pet']),('battle','Battle',['Package','PackageConfig','CombatRules','PetReservation','PetReserveInput','PetBattleResult','PetResult','BattleHoldInput','Hold','BattleMoneyResult','WalletResult','Relationship','ProfileUpdate']),('map','Map',['Relationship','RelationshipPage','PublicUser','EventEnvelope','MapEncounteredV1Data'])]:
+for service,tag,extra in [('user-management','User Management',['Package','PackageConfig','CombatRules','Schedule','StarterInput','Pet']),('battle','Battle',['Package','PackageConfig','CombatRules','PetReservation','PetReserveInput','PetBattleResult','PetResult','BattleHoldInput','Hold','BattleMoneyResult','WalletResult','Relationship','ProfileUpdate']),('map','Map',['Relationship','RelationshipPage','PublicUser','EventEnvelope','MapEncounteredV1Data']),('monster-raid','Monster Raid',['Schedule','PackageConfig','Eligibility','MemberPage','PetReserveInput','PetReservation','PetRaidResult','PetResult','RaidMoneyInput','WalletResult','EventEnvelope','RaidStartedV1Data','RaidFinishedV1Data'])]:
  if not (root/'services'/service/'go.mod').exists():continue
  needed=set(extra+['Error']);routes={}
  for path,ops in spec['paths'].items():
