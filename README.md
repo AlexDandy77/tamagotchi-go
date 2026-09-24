@@ -41,6 +41,10 @@ Prerequisites: Docker with Compose v2 and Python 3. Private submodules are not n
 | Monster Raid | [`ralex225/pad-team-8-monster-raid:0.1.0`](https://hub.docker.com/r/ralex225/pad-team-8-monster-raid) | 8084 | PostgreSQL `raids`, Kafka, User Management (JWKS, mTLS raid rewards), Guild (mTLS membership), Package Registry (mTLS schedules, care rules) |
 | Guild | [`xnikug/pad-team-8-guild:0.1.0`](https://hub.docker.com/r/xnikug/pad-team-8-guild) | 8087 | PostgreSQL `guilds`, Kafka, User Management (JWKS, mTLS relationships) |
 | Package Registry | [`xnikug/pad-team-8-package-registry:0.1.0`](https://hub.docker.com/r/xnikug/pad-team-8-package-registry) | 8088 | MongoDB replica set `registry`, Kafka, User Management JWKS |
+| Tamagotchi | [`arturtugui/pad-team-8-tamagotchi:0.4.1`](https://hub.docker.com/r/arturtugui/pad-team-8-tamagotchi) | 8085 | PostgreSQL `tamagotchi`, Kafka, mTLS certificate (internal routes on 8443) |
+| Notification | [`arturtugui/pad-team-8-notification:0.4.1`](https://hub.docker.com/r/arturtugui/pad-team-8-notification) | 8086 | PostgreSQL `notification`, Kafka |
+
+Tamagotchi consumes `user.package-registered.v1` into starter pets, publishes `pet.used.v1`/`pet.captured.v1` from its outbox, and serves its internal routes only over mTLS on 8443. Notification consumes its 9 event topics into notifications (those whose producers aren't deployed yet are skipped until a restart after they exist). Both keep `DEPENDENCY_MODE: mock` for outbound calls: Package Registry is a fixture and Firebase push is logged.
 
 Each image accepts `migrate`, `seed` and `healthcheck` commands besides serving; the lab script runs them. Every service's own README documents its configuration variables.
 
@@ -50,18 +54,19 @@ python3 scripts/lab.py up
 python3 scripts/lab.py status
 ```
 
-Setup generates ignored local credentials, an RSA signing key, a MongoDB replica-set keyfile and one development CA with a certificate per service, preserving existing ones. When an older checkout lacks newly added variables or certificates, setup appends only the missing `.env` entries and replaces an incomplete certificate bundle (keeping the old one as `.secrets/tls.replaced-*`); then run `down` and `up` so every service loads the new bundle. `up` pulls missing images, starts PostgreSQL, Kafka and MongoDB, provisions databases, the replica set, topics and ACLs, runs migrations and empty-database seeds, then starts the six APIs.
+Setup generates ignored local credentials, an RSA signing key, a MongoDB replica-set keyfile and one development CA with a certificate per service, preserving existing ones. When an older checkout lacks newly added variables or certificates, setup appends only the missing `.env` entries and replaces an incomplete certificate bundle (keeping the old one as `.secrets/tls.replaced-*`); then run `down` and `up` so every service loads the new bundle. `up` pulls missing images, starts PostgreSQL, Kafka and MongoDB, provisions databases, the replica set, topics and ACLs, runs migrations and empty-database seeds, then starts the eight APIs.
 
-- User Management: `http://localhost:8081`; Battle: `http://localhost:8082`; Map: `http://localhost:8083`; Monster Raid: `http://localhost:8084`; Guild: `http://localhost:8087`; Package Registry: `http://localhost:8088`.
+- User Management: `http://localhost:8081`; Battle: `http://localhost:8082`; Map: `http://localhost:8083`; Monster Raid: `http://localhost:8084`; Tamagotchi: `http://localhost:8085`; Notification: `http://localhost:8086`; Guild: `http://localhost:8087`; Package Registry: `http://localhost:8088`.
 - Liveness: `/healthz`; database readiness: `/readyz` on every service.
 - Import the [environment](postman/local.postman_environment.json) and the collections for [User Management and Battle](postman/lab1.postman_collection.json), [Guild](postman/guild.postman_collection.json), [Package Registry](postman/package-registry.postman_collection.json), [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json). Set the local seed password from `.env` in Postman; never export credentials to Git. The Guild, Registry, Map and Monster Raid collections are repeatable on existing data. The Registry collection and `scripts/smoke_guild_registry.py` need an admin: set `REGISTRY_ADMIN_USER_IDS` in your local `.env` to Alice's user ID (returned by the Login alice request), then run `docker compose up -d package-registry`.
+- Tamagotchi and Notification have their own separate [Postman collections](postman/tamagotchi.postman_collection.json) and [collection](postman/notification.postman_collection.json), with their own [environment](postman/artur-local.postman_environment.json) (ports 8085/8086; `devToken` is the seeded demo user's id, since their auth is mocked) — kept apart from the shared collection above by design, not merged into it.
 - `python3 scripts/lab.py provision`, `migrate` and `seed` are repeatable. `down` stops containers and retains data volumes.
 - On fresh disposable fixtures, `python3 scripts/smoke.py` runs an API workflow. `python3 scripts/smoke_guild_registry.py` checks Guild and Package Registry against real User Management tokens, relationships and enrollment events. `python3 scripts/smoke_map.py` checks Map against real User Management tokens and relationships and reads its encounter event from Kafka. `python3 scripts/smoke_monster_raid.py` checks Monster Raid against real User Management tokens, Guild membership and Package Registry schedules, calls its mutual TLS API as Package Registry and reads its start event from Kafka. `python3 scripts/verify_runtime.py` briefly stops containers to check persistence, isolation and Kafka recovery; it creates a test account.
-- See each service README for route status. All six services implement their routes. Battle's paired mode mocks only absent Package Registry and Tamagotchi dependencies; Guild and Map run live against User Management; Monster Raid's paired mode mocks only the absent Tamagotchi; Package Registry still sends raid commands to its Monster Raid fixture until it is switched to the deployed service.
+- See each service README for route status. All eight services implement their routes. Battle's paired mode mocks only absent Package Registry and Tamagotchi dependencies; Guild and Map run live against User Management; Monster Raid's paired mode mocks only the absent Tamagotchi; Package Registry still sends raid commands to its Monster Raid fixture until it is switched to the deployed service; Tamagotchi and Notification run on Kafka (and Tamagotchi's internal routes on mTLS) but mock their outbound calls.
 
 ## Communication contract
 
-Contract version **1.1.0**. User Management, Battle, Guild and Package Registry implement their portions; other owners implement the remaining services.
+Contract version **1.1.0**. All eight services implement their portions.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
@@ -341,7 +346,7 @@ Agents must follow [AGENTS.md](AGENTS.md) for task setup, validation, commits, P
 
 In this common repository, `main` requires two approving reviews from other collaborators, all review conversations resolved, a passing **Validate contracts** check and a branch that is up to date with its target. A new push dismisses earlier approvals. Direct pushes, force pushes and deletion of `main` are blocked, including for administrators.
 
-User Management, Battle, Guild and Package Registry use the same task-branch-to-`main` flow, with **no required approving reviews** while each private repository has a single maintainer. Their `main` branches still require a PR and block force pushes and deletion.
+User Management, Battle, Guild, Package Registry, Tamagotchi and Notification use the same task-branch-to-`main` flow, with **no required approving reviews** while each private repository has a single maintainer. Their `main` branches still require a PR and block force pushes and deletion.
 
 - **Rebase and merge** focused PRs to keep a linear history.
 - **Squash and merge** PRs with many commits or fix-up commits; use a Conventional Commit title.

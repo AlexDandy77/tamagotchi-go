@@ -3,5 +3,7 @@
   {"database": "battles", "role": "battles", "password_env": "BATTLES_DB_PASSWORD"},
   {"database": "guilds", "role": "guilds", "password_env": "GUILDS_DB_PASSWORD"},
   {"database": "locations", "role": "locations", "password_env": "LOCATIONS_DB_PASSWORD"},
-  {"database": "raids", "role": "raids", "password_env": "RAIDS_DB_PASSWORD"}
+  {"database": "raids", "role": "raids", "password_env": "RAIDS_DB_PASSWORD"},
+  {"database": "tamagotchi", "role": "tamagotchi", "password_env": "TAMAGOTCHI_DB_PASSWORD"},
+  {"database": "notification", "role": "notification", "password_env": "NOTIFICATION_DB_PASSWORD"}
 ]

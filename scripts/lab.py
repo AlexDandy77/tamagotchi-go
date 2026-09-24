@@ -13,7 +13,9 @@ import tarfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid')
+SERVICES = (
+    'user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification',
+)
 # Topic -> Kafka principal allowed to produce it.
 TOPICS = {
     'user.package-registered.v1': 'users',
@@ -25,19 +27,38 @@ TOPICS = {
     'raid.started.v1': 'raids',
     'raid.finished.v1': 'raids',
     'user.package-registered.v1.dlq': 'registry',
+    'pet.used.v1': 'tamagotchi',
+    'pet.captured.v1': 'tamagotchi',
 }
+# Every event type Notification consumes (its README "Kafka events").
+NOTIFICATION_TOPICS = (
+    'friend.requested.v1', 'map.encountered.v1', 'battle.requested.v1', 'battle.finished.v1', 'pet.used.v1',
+    'pet.captured.v1', 'guild.invited.v1', 'raid.started.v1', 'raid.finished.v1',
+)
+# Notification dead-letters to <topic>.dlq for each topic it consumes.
+TOPICS.update({topic + '.dlq': 'notification' for topic in NOTIFICATION_TOPICS})
+# (principal, topic): write access to a topic another principal owns in TOPICS.
+# Tamagotchi and Package Registry both consume user.package-registered.v1 and
+# the contract names its dead-letter topic <topic>.dlq, so they share it.
+SHARED_PRODUCERS = (('tamagotchi', 'user.package-registered.v1.dlq'),)
 # (principal, topic, consumer group)
-CONSUMERS = (('registry', 'user.package-registered.v1', 'package-registry'),)
+CONSUMERS = (
+    ('registry', 'user.package-registered.v1', 'package-registry'),
+    ('tamagotchi', 'user.package-registered.v1', 'tamagotchi'),
+    *(('notification', topic, 'notification') for topic in NOTIFICATION_TOPICS),
+)
 SECRET_KEYS = (
     'POSTGRES_PASSWORD', 'USERS_DB_PASSWORD', 'BATTLES_DB_PASSWORD', 'GUILDS_DB_PASSWORD', 'LOCATIONS_DB_PASSWORD',
-    'RAIDS_DB_PASSWORD',
+    'RAIDS_DB_PASSWORD', 'TAMAGOTCHI_DB_PASSWORD', 'NOTIFICATION_DB_PASSWORD',
     'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD',
     'KAFKA_BROKER_PASSWORD', 'KAFKA_ADMIN_PASSWORD', 'KAFKA_USERS_PASSWORD', 'KAFKA_BATTLES_PASSWORD',
     'KAFKA_GUILDS_PASSWORD', 'KAFKA_REGISTRY_PASSWORD', 'KAFKA_LOCATIONS_PASSWORD', 'KAFKA_RAIDS_PASSWORD',
+    'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD',
 )
-TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid')
+# Notification has no internal routes, so it terminates no mTLS and needs no certificate.
+TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi')
 # These images run as an unprivileged user that must read its bind-mounted key.
-NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid')
+NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi')
 # Already required by Compose; provides the openssl CLI so the host needs no OpenSSL.
 TOOLS_IMAGE = 'postgres:17.9'
 TLS_SCRIPT = r'''set -eu
@@ -171,6 +192,8 @@ def kafka(*args):
 def topics():
     for topic, producer in TOPICS.items():
         kafka('/opt/kafka/bin/kafka-topics.sh', '--create', '--if-not-exists', '--topic', topic, '--partitions', '1', '--replication-factor', '1')
+        kafka('/opt/kafka/bin/kafka-acls.sh', '--add', '--allow-principal', 'User:' + producer, '--producer', '--topic', topic)
+    for producer, topic in SHARED_PRODUCERS:
         kafka('/opt/kafka/bin/kafka-acls.sh', '--add', '--allow-principal', 'User:' + producer, '--producer', '--topic', topic)
     for producer in sorted(set(TOPICS.values())):
         kafka('/opt/kafka/bin/kafka-acls.sh', '--add', '--allow-principal', 'User:' + producer, '--operation', 'IdempotentWrite', '--cluster')
