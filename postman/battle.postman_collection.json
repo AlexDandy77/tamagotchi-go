@@ -1,0 +1,666 @@
+{
+  "info": {
+    "name": "Tamagotchi Go \u2014 Battle",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Use the shared local environment and set seedPassword. Logs in Alice/Bob, loads their real pets and checks both wallets before creating challenges. Stops if either player lacks two pets or 10 available coins. Tamagotchi 0.4.1 cannot provision a second pet through normal enrollment. Runner delay: 300 ms. Combat captures a pet and changes ownership; seeding does not reset data."
+  },
+  "item": [
+    {
+      "name": "Login alice",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{users}}/v1/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"alice@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){const s=pm.response.json();pm.environment.set(\"aliceToken\",s.accessToken);pm.environment.set(\"aliceRefresh\",s.refreshToken);pm.environment.set(\"aliceId\",s.user.id);}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login bob",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{users}}/v1/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"bob@demo.invalid\", \"password\": \"{{seedPassword}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){const s=pm.response.json();pm.environment.set(\"bobToken\",s.accessToken);pm.environment.set(\"bobRefresh\",s.refreshToken);pm.environment.set(\"bobId\",s.user.id);}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Load alice real pets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{tamagotchi}}/v1/pets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.environment.unset(\"alicePrimary\");",
+              "pm.environment.unset(\"aliceSecondary\");",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const roster = pm.response.json();",
+              "  const owner = pm.environment.get(\"aliceId\");",
+              "  const primary = roster.pets.find(p => p.id === roster.primaryPetId && p.ownerId === owner);",
+              "  const secondary = roster.pets.find(p => p.id !== roster.primaryPetId && p.ownerId === owner && roster.secondaryPetIds.includes(p.id));",
+              "  const valid = Boolean(primary && secondary);",
+              "  if (!valid) pm.execution.setNextRequest(null);",
+              "  pm.test(\"Alice owns two real pets\", () => pm.expect(valid, \"Battle needs two owned pets. Obtain a second pet through Tamagotchi before running combat; fixture IDs cannot be used in live mode.\").to.eql(true));",
+              "  if (valid) {",
+              "    pm.environment.set(\"alicePrimary\", primary.id);",
+              "    pm.environment.set(\"aliceSecondary\", secondary.id);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Check alice battle funds",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{users}}/v1/wallet"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const funded = pm.response.json().globalAvailable >= 10;",
+              "  if (!funded) pm.execution.setNextRequest(null);",
+              "  pm.test(\"Enough available currency for the stake\", () => pm.expect(funded, \"Earn at least 10 available global coins through raids before battling.\").to.eql(true));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Load bob real pets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          }
+        ],
+        "url": "{{tamagotchi}}/v1/pets"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.environment.unset(\"bobPrimary\");",
+              "pm.environment.unset(\"bobSecondary\");",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const roster = pm.response.json();",
+              "  const owner = pm.environment.get(\"bobId\");",
+              "  const primary = roster.pets.find(p => p.id === roster.primaryPetId && p.ownerId === owner);",
+              "  const secondary = roster.pets.find(p => p.id !== roster.primaryPetId && p.ownerId === owner && roster.secondaryPetIds.includes(p.id));",
+              "  const valid = Boolean(primary && secondary);",
+              "  if (!valid) pm.execution.setNextRequest(null);",
+              "  pm.test(\"Bob owns two real pets\", () => pm.expect(valid, \"Battle needs two owned pets. Obtain a second pet through Tamagotchi before running combat; fixture IDs cannot be used in live mode.\").to.eql(true));",
+              "  if (valid) {",
+              "    pm.environment.set(\"bobPrimary\", primary.id);",
+              "    pm.environment.set(\"bobSecondary\", secondary.id);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Check bob battle funds",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          }
+        ],
+        "url": "{{users}}/v1/wallet"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const funded = pm.response.json().globalAvailable >= 10;",
+              "  if (!funded) pm.execution.setNextRequest(null);",
+              "  pm.test(\"Enough available currency for the stake\", () => pm.expect(funded, \"Earn at least 10 available global coins through raids before battling.\").to.eql(true));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Challenge to cancel",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{battle}}/v1/battles",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"opponentId\": \"{{bobId}}\", \"primaryPetId\": \"{{alicePrimary}}\", \"secondaryPetId\": \"{{aliceSecondary}}\", \"boostIds\": []}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "if(pm.response.code===201)pm.environment.set(\"battleId\",pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cancel challenge",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Challenge to decline",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{battle}}/v1/battles",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"opponentId\": \"{{bobId}}\", \"primaryPetId\": \"{{alicePrimary}}\", \"secondaryPetId\": \"{{aliceSecondary}}\", \"boostIds\": []}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "if(pm.response.code===201)pm.environment.set(\"battleId\",pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Decline challenge",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}/decline"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Challenge to accept",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{battle}}/v1/battles",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"opponentId\": \"{{bobId}}\", \"primaryPetId\": \"{{alicePrimary}}\", \"secondaryPetId\": \"{{aliceSecondary}}\", \"boostIds\": []}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.variables.set(\"poll_active\", 0);",
+              "pm.variables.set(\"poll_finished\", 0);",
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "if(pm.response.code===201)pm.environment.set(\"battleId\",pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Accept challenge",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}/accept",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"primaryPetId\": \"{{bobPrimary}}\", \"secondaryPetId\": \"{{bobSecondary}}\", \"boostIds\": []}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 202\", () => pm.response.to.have.status(202));",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wait for active battle",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) {",
+              "  pm.execution.setNextRequest(null);",
+              "} else {",
+              "  const state = pm.response.json();",
+              "  const attempts = Number(pm.variables.get(\"poll_active\") || 0) + 1;",
+              "  pm.variables.set(\"poll_active\", attempts);",
+              "  if (state.status === \"preparing\" && attempts < 30) {",
+              "    pm.execution.setNextRequest(\"Wait for active battle\");",
+              "  } else {",
+              "    if (state.status !== \"active\") pm.execution.setNextRequest(null);",
+              "    pm.test(\"Battle active\", () => pm.expect(state.status, \"Battle did not reach active; runner stopped. Check dependency preparation/settlement and use a 300 ms runner delay.\").to.eql(\"active\"));",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject wrong turn",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}/actions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"action\": \"attack\", \"expectedTurn\": 1}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Attack",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}/actions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"action\": \"attack\", \"expectedTurn\": 1}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Forfeit",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}/actions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"action\": \"forfeit\", \"expectedTurn\": 2}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wait for settlement",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) {",
+              "  pm.execution.setNextRequest(null);",
+              "} else {",
+              "  const state = pm.response.json();",
+              "  const attempts = Number(pm.variables.get(\"poll_finished\") || 0) + 1;",
+              "  pm.variables.set(\"poll_finished\", attempts);",
+              "  if (state.status === \"settling\" && attempts < 30) {",
+              "    pm.execution.setNextRequest(\"Wait for settlement\");",
+              "  } else {",
+              "    if (state.status !== \"finished\") pm.execution.setNextRequest(null);",
+              "    pm.test(\"Battle finished\", () => pm.expect(state.status, \"Battle did not reach finished; runner stopped. Check dependency preparation/settlement and use a 300 ms runner delay.\").to.eql(\"finished\"));",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List battles",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{battle}}/v1/battles?limit=20"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              ""
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
