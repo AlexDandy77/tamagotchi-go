@@ -4,6 +4,8 @@ import json
 import re
 from itertools import count
 from pathlib import Path
+from subprocess import run
+import sys
 
 import yaml
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
@@ -169,6 +171,8 @@ def main():
         require((ROOT / target).is_file(), f"Broken contract link: {target}")
     for label, text in (("README", readme), ("field dictionary", dictionary)):
         require(text.count("```") % 2 == 0, f"Unclosed {label} code fence")
+    validate(yaml.safe_load((ROOT / "contracts/gateway.openapi.yaml").read_text()))
+    run([sys.executable, str(ROOT / "scripts/sync_gateway_routes.py"), "--check"], check=True)
     print(f"Validated {len(catalog)} HTTP operations, {len(events['oneOf'])} event types and {len(realtime['oneOf'])} chat types.")
     print("README and field dictionary agreement, references, examples and nine invalid-payload checks passed.")
 

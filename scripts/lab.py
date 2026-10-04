@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable Lab 1 lifecycle. Requires Python 3 and Docker Compose v2."""
+"""Portable project lifecycle. Requires Python 3 and Docker Compose v2."""
 import argparse
 import base64
 import io
@@ -56,9 +56,9 @@ SECRET_KEYS = (
     'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD',
 )
 # Notification has no internal routes, so it terminates no mTLS and needs no certificate.
-TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi')
+TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'gateway')
 # These images run as an unprivileged user that must read its bind-mounted key.
-NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi')
+NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'gateway')
 # Already required by Compose; provides the openssl CLI so the host needs no OpenSSL.
 TOOLS_IMAGE = 'postgres:17.9'
 TLS_SCRIPT = r'''set -eu

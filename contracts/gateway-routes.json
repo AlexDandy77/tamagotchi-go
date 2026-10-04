@@ -1,0 +1,692 @@
+[
+  {
+    "service": "user-management",
+    "method": "POST",
+    "pattern": "/v1/auth/register",
+    "audience": "public",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "POST",
+    "pattern": "/v1/auth/login",
+    "audience": "public",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "POST",
+    "pattern": "/v1/auth/refresh",
+    "audience": "public",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "POST",
+    "pattern": "/v1/auth/logout",
+    "audience": "public",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
+    "pattern": "/\\.well\\-known/jwks\\.json",
+    "audience": "public",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
+    "pattern": "/v1/users/me",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "PATCH",
+    "pattern": "/v1/users/me",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
+    "pattern": "/v1/users/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "PUT",
+    "pattern": "/v1/users/me/packages/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "POST",
+    "pattern": "/v1/friend\\-requests",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
+    "pattern": "/v1/friend\\-requests",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "PUT",
+    "pattern": "/v1/friend\\-requests/[^/]+/decision",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "DELETE",
+    "pattern": "/v1/friend\\-requests/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "DELETE",
+    "pattern": "/v1/friends/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
+    "pattern": "/v1/relationships",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "PUT",
+    "pattern": "/v1/enemies/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "DELETE",
+    "pattern": "/v1/enemies/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
+    "pattern": "/v1/wallet",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
+    "pattern": "/internal/v1/relationships",
+    "audience": "internal",
+    "callers": [
+      "map",
+      "guild",
+      "battle"
+    ]
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
+    "pattern": "/internal/v1/users/[^/]+/relationships",
+    "audience": "internal",
+    "callers": [
+      "map"
+    ]
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
+    "pattern": "/internal/v1/users/[^/]+/packages/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "tamagotchi",
+      "package-registry",
+      "notification"
+    ]
+  },
+  {
+    "service": "user-management",
+    "method": "PUT",
+    "pattern": "/internal/v1/battle\\-holds/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "battle"
+    ]
+  },
+  {
+    "service": "user-management",
+    "method": "DELETE",
+    "pattern": "/internal/v1/battle\\-holds/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "battle"
+    ]
+  },
+  {
+    "service": "user-management",
+    "method": "PUT",
+    "pattern": "/internal/v1/battle\\-settlements/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "battle"
+    ]
+  },
+  {
+    "service": "user-management",
+    "method": "PUT",
+    "pattern": "/internal/v1/raid\\-settlements/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "user-management",
+    "method": "PUT",
+    "pattern": "/internal/v1/local\\-rewards/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "tamagotchi"
+    ]
+  },
+  {
+    "service": "tamagotchi",
+    "method": "GET",
+    "pattern": "/v1/pets",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "tamagotchi",
+    "method": "GET",
+    "pattern": "/v1/pets/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "tamagotchi",
+    "method": "PUT",
+    "pattern": "/v1/pets/primary",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "tamagotchi",
+    "method": "POST",
+    "pattern": "/v1/pets/[^/]+/care",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "tamagotchi",
+    "method": "GET",
+    "pattern": "/v1/care\\-actions/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "tamagotchi",
+    "method": "GET",
+    "pattern": "/v1/pet\\-types",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "tamagotchi",
+    "method": "PUT",
+    "pattern": "/internal/v1/starter\\-pets/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "user-management"
+    ]
+  },
+  {
+    "service": "tamagotchi",
+    "method": "PUT",
+    "pattern": "/internal/v1/pet\\-reservations/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "battle",
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "tamagotchi",
+    "method": "DELETE",
+    "pattern": "/internal/v1/pet\\-reservations/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "battle",
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "tamagotchi",
+    "method": "PUT",
+    "pattern": "/internal/v1/pet\\-battle\\-settlements/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "battle"
+    ]
+  },
+  {
+    "service": "tamagotchi",
+    "method": "PUT",
+    "pattern": "/internal/v1/pet\\-raid\\-settlements/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "battle",
+    "method": "POST",
+    "pattern": "/v1/battles",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "battle",
+    "method": "GET",
+    "pattern": "/v1/battles",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "battle",
+    "method": "GET",
+    "pattern": "/v1/battles/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "battle",
+    "method": "DELETE",
+    "pattern": "/v1/battles/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "battle",
+    "method": "POST",
+    "pattern": "/v1/battles/[^/]+/accept",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "battle",
+    "method": "POST",
+    "pattern": "/v1/battles/[^/]+/decline",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "battle",
+    "method": "POST",
+    "pattern": "/v1/battles/[^/]+/actions",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "notification",
+    "method": "PUT",
+    "pattern": "/v1/notification\\-devices/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "notification",
+    "method": "DELETE",
+    "pattern": "/v1/notification\\-devices/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "notification",
+    "method": "GET",
+    "pattern": "/v1/notifications",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "notification",
+    "method": "PUT",
+    "pattern": "/v1/notifications/[^/]+/read",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "map",
+    "method": "PUT",
+    "pattern": "/v1/map/location",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "map",
+    "method": "GET",
+    "pattern": "/v1/map/location",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "map",
+    "method": "DELETE",
+    "pattern": "/v1/map/location",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "map",
+    "method": "GET",
+    "pattern": "/v1/map/nearby",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "POST",
+    "pattern": "/v1/guilds",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "GET",
+    "pattern": "/v1/guilds",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "GET",
+    "pattern": "/v1/guilds/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "PATCH",
+    "pattern": "/v1/guilds/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "GET",
+    "pattern": "/v1/guilds/[^/]+/members",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "POST",
+    "pattern": "/v1/guilds/[^/]+/invitations",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "GET",
+    "pattern": "/v1/guild\\-invitations",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "PUT",
+    "pattern": "/v1/guild\\-invitations/[^/]+/decision",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "DELETE",
+    "pattern": "/v1/guild\\-invitations/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "PUT",
+    "pattern": "/v1/guilds/[^/]+/members/[^/]+/role",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "PUT",
+    "pattern": "/v1/guilds/[^/]+/leader",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "DELETE",
+    "pattern": "/v1/guilds/[^/]+/members/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "GET",
+    "pattern": "/v1/guilds/[^/]+/messages",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "guild",
+    "method": "GET",
+    "pattern": "/internal/v1/guilds/[^/]+/members/[^/]+/eligibility",
+    "audience": "internal",
+    "callers": [
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "guild",
+    "method": "GET",
+    "pattern": "/internal/v1/guilds/[^/]+/members",
+    "audience": "internal",
+    "callers": [
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "package-registry",
+    "method": "POST",
+    "pattern": "/v1/packages",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/v1/packages",
+    "audience": "public",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/v1/packages/[^/]+",
+    "audience": "public",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "PATCH",
+    "pattern": "/v1/packages/[^/]+",
+    "audience": "moderator/admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "PUT",
+    "pattern": "/v1/packages/[^/]+/moderators/[^/]+",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "DELETE",
+    "pattern": "/v1/packages/[^/]+/moderators/[^/]+",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "POST",
+    "pattern": "/v1/packages/[^/]+/configurations",
+    "audience": "moderator/admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/v1/packages/[^/]+/configurations/[^/]+",
+    "audience": "public",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/v1/packages/[^/]+/users",
+    "audience": "moderator/admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/v1/combat\\-rules/[^/]+",
+    "audience": "public",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "POST",
+    "pattern": "/v1/monsters",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/v1/monsters",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/v1/monsters/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/internal/v1/monsters/[^/]+/versions/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "package-registry",
+    "method": "POST",
+    "pattern": "/v1/raid\\-schedules",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/v1/raid\\-schedules",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/v1/raid\\-schedules/[^/]+",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "PUT",
+    "pattern": "/v1/raid\\-schedules/[^/]+/status",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "package-registry",
+    "method": "GET",
+    "pattern": "/internal/v1/raid\\-schedules/[^/]+/versions/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "monster-raid",
+      "user-management",
+      "tamagotchi"
+    ]
+  },
+  {
+    "service": "monster-raid",
+    "method": "PUT",
+    "pattern": "/internal/v1/raids/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "package-registry"
+    ]
+  },
+  {
+    "service": "monster-raid",
+    "method": "DELETE",
+    "pattern": "/internal/v1/raids/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "package-registry"
+    ]
+  },
+  {
+    "service": "monster-raid",
+    "method": "GET",
+    "pattern": "/v1/raids",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "monster-raid",
+    "method": "GET",
+    "pattern": "/v1/raids/[^/]+",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "monster-raid",
+    "method": "POST",
+    "pattern": "/v1/raids/[^/]+/participants",
+    "audience": "player",
+    "callers": []
+  },
+  {
+    "service": "monster-raid",
+    "method": "POST",
+    "pattern": "/v1/raids/[^/]+/attacks",
+    "audience": "player",
+    "callers": []
+  }
+]

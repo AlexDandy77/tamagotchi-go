@@ -25,46 +25,48 @@ Each service lives in its own private repository, linked under [`services/`](ser
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the running Lab 1 containers, database ownership, networking, mocks and the future eight-service design.
+[ARCHITECTURE.md](ARCHITECTURE.md) describes containers, storage, service ownership and Gateway communication. This is one project and one Compose deployment; new services extend the existing setup.
 
-## Run Lab 1
+## Run locally
 
-Prerequisites: Docker with Compose v2 and Python 3. Private submodules are not needed to run published images.
+Requires Docker Compose v2 and Python 3. Published images run without access to private submodules.
 
-**Release prerequisite:** service implementation PRs must merge and validated public images must be published before the default image tags can be pulled. These names are not a claim that a release has been published:
+| Service | Docker Hub image | REST access |
+| --- | --- | --- |
+| Gateway | `alexdandy77/pad-team-8-gateway:2.0.0` | `http://localhost:8080` |
+| User Management | `alexdandy77/pad-team-8-user-management:2.0.0` | Gateway `/services/user-management` |
+| Battle | `alexdandy77/pad-team-8-battle:2.0.0` | Gateway `/services/battle` |
+| Map | `ralex225/pad-team-8-map:0.1.0` | Gateway migration pending |
+| Monster Raid | `ralex225/pad-team-8-monster-raid:0.1.0` | Gateway migration pending |
+| Guild | `xnikug/pad-team-8-guild:0.1.0` | Gateway migration pending; direct WebSocket on 8087 |
+| Package Registry | `xnikug/pad-team-8-package-registry:0.1.0` | Gateway migration pending |
+| Tamagotchi | `arturtugui/pad-team-8-tamagotchi:0.4.1` | Gateway migration pending |
+| Notification | `arturtugui/pad-team-8-notification:0.4.1` | Gateway migration pending |
 
-| Service | Docker Hub image | Host port | Needs |
-| --- | --- | --- | --- |
-| User Management | [`alexdandy77/pad-team-8-user-management:0.1.0`](https://hub.docker.com/r/alexdandy77/pad-team-8-user-management) | 8081 | PostgreSQL `users`, Kafka, JWT signing key, mTLS certificate |
-| Battle | [`alexdandy77/pad-team-8-battle:0.1.0`](https://hub.docker.com/r/alexdandy77/pad-team-8-battle) | 8082 | PostgreSQL `battles`, Kafka, User Management (JWKS, mTLS) |
-| Map | [`ralex225/pad-team-8-map:0.1.0`](https://hub.docker.com/r/ralex225/pad-team-8-map) | 8083 | PostgreSQL `locations`, Kafka, User Management (JWKS, mTLS relationships) |
-| Monster Raid | [`ralex225/pad-team-8-monster-raid:0.1.0`](https://hub.docker.com/r/ralex225/pad-team-8-monster-raid) | 8084 | PostgreSQL `raids`, Kafka, User Management (JWKS, mTLS raid rewards), Guild (mTLS membership), Package Registry (mTLS schedules, care rules) |
-| Guild | [`xnikug/pad-team-8-guild:0.1.0`](https://hub.docker.com/r/xnikug/pad-team-8-guild) | 8087 | PostgreSQL `guilds`, Kafka, User Management (JWKS, mTLS relationships) |
-| Package Registry | [`xnikug/pad-team-8-package-registry:0.1.0`](https://hub.docker.com/r/xnikug/pad-team-8-package-registry) | 8088 | MongoDB replica set `registry`, Kafka, User Management JWKS |
-| Tamagotchi | [`arturtugui/pad-team-8-tamagotchi:0.4.1`](https://hub.docker.com/r/arturtugui/pad-team-8-tamagotchi) | 8085 | PostgreSQL `tamagotchi`, Kafka, mTLS certificate (internal routes on 8443) |
-| Notification | [`arturtugui/pad-team-8-notification:0.4.1`](https://hub.docker.com/r/arturtugui/pad-team-8-notification) | 8086 | PostgreSQL `notification`, Kafka |
-
-User Management, Battle, Map, Guild, Package Registry and Monster Raid run in `live` mode. Tamagotchi and Notification 0.4.1 do not support live mode: their Kafka and database connections work, but authentication and outbound dependencies remain mocked. See [integration results and blockers](ARCHITECTURE.md#integration-checks).
-
-Each image accepts `migrate`, `seed` and `healthcheck` commands besides serving; the lab script runs them. Every service's own README documents its configuration variables.
-
-Run `python3 scripts/smoke_live.py` to check cross-service workflows. It requires Alice in `REGISTRY_ADMIN_USER_IDS`, creates fresh test accounts/guilds/raids, retains those records, and exits nonzero for unresolved integration gaps. It does not change Alice/Bob’s pets or balances. The older battle and raid smoke scripts use fixture pet IDs and are not valid checks of live combat.
+**Release prerequisite:** the three updated service PRs must merge and publish their images before these new pins can be pulled. Put their published tags in `.env` as `GATEWAY_IMAGE`, `USER_MANAGEMENT_IMAGE` and `BATTLE_IMAGE`. Setup preserves existing image selections and credentials. GitHub Actions needs `DOCKERHUB_TOKEN` in each service repository; local Docker login does not configure CI.
 
 ```sh
 python3 scripts/lab.py setup
 python3 scripts/lab.py up
 python3 scripts/lab.py status
+python3 scripts/smoke_gateway.py
 ```
 
-Setup generates ignored local credentials, an RSA signing key, a MongoDB replica-set keyfile and one development CA with a certificate per service, preserving existing ones. When an older checkout lacks newly added variables or certificates, setup appends only the missing `.env` entries and replaces an incomplete certificate bundle (keeping the old one as `.secrets/tls.replaced-*`); then run `down` and `up` so every service loads the new bundle. `up` pulls missing images, starts PostgreSQL, Kafka and MongoDB, provisions databases, the replica set, topics and ACLs, runs migrations and empty-database seeds, then starts the eight APIs.
+`setup` generates missing credentials, JWT and mTLS keys. Adding Gateway replaces an incomplete TLS bundle and keeps the old one under `.secrets/tls.replaced-*`; restart all containers to load the same CA. `up` provisions databases and Kafka topics, runs migrations and empty-database seeds, then starts the services. `provision`, `migrate` and `seed` are repeatable; `down` retains data. The existing Compose project name and volumes are preserved.
 
-- User Management: `http://localhost:8081`; Battle: `http://localhost:8082`; Map: `http://localhost:8083`; Monster Raid: `http://localhost:8084`; Tamagotchi: `http://localhost:8085`; Notification: `http://localhost:8086`; Guild: `http://localhost:8087`; Package Registry: `http://localhost:8088`.
-- Liveness: `/healthz`; database readiness: `/readyz` on every service.
-- Import the [environment](postman/local.postman_environment.json) and the collections for [User Management](postman/user-management.postman_collection.json), [Battle](postman/battle.postman_collection.json), [Guild](postman/guild.postman_collection.json), [Package Registry](postman/package-registry.postman_collection.json), [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json). Set the local seed password from `.env` in Postman; never export credentials to Git. The Guild, Registry, Map and Monster Raid collections are repeatable on existing data. The Registry collection and `scripts/smoke_guild_registry.py` need an admin: set `REGISTRY_ADMIN_USER_IDS` in your local `.env` to Alice's user ID (returned by the Login alice request), then run `docker compose up -d package-registry`.
-- [Tamagotchi](postman/tamagotchi.postman_collection.json) and [Notification](postman/notification.postman_collection.json) use the same local environment (ports 8085/8086). Their `devToken` values are seeded demo user IDs because authentication remains mocked. Battle logs in Alice/Bob, loads real pet IDs and checks wallet funds. The runner stops before challenges if either player lacks two pets or 10 available coins.
-- `python3 scripts/lab.py provision`, `migrate` and `seed` are repeatable. `down` stops containers and retains data volumes.
-- Use `python3 scripts/smoke_live.py` for the shared live deployment. `smoke.py` and `smoke_monster_raid.py` target older pet fixtures; `verify_runtime.py` is a separate disruptive persistence/recovery check, not part of this integration run.
-- See each service README for route status and [architecture](ARCHITECTURE.md#integration-checks) for verified connections and remaining integration gaps.
+User Management and Battle have no public host ports. Clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; both Go services send REST dependencies through it. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
+
+Import [the shared Postman environment](postman/local.postman_environment.json), set `seedPassword` locally, and import each service collection:
+
+- [Gateway](postman/gateway.postman_collection.json)
+- [User Management](postman/user-management.postman_collection.json) and [Battle](postman/battle.postman_collection.json)
+- [Guild](postman/guild.postman_collection.json) and [Package Registry](postman/package-registry.postman_collection.json)
+- [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json)
+- [Tamagotchi](postman/tamagotchi.postman_collection.json) and [Notification](postman/notification.postman_collection.json)
+
+The other six published images still need the Gateway identity contract, request limits and merge publishing. Their direct REST ports remain during migration; their Gateway collection requests fail until owners update them. Registration, full live combat and Guild negotiation depend on those updates. There is no bearer-forwarding fallback. Existing Tamagotchi/Notification mock behavior is described in [architecture](ARCHITECTURE.md#integration-checks).
+
+`smoke_gateway.py` checks the three updated services without accepting a battle or changing wallets/friendships. `smoke_live.py` checks the full team workflows and reports unresolved dependencies. Older fixture-based combat and raid scripts remain for explicit test fixtures only. After a service PR merges and publishes, update its image pin and submodule pointer to the actual merged commit through a common PR.
 
 ## Communication contract
 
@@ -80,16 +82,16 @@ Contract version **1.1.0**. All eight services implement their portions.
 
 | Item | Rule |
 | --- | --- |
-| Addressing | Paths are relative to the owning service's origin. Public paths start with `/v1`; `/internal/v1` paths are for service-to-service calls only. |
+| Addressing | Catalog paths are relative to the owning service; clients prefix them with Gateway `/services/{service}`. Public paths start with `/v1`; `/internal/v1` paths are for service-to-service calls only. |
 | Format | `application/json`, UTF-8, camelCase keys. Unknown fields are rejected. IDs are UUID strings; versions are positive integers; times are RFC 3339 UTC (`2026-09-09T10:00:00Z`); currency is whole units up to 2^53 - 1. |
-| User authentication | `Authorization: Bearer <accessToken>`. User Management issues RS256 JWTs valid for 15 minutes; every service verifies them with the JWKS endpoint. Refresh tokens are opaque, rotated on use and valid for at most 30 days. |
+| User authentication | `Authorization: Bearer <accessToken>`. User Management issues RS256 JWTs valid for 15 minutes; Gateway verifies them with the JWKS endpoint and forwards a signed identity; services enforce resource permissions. Guild verifies the first WebSocket frame itself. Refresh tokens are opaque, rotated on use and valid for at most 30 days. |
 | Roles | `player`: any authenticated user, with ownership or membership checked per resource. `moderator/admin`: a moderator of that package or a global admin. `admin`: global admin. Clients cannot grant roles. |
-| Service authentication | `internal` routes require mutual TLS plus the per-endpoint caller allowlist in OpenAPI. A player token alone cannot call them. |
+| Service authentication | `internal` routes require service mTLS at Gateway and a signed original caller at the destination, checked against the OpenAPI allowlist. A player token alone cannot call them. |
 | Idempotency | Every mutation sends a UUID `Idempotency-Key`, except authentication and location updates. The same key and body replays the stored outcome; a different body returns `409`. Keys are kept for at least 24 hours; settlement and provisioning IDs permanently. |
 | Concurrency | `expectedVersion` and `expectedTurn` reject stale writes with `409`. Balances, reservations and raid HP change inside database transactions. |
 | Pagination | `cursor?` and `limit?` (1 to 100, default 20) return `{items, nextCursor}`. Chat history uses `afterSequence` and `hasMore`. |
-| Responses | Success codes are listed per endpoint; `204` has no body, `202` means work continues and the client polls, `101` is a WebSocket upgrade. Errors: `400` malformed, `401` unauthenticated, `403` forbidden, `404` missing, `409` conflict, `422` invalid value, `429` rate or cooldown limit, `503` dependency unavailable. All errors use the `Error` body. |
-| Timeouts and retries | Service-to-service calls time out after 2 seconds. After a timeout on a mutation, retry with the same key and read the state; never assume it failed. |
+| Responses | Success codes are listed per endpoint; `204` has no body, `202` means work continues and the client polls, `101` is a WebSocket upgrade. Errors: `400` malformed, `401` unauthenticated, `403` forbidden, `404` missing, `409` conflict, `422` invalid value, `429` rate or cooldown limit, `503` dependency unavailable or task capacity reached, `504` task deadline exceeded. All errors use the `Error` body. |
+| Timeouts and retries | Service-to-service calls time out after 2 seconds. Gateway and the two Go APIs default to 5-second tasks and 64 concurrent tasks. After a timeout on a mutation, retry with the same key and read the state; never assume it failed. |
 | Evolution | Optional fields may be added compatibly. Breaking HTTP changes get `/v2`; breaking events get a new type suffix. |
 
 Example: `POST /v1/pets/{petId}/care` with a bearer token and an `Idempotency-Key`:
@@ -348,15 +350,15 @@ Agents must follow [AGENTS.md](AGENTS.md) for task setup, validation, commits, P
 
 In this common repository, `main` requires two approving reviews from other collaborators, all review conversations resolved, a passing **Validate contracts** check and a branch that is up to date with its target. A new push dismisses earlier approvals. Direct pushes, force pushes and deletion of `main` are blocked, including for administrators.
 
-User Management, Battle, Guild, Package Registry, Tamagotchi and Notification use the same task-branch-to-`main` flow, with **no required approving reviews** while each private repository has a single maintainer. Their `main` branches still require a PR and block force pushes and deletion.
+Gateway requires two approvals. User Management, Battle, Guild, Package Registry, Tamagotchi and Notification use the same task-branch-to-`main` flow, with **no required approving reviews** while each private repository has a single maintainer. Their `main` branches still require a PR and block force pushes and deletion.
 
 - **Rebase and merge** focused PRs to keep a linear history.
 - **Squash and merge** PRs with many commits or fix-up commits; use a Conventional Commit title.
-- Release by tagging a validated commit on `main` as `vMAJOR.MINOR.PATCH`. There is no separate integration or release branch.
+- The three updated service workflows publish validated merges to `main` as `2.MINOR.PATCH` and `latest`, and create the matching immutable Git tag. Image tags identify successive releases of this project. There is no separate integration or release branch.
 
 ### Branch naming
 
-`<type>/<scope>/<short-description>`, lowercase with hyphens. Scope is a service name (`user-management`, `tamagotchi`, `battle`, `notification`, `map`, `monster-raid`, `guild`, `package-registry`) or `common` for the shared repository. The issue number goes in the PR and the closing commit, not the branch.
+`<type>/<scope>/<short-description>`, lowercase with hyphens. Scope is a service name (`user-management`, `tamagotchi`, `battle`, `notification`, `map`, `monster-raid`, `guild`, `package-registry`, `gateway`) or `common` for the shared repository. The issue number goes in the PR and the closing commit, not the branch.
 
 | Type | Example |
 | --- | --- |
@@ -430,7 +432,7 @@ These apply to every service in both languages; reviewers request changes for an
 
 ### Versioning
 
-Releases use Semantic Versioning, tagged on `main` as `vMAJOR.MINOR.PATCH`: breaking public contract change is major, compatible feature is minor, compatible fix is patch. Tags never move. The HTTP contract's `info.version` tracks the contract itself; `/v1` changes only for breaking HTTP interfaces, and event types get a new suffix for incompatible payloads. Update contract, README and examples together whenever an interface changes.
+Releases use Semantic Versioning, tagged on `main` as `vMAJOR.MINOR.PATCH`: breaking public contract change is major, compatible feature is minor, compatible fix is patch. Tags never move. Lab 2 service workflows reserve major `2` for the lab and increment patch versions on validated merges; do not create competing manual release tags. The HTTP contract's `info.version` tracks the contract itself; `/v1` changes only for breaking HTTP interfaces, and event types get a new suffix for incompatible payloads. Update contract, README and examples together whenever an interface changes.
 
 ### Repository hygiene
 

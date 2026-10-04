@@ -7,7 +7,7 @@ import uuid
 import lab
 from smoke import request, USERS
 
-RAIDS = 'http://127.0.0.1:8084'
+RAIDS = 'http://127.0.0.1:8080/services/monster-raid'
 NIGHT_OWLS = '22222222-2222-4222-8222-222222222222'
 PRACTICE = '44444444-4444-4444-8444-444444444444'  # the raid of the schedule Package Registry seeds
 FIXTURE = 'a6c9ad3a-3890-5750-adae-a8b0a30af066'  # the won raid whose reward User Management's seed pays

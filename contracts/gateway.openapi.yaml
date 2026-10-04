@@ -1,0 +1,88 @@
+openapi: 3.1.0
+info:
+  title: Tamagotchi Go Gateway
+  version: 1.0.0
+  description: >-
+    Gateway-owned endpoints. Business REST uses /services/{service} before the
+    owning service's path from openapi.yaml; gateway-routes.json defines allowed
+    methods, paths and original service callers. No game API shape is changed.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      operationId: gatewayHealth
+      responses:
+        '200':
+          description: Process is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {const: ok}
+  /readyz:
+    get:
+      operationId: gatewayReady
+      responses:
+        '200':
+          description: Required upstreams are ready
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {const: ready}
+        '503': {$ref: '#/components/responses/Error'}
+  /v1/realtime/guilds/{guildId}/connection:
+    get:
+      operationId: negotiateGuildChat
+      description: Check membership and return Guild's direct WebSocket URL. Never proxies a socket.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: guildId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Open the direct socket and authenticate with the first ChatAuthenticate frame
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [url, expiresAt, authentication]
+                properties:
+                  url: {type: string, pattern: '^wss?://'}
+                  expiresAt: {type: integer, description: Access-token expiration as Unix seconds}
+                  authentication: {const: ChatAuthenticate}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  responses:
+    Error:
+      description: Common service error envelope
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message, requestId, details]
+                properties:
+                  code: {type: string}
+                  message: {type: string}
+                  requestId: {type: string, format: uuid}
+                  details: {type: array, items: {}}

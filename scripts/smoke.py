@@ -7,8 +7,8 @@ import urllib.request
 import uuid
 from lab import environment
 
-USERS = 'http://127.0.0.1:8081'
-BATTLE = 'http://127.0.0.1:8082'
+USERS = 'http://127.0.0.1:8080/services/user-management'
+BATTLE = 'http://127.0.0.1:8080/services/battle'
 
 def request(base, method, path, body=None, token=None, key=None, expected=200):
     headers = {'Content-Type': 'application/json'}
