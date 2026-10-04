@@ -83,7 +83,7 @@ Seeded accounts are Alice and Bob at `alice@demo.invalid`/`bob@demo.invalid`, us
 
 ## Future full-system architecture
 
-The following agreed design includes services and infrastructure not deployed by Lab 1. It is retained as the team's target architecture; proposed endpoints remain in the common contract.
+The following agreed design is the team's target architecture. The running deployment is described above; remaining integrations are listed under Integration checks.
 
 
 ### System overview
@@ -92,11 +92,11 @@ The following agreed design includes services and infrastructure not deployed by
 
 Client apps reach every service through a single **API Gateway**, and each service owns its database and credentials: MongoDB for Package Registry, PostgreSQL for the other seven services. Services never share a database. Neither of these is drawn as a separate box per service in the diagram above but both apply to all eight backend services. The one exception on the gateway side is Guild's chat: client apps hold a direct WebSocket connection to Guild Service for real-time messages, shown as the green line bypassing the gateway. Firebase Cloud Messaging is also reached directly by client apps for push delivery, independent of the gateway.
 
-Black arrows are direct HTTP calls between services. Orange arrows are events flowing through Kafka.
+Black arrows show logical HTTP dependencies between services; Gateway carries their REST traffic. Orange arrows are events flowing through Kafka.
 
 ### Service dependencies
 
-The service dependencies in the earlier design diagram show logical owner-to-owner calls. Lab 2 routes those REST calls through the API Gateway as shown above; they do not represent direct transport connections. Authentication calls (every service verifies JWTs with User Management's public keys) aren't drawn, for the same readability reason.
+The diagram shows logical owner-to-owner dependencies. Their REST calls pass through Gateway as shown above. Gateway verifies player JWTs using User Management's public keys; services verify the forwarded identity and enforce permissions. Authentication discovery is omitted from the diagram for readability.
 
 - **Monster Raid → Package Registry** — raid configuration and lifecycle, plus reward rule lookups.
 - **Tamagotchi → Package Registry** — starter pet definitions, care and growth rules.
