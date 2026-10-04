@@ -1,0 +1,236 @@
+{
+  "info": {
+    "_postman_id": "f00fa1eb-6b2a-4f39-8420-350c26638faa",
+    "name": "Gateway",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Run Gateway checks first. The separate Guild folder requires its owner transport update and a guildId. Service collections keep domain checks; this collection checks the Gateway."
+  },
+  "item": [
+    {
+      "name": "Gateway checks",
+      "item": [
+        {
+          "name": "Gateway health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/healthz"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gateway readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/readyz"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login alice",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{users}}/v1/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"alice@demo.invalid\",\"password\":\"{{seedPassword}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if(pm.response.code===200){const s=pm.response.json();pm.environment.set(\"aliceToken\",s.accessToken);pm.environment.set(\"aliceId\",s.user.id);}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject missing token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{users}}/v1/users/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject invalid token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer invalid"
+              }
+            ],
+            "url": "{{users}}/v1/users/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ignore spoofed identity",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{aliceToken}}"
+              },
+              {
+                "key": "X-Gateway-Identity",
+                "value": "forged"
+              },
+              {
+                "key": "X-User-ID",
+                "value": "forged"
+              }
+            ],
+            "url": "{{users}}/v1/users/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Authenticated player\",()=>pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"aliceId\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject player at internal route",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{aliceToken}}"
+              }
+            ],
+            "url": "{{users}}/internal/v1/relationships?userId={{aliceId}}&otherUserId={{aliceId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject unknown destination",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/services/unknown/v1/users/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Guild WebSocket setup - pending owner migration",
+      "item": [
+        {
+          "name": "Guild negotiation (requires migrated Guild and guildId)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{aliceToken}}"
+              }
+            ],
+            "url": "{{gateway}}/v1/realtime/guilds/{{guildId}}/connection"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200){const c=pm.response.json();pm.test(\"Direct socket without token\",()=>{pm.expect(c.url).to.match(/^wss?:/);pm.expect(c.url).not.to.include(\"token=\");});pm.environment.set(\"guildChatUrl\",c.url);}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

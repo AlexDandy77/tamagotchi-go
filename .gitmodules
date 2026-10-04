@@ -22,3 +22,6 @@
 [submodule "services/package-registry"]
 	path = services/package-registry
 	url = https://github.com/xnikug/pad-team-8-package-registry.git
+[submodule "services/gateway"]
+	path = services/gateway
+	url = https://github.com/AlexDandy77/pad-team-8-gateway.git
