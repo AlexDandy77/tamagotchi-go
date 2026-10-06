@@ -77,11 +77,11 @@ There is no bearer-forwarding fallback at Gateway. Guild negotiation remains una
 
 ## Communication contract
 
-Contract version **1.3.0**. All eight services implement their portions.
+Contract version **1.4.0**. All eight services implement their portions.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
-- [`contracts/realtime.schema.json`](contracts/realtime.schema.json): the six guild chat WebSocket frames (JSON Schema).
+- [`contracts/realtime.schema.json`](contracts/realtime.schema.json): the six guild chat and three live raid WebSocket frames (JSON Schema).
 - [`contracts/field-dictionary.md`](contracts/field-dictionary.md): readable definitions of every request, response, event and frame type named in the tables below.
 - [`contracts/game-rules.md`](contracts/game-rules.md): the numbers and formulas behind the contract.
 
@@ -245,6 +245,7 @@ Path parameters and listed bodies are required. `cursor?` and `limit?` are optio
 | `GET /v1/raids/{raidId}` | player | — | `200` `Raid` | Raid state and results |
 | `POST /v1/raids/{raidId}/participants` | player | `RaidJoin` | `201` `RaidParticipant` | Join with your primary pet |
 | `POST /v1/raids/{raidId}/attacks` | player | — | `200` `Raid` | One attack, one-second cooldown per member |
+| `GET /v1/raids/{raidId}/live` | public | — | `101` | Live raid WebSocket; negotiate it through the Gateway |
 
 #### Guild
 
@@ -344,6 +345,18 @@ Connect to the Guild service at `wss://<guild-origin>/v1/guilds/{guildId}/chat`.
 | server to client | `ChatError` | `{type:"error", requestId or null, code, message}` |
 
 The server assigns sender, guild, timestamp and a per-guild increasing sequence. Resending the same `requestId` with the same content replays the acknowledgement; different content returns `IDEMPOTENCY_CONFLICT`. After a reconnect, call `GET /v1/guilds/{guildId}/messages?afterSequence=<last-seen>` until `hasMore` is false. Ping and pong use WebSocket control frames.
+
+### Live raid WebSocket contract
+
+Ask the Gateway for the socket with `GET /v1/realtime/raids/{raidId}/connection`; it checks that the player may read the raid and returns Monster Raid's direct URL, `ws://<monster-raid-origin>/v1/raids/{raidId}/live`. The upgrade grants nothing yet: within five seconds the client sends `RaidAuthenticate`, and the server checks the JWT and guild membership, then sends the first `RaidState`. A failed check sends `RaidError` and closes with `1008`; a dependency failure closes with `1011`. Token expiry also closes the socket with `1008`.
+
+| Direction | Frame | Content |
+| --- | --- | --- |
+| client to server | `RaidAuthenticate` | `{type:"raid.authenticate", accessToken}`; must be the first frame |
+| server to client | `RaidState` | `{type:"raid.state", raidId, status, hp, maxHp, version, endsAt, participants: [{userId, damageDealt}]}` |
+| server to client | `RaidError` | `{type:"raid.error", code, message}` before closing |
+
+The server sends a new `RaidState` whenever the raid's version changes, at most once a second, and only the newest state to a slow client. Attacks stay REST calls with their idempotency keys. When the raid is won, failed or cancelled, the server sends the final state and closes with `1000`. Ping and pong use WebSocket control frames. A full connection limit answers the upgrade with `503`.
 
 ## Contribution workflow
 

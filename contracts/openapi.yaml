@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: Tamagotchi Go communication contract
-  version: 1.3.0
+  version: 1.4.0
   description: Business API contract. Paths are relative to the owning service. Gateway transport and
     staged migration are defined in gateway.md; endpoint bodies and ownership are unchanged.
 tags:
@@ -4097,6 +4097,32 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/RaidJoin'
+  /v1/raids/{raidId}/live:
+    get:
+      tags:
+      - Monster Raid
+      summary: Upgrade to the live raid WebSocket
+      operationId: GET_v1_raids_raidId_live
+      description: Upgrade has no JSON body; negotiate the URL through the Gateway. The first application frame
+        must be RaidAuthenticate within 5 seconds; no raid data is sent before the token and guild membership are
+        checked. See realtime.schema.json and README.
+      x-audience: public
+      responses:
+        '101':
+          description: Upgrade to the live raid WebSocket
+        '400':
+          $ref: '#/components/responses/Error400'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: raidId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      security: []
   /v1/raids/{raidId}/attacks:
     post:
       tags:
