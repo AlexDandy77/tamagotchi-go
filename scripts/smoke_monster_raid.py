@@ -9,6 +9,7 @@ from smoke import request, USERS
 
 GATEWAY = 'http://127.0.0.1:8080'
 RAIDS = GATEWAY + '/services/monster-raid'
+PETS = 'http://127.0.0.1:8085'  # Tamagotchi stays direct until its owner migrates
 NIGHT_OWLS = '22222222-2222-4222-8222-222222222222'
 PRACTICE = '44444444-4444-4444-8444-444444444444'  # the raid of the schedule Package Registry seeds
 FIXTURE = 'a6c9ad3a-3890-5750-adae-a8b0a30af066'  # the won raid whose reward User Management's seed pays
@@ -43,6 +44,15 @@ def output(*args, stdin=None):
 def internal(method, path, body, host='monster-raid'):
     return json.loads(output('package-registry', 'node', '-', method, path, json.dumps(body), host, stdin=INTERNAL_CALL.encode()))
 
+def primary_pet(token):
+    # Tamagotchi provisions the starter from the enrollment event, so it can lag a fresh start.
+    for _ in range(20):
+        pet = request(PETS, 'GET', '/v1/pets', token=token).get('primaryPetId')
+        if pet:
+            return pet
+        time.sleep(0.5)
+    raise AssertionError('Tamagotchi never provisioned a primary pet')
+
 def kafka(tool, *args):
     return output('kafka', '/opt/kafka/bin/' + tool, '--bootstrap-server', 'kafka:9092', *args)
 
@@ -67,7 +77,7 @@ def main():
     request(RAIDS, 'GET', f'/v1/raids?guildId={uuid.uuid4()}', token=a, expected=403)
 
     # Alice joins once with her primary pet; the join reads her package's care rules from Package Registry.
-    pet = str(uuid.uuid5(uuid.UUID(alice), 'primary'))
+    pet = primary_pet(a)
     practice = request(RAIDS, 'GET', '/v1/raids/' + PRACTICE, token=a)
     if alice not in [p['userId'] for p in practice['participants']]:
         request(RAIDS, 'POST', f'/v1/raids/{PRACTICE}/participants', {'primaryPetId': pet}, a, key(), 201)
