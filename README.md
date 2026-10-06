@@ -36,7 +36,7 @@ Requires Docker Compose v2 and Python 3. Published images run without access to 
 | Gateway | `alexdandy77/pad-team-8-gateway:latest` | `http://localhost:8080` |
 | User Management | `alexdandy77/pad-team-8-user-management:latest` | Gateway `/services/user-management` |
 | Battle | `alexdandy77/pad-team-8-battle:latest` | Gateway `/services/battle` |
-| Map | `ralex225/pad-team-8-map:latest` | Gateway migration pending |
+| Map | `ralex225/pad-team-8-map:latest` | Gateway `/services/map` |
 | Monster Raid | `ralex225/pad-team-8-monster-raid:latest` | Gateway `/services/monster-raid`; negotiated live socket on 8084 |
 | Guild | `xnikug/pad-team-8-guild:latest` | Gateway migration pending; direct WebSocket on 8087 |
 | Package Registry | `xnikug/pad-team-8-package-registry:latest` | Gateway migration pending |
@@ -54,7 +54,7 @@ python3 scripts/smoke_gateway.py
 
 `setup` generates missing credentials, JWT and mTLS keys. Adding Gateway replaces an incomplete TLS bundle and keeps the old one under `.secrets/tls.replaced-*`; restart all containers to load the same CA. `up` provisions databases and Kafka topics, runs migrations and empty-database seeds, then starts the services. `provision`, `migrate` and `seed` are repeatable; `down` retains data. The existing Compose project name and volumes are preserved.
 
-Migrated clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; Battle and Monster Raid call User Management through it, and Package Registry sends its raid commands to Monster Raid through it. Calls to Registry, Tamagotchi and Guild remain direct until their owners migrate. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
+Migrated clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; Battle, Map and Monster Raid call User Management through it, and Package Registry sends its raid commands to Monster Raid through it. Calls to Registry, Tamagotchi and Guild remain direct until their owners migrate. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
 
 Import [the shared Postman environment](postman/local.postman_environment.json), set `seedPassword` locally, and import each service collection:
 
@@ -66,12 +66,12 @@ Import [the shared Postman environment](postman/local.postman_environment.json),
 
 During migration:
 
-- The shared Postman environment and smoke scripts use direct URLs for Map `http://localhost:8083`, Tamagotchi `:8085`, Notification `:8086`, Guild `:8087` and Package Registry `:8088`. Each owner switches its client and dependency URLs after publishing compatible transport. Gateway routes User Management, Battle and Monster Raid. Monster Raid accepts REST only through the Gateway (`GATEWAY_ONLY`); `:8084` serves just its negotiated live socket and its probes (`monsterRaidDirect`).
+- The shared Postman environment and smoke scripts use direct URLs for Tamagotchi `http://localhost:8085`, Notification `:8086`, Guild `:8087` and Package Registry `:8088`. Each owner switches its client and dependency URLs after publishing compatible transport. Gateway routes User Management, Battle, Map and Monster Raid. Map and Monster Raid accept REST only through the Gateway (`GATEWAY_ONLY`); Map publishes no host port, and Monster Raid's `:8084` serves just its negotiated live socket and its probes (`monsterRaidDirect`).
 - User Management temporarily keeps `http://localhost:8081` and `GATEWAY_ALLOW_DIRECT=true`. Legacy JWT requests, public JWKS reads and internal mTLS caller allowlists still work. Battle stays Gateway-only. Remove User Management's compatibility flag and host port after every caller migrates.
 - Registry admin requests need `REGISTRY_ADMIN_USER_IDS` in local `.env`: use Alice's ID from **Login alice**, then run `docker compose up -d package-registry`.
 - Tamagotchi and Notification's last verified 0.4.1 images use seeded user IDs as `devToken` because authentication/dependencies remain mocked. Their existing business gaps are listed in [architecture](ARCHITECTURE.md#integration-checks).
 
-There is no bearer-forwarding fallback at Gateway. Guild negotiation remains unavailable until Guild adopts signed identities and is added to Gateway upstreams. Map also needs User Management to serve the internal batch profile read `GET /internal/v1/users` before migrating.
+There is no bearer-forwarding fallback at Gateway. Guild negotiation remains unavailable until Guild adopts signed identities and is added to Gateway upstreams. Map's nearby view needs User Management to serve the internal batch profile read `GET /internal/v1/users` and the Gateway to route it; until then it answers `503` when other players are near.
 
 `smoke_gateway.py` checks the three updated services without accepting a battle or changing wallets/friendships. `smoke_live.py` checks the full team workflows and reports unresolved dependencies. Older fixture-based combat and raid scripts remain for explicit test fixtures only. After a service PR merges and publishes, update its image pin and submodule pointer to the actual merged commit through a common PR.
 
