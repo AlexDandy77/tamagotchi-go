@@ -139,6 +139,15 @@
   {
     "service": "user-management",
     "method": "GET",
+    "pattern": "/internal/v1/users",
+    "audience": "internal",
+    "callers": [
+      "map"
+    ]
+  },
+  {
+    "service": "user-management",
+    "method": "GET",
     "pattern": "/internal/v1/users/[^/]+/relationships",
     "audience": "internal",
     "callers": [
