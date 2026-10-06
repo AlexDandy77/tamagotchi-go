@@ -83,7 +83,7 @@ Remaining work in the six teammate services:
 
 - Adopt signed Gateway identities, route REST dependencies through Gateway and add request limits. Notification needs mTLS for its REST listener.
 - Guild must accept the identity on the membership read used for direct socket negotiation.
-- Add merge-triggered image publishing and publish versioned plus latest tags. Until then, their Postman/smoke URLs and dependency calls stay direct, and their Gateway upstreams stay disabled. Map’s batch profile read is tracked in common PR #35 and must land with the paired User Management handler before Map migrates.
+- Add merge-triggered image publishing and publish versioned plus latest tags. Until then, their Postman/smoke URLs and dependency calls stay direct, and their Gateway upstreams stay disabled. Map’s batch profile read `GET /internal/v1/users` needs its User Management handler before Map migrates.
 
 Existing Tamagotchi/Notification 0.4.1 business gaps also remain: mock authentication/dependencies, hardcoded care/starter rules, missing real wallet credits and Firebase delivery. One starter per owner/package cannot supply Battle's two-pet loadout. Do not hide these gaps with fake production pets or direct database writes.
 
@@ -122,7 +122,7 @@ The diagram shows logical owner-to-owner dependencies. Their REST calls pass thr
 - **User Management → Tamagotchi** — starter-pet provisioning recovery, a fallback if the enrollment event was missed.
 - **Monster Raid → User Management** — currency reward settlement.
 - **Battle → User Management** — currency and boost settlement.
-- **Map → User Management** — friends/enemies lookups, used to decide what an encounter should trigger.
+- **Map → User Management** — friends/enemies lookups, used to decide what an encounter should trigger, and usernames for map entries.
 - **Guild → User Management** — identity and relationship lookups for membership and invite eligibility.
 - **Monster Raid → Guild** — membership and permission checks before a member can join a raid.
 

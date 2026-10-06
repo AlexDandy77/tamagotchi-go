@@ -66,4 +66,4 @@ Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yam
 
 Their current images do not implement this contract. Update the existing shared deployment as each owner publishes a compatible release; full-team integration remains pending.
 
-Before Map migrates, merge the batch internal public-profile contract tracked in [PR #35](https://github.com/AlexDandy77/tamagotchi-go/pull/35) and its User Management/Map implementations. Service certificates must not call player-only profile routes.
+Before Map migrates, User Management must serve the batch public-profile read `GET /internal/v1/users`; Map 2.0.4 and later read usernames only through it. Service certificates must not call player-only profile routes.

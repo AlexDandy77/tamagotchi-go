@@ -106,6 +106,14 @@ id: ID
 username: Name
 ```
 
+#### PublicUserList
+
+The requested users that exist, in no particular order; unknown IDs are omitted.
+
+```text
+items: (PublicUser)[]
+```
+
 #### Register
 
 Creates an account and starts package enrollment.

@@ -71,13 +71,13 @@ During migration:
 - Registry admin requests need `REGISTRY_ADMIN_USER_IDS` in local `.env`: use Alice's ID from **Login alice**, then run `docker compose up -d package-registry`.
 - Tamagotchi and Notification's last verified 0.4.1 images use seeded user IDs as `devToken` because authentication/dependencies remain mocked. Their existing business gaps are listed in [architecture](ARCHITECTURE.md#integration-checks).
 
-There is no bearer-forwarding fallback at Gateway. Guild negotiation remains unavailable until Guild adopts signed identities and is added to Gateway upstreams. Map also needs the [internal batch profile contract in PR #35](https://github.com/AlexDandy77/tamagotchi-go/pull/35) and its paired User Management handler before migrating.
+There is no bearer-forwarding fallback at Gateway. Guild negotiation remains unavailable until Guild adopts signed identities and is added to Gateway upstreams. Map also needs User Management to serve the internal batch profile read `GET /internal/v1/users` before migrating.
 
 `smoke_gateway.py` checks the three updated services without accepting a battle or changing wallets/friendships. `smoke_live.py` checks the full team workflows and reports unresolved dependencies. Older fixture-based combat and raid scripts remain for explicit test fixtures only. After a service PR merges and publishes, update its image pin and submodule pointer to the actual merged commit through a common PR.
 
 ## Communication contract
 
-Contract version **1.2.0**. All eight services implement their portions.
+Contract version **1.3.0**. All eight services implement their portions.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
@@ -180,6 +180,7 @@ Path parameters and listed bodies are required. `cursor?` and `limit?` are optio
 | `DELETE /v1/enemies/{userId}` | player | — | `204` | Remove an enemy mark |
 | `GET /v1/wallet` | player | — | `200` `Wallet` | Currencies and available boosts |
 | `GET /internal/v1/relationships` | internal | `userId`, `otherUserId` | `200` `Relationship` | Relationship between two users |
+| `GET /internal/v1/users` | internal | `id` (1–100, repeated) | `200` `PublicUserList` | Public profiles for map entries |
 | `GET /internal/v1/users/{userId}/relationships` | internal | `cursor?`, `limit?` | `200` `RelationshipPage` | Relationships for map visibility |
 | `GET /internal/v1/users/{userId}/packages/{packageId}` | internal | — | `200` `Enrollment` | Verify an enrollment |
 | `PUT /internal/v1/battle-holds/{battleId}` | internal | `BattleHoldInput` | `200` `Hold` | Reserve both stakes and boosts |
