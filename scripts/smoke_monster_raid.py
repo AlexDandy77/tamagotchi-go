@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise paired Monster Raid with real User Management tokens, Guild membership and Package Registry schedules, call its mutual TLS API as Package Registry, and read its Kafka start event, without printing credentials."""
+"""Exercise paired Monster Raid through the Gateway with real User Management tokens, Guild membership and Package Registry schedules, negotiate its live socket, call its mutual TLS API as Package Registry directly and through the Gateway, and read its Kafka start event, without printing credentials."""
 import json
 import subprocess
 import time
@@ -7,19 +7,20 @@ import uuid
 import lab
 from smoke import request, USERS
 
-RAIDS = 'http://127.0.0.1:8084'
+GATEWAY = 'http://127.0.0.1:8080'
+RAIDS = GATEWAY + '/services/monster-raid'
 NIGHT_OWLS = '22222222-2222-4222-8222-222222222222'
 PRACTICE = '44444444-4444-4444-8444-444444444444'  # the raid of the schedule Package Registry seeds
 FIXTURE = 'a6c9ad3a-3890-5750-adae-a8b0a30af066'  # the won raid whose reward User Management's seed pays
 TOPIC = 'raid.started.v1'
 ADMIN = '/run/secrets/kafka-admin.properties'
 # Runs inside the Package Registry container, the only caller the internal routes allow, and
-# calls Monster Raid's mutual TLS port with Registry's certificate.
+# calls a mutual TLS port, Monster Raid's own or the Gateway's, with Registry's certificate.
 INTERNAL_CALL = r'''
 const https = require('https'), fs = require('fs'), crypto = require('crypto');
-const [method, path, body] = process.argv.slice(2);
+const [method, path, body, host] = process.argv.slice(2);
 const req = https.request({
-  host: 'monster-raid', port: 8443, method, path,
+  host, port: 8443, method, path,
   cert: fs.readFileSync('/run/tls/package-registry.pem'),
   key: fs.readFileSync('/run/tls/package-registry-key.pem'),
   ca: fs.readFileSync('/run/tls/ca.pem'),
@@ -39,8 +40,8 @@ def key():
 def output(*args, stdin=None):
     return lab.compose('exec', '-T', *args, input=stdin, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode().strip()
 
-def internal(method, path, body):
-    return json.loads(output('package-registry', 'node', '-', method, path, json.dumps(body), stdin=INTERNAL_CALL.encode()))
+def internal(method, path, body, host='monster-raid'):
+    return json.loads(output('package-registry', 'node', '-', method, path, json.dumps(body), host, stdin=INTERNAL_CALL.encode()))
 
 def kafka(tool, *args):
     return output('kafka', '/opt/kafka/bin/' + tool, '--bootstrap-server', 'kafka:9092', *args)
@@ -80,11 +81,19 @@ def main():
     request(RAIDS, 'POST', f'/v1/raids/{PRACTICE}/attacks', None, a, key(), 429)
     request(RAIDS, 'POST', f'/v1/raids/{PRACTICE}/attacks', None, b, key(), 403)
 
-    # The internal API refuses the public port and answers Package Registry's certificate.
+    # The Gateway checks that Alice may read the raid and hands back Monster Raid's direct socket.
+    live = request(GATEWAY, 'GET', f'/v1/realtime/raids/{PRACTICE}/connection', token=a)
+    assert live['url'].endswith(f'/v1/raids/{PRACTICE}/live') and live['authentication'] == 'RaidAuthenticate', \
+        f'Raid negotiation answered {live}'
+
+    # Internal routes need a service certificate. Monster Raid answers Package Registry's, both
+    # directly, as Registry calls it until it migrates, and through the Gateway's signed identity.
     start = {'scheduleId': PRACTICE, 'scheduleVersion': 1}
     request(RAIDS, 'PUT', '/internal/v1/raids/' + PRACTICE, start, key=key(), expected=401)
     replay = internal('PUT', '/internal/v1/raids/' + PRACTICE, start)
     assert replay['status'] == 200 and replay['body']['id'] == PRACTICE, f'Start replay answered {replay["status"]}'
+    through = internal('PUT', '/services/monster-raid/internal/v1/raids/' + PRACTICE, start, host='gateway')
+    assert through['status'] == 200 and through['body']['id'] == PRACTICE, f'Start through the Gateway answered {through["status"]}'
     # An unknown schedule makes Monster Raid ask Package Registry over mutual TLS, which does not know it.
     unknown = str(uuid.uuid4())
     missing = internal('PUT', '/internal/v1/raids/' + unknown, {'scheduleId': unknown, 'scheduleVersion': 1})
@@ -95,7 +104,7 @@ def main():
     event = next((e for e in reversed(start_events()) if e['aggregateId'] == PRACTICE), None)
     assert event, 'No start event of the practice raid reached Kafka'
     assert event['producer'] == 'monster-raid' and set(event['data']['recipientIds']) == {alice, bob}
-    print('Paired Monster Raid reads, joins and attacks, its Package Registry mutual TLS API and its Kafka start event passed.')
+    print('Paired Monster Raid reads, joins and attacks through the Gateway, its live socket negotiation, its Package Registry mutual TLS API directly and through the Gateway, and its Kafka start event passed.')
 
 if __name__ == '__main__':
     main()

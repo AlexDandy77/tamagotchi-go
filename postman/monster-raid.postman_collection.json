@@ -78,7 +78,7 @@
    "request": {
     "method": "GET",
     "header": [],
-    "url": "{{monsterRaid}}/healthz"
+    "url": "{{monsterRaidDirect}}/healthz"
    },
    "event": [
     {
@@ -98,7 +98,7 @@
    "request": {
     "method": "GET",
     "header": [],
-    "url": "{{monsterRaid}}/readyz"
+    "url": "{{monsterRaidDirect}}/readyz"
    },
    "event": [
     {
