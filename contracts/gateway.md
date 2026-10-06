@@ -42,7 +42,7 @@ Gateway and destination errors share the common envelope. Use `error.code`, not 
 | 403 | `SERVICE_FORBIDDEN` | Caller not permitted; service cannot act as a player |
 | 404 | `NOT_FOUND` | Destination/path/method is not exposed |
 | 413 | `BODY_TOO_LARGE` | Request exceeds 64 KiB |
-| 422 | `INVALID_ID` | Invalid negotiation guild UUID |
+| 422 | `INVALID_ID` | Invalid negotiation guild or raid UUID |
 | 502 | `DEPENDENCY_RESPONSE` | Destination response exceeds 4 MiB |
 | 503 | `DEPENDENCY_UNAVAILABLE` | Destination cannot be reached |
 | 503 | `DESTINATION_NOT_CONFIGURED` | Owner's upstream has not been enabled |
@@ -50,11 +50,13 @@ Gateway and destination errors share the common envelope. Use `error.code`, not 
 | 503 | `TASK_LIMIT_REACHED` | All task slots are occupied |
 | 504 | `TASK_TIMEOUT` | Task deadline exceeded |
 
-## Guild WebSocket
+## WebSockets
 
-Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yaml).
+Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yaml). Sockets never pass through the Gateway; it only checks access and returns the owner's direct URL.
 
 `GET /v1/realtime/guilds/{guildId}/connection` requires a player token. The Gateway verifies membership through Guild's existing REST read and returns `{url, expiresAt, authentication: "ChatAuthenticate"}`. The URL is a direct Guild `ws://`/`wss://` URL without credentials. Send the existing `chat.authenticate` frame described in [realtime.schema.json](realtime.schema.json) as the first frame within five seconds. Guild validates that token and membership again. The Gateway holds no WebSocket connection.
+
+`GET /v1/realtime/raids/{raidId}/connection` works the same way for live raids: the Gateway reads `GET /v1/raids/{raidId}` as the player and returns Monster Raid's direct `ws://.../v1/raids/{raidId}/live` URL with `authentication: "RaidAuthenticate"`. Monster Raid checks the token and guild membership again on the first frame.
 
 ## What other service owners must change
 

@@ -66,6 +66,36 @@ paths:
         '422': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
         '504': {$ref: '#/components/responses/Error'}
+  /v1/realtime/raids/{raidId}/connection:
+    get:
+      operationId: negotiateRaidLive
+      description: Check that the player may read the raid and return Monster Raid's direct WebSocket URL. Never proxies a socket.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: raidId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Open the direct socket and authenticate with the first RaidAuthenticate frame
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [url, expiresAt, authentication]
+                properties:
+                  url: {type: string, pattern: '^wss?://'}
+                  expiresAt: {type: integer, description: Access-token expiration as Unix seconds}
+                  authentication: {const: RaidAuthenticate}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
