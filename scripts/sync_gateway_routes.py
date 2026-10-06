@@ -19,9 +19,11 @@ OWNERS = {
 }
 
 
-def catalog():
-    spec = yaml.safe_load((ROOT / "contracts/openapi.yaml").read_text())
+def catalog(spec=None):
+    if spec is None:
+        spec = yaml.safe_load((ROOT / "contracts/openapi.yaml").read_text())
     routes = []
+    source_paths = []
     for path, item in spec["paths"].items():
         for method, operation in item.items():
             if method not in (
@@ -49,6 +51,24 @@ def catalog():
                     "callers": operation.get("x-allowed-callers", []),
                 }
             )
+            source_paths.append(path)
+    for literal, route in zip(source_paths, routes):
+        if "{" in literal:
+            continue
+        for other in routes:
+            if (route["service"], route["method"]) != (
+                other["service"],
+                other["method"],
+            ):
+                continue
+            if re.fullmatch(other["pattern"], literal) and (
+                route["audience"] != other["audience"]
+                or set(route["callers"]) != set(other["callers"])
+            ):
+                raise ValueError(
+                    f"Conflicting Gateway permissions: {route['method']} {literal} "
+                    f"overlaps {other['pattern']}"
+                )
     return json.dumps(routes, indent=2) + "\n"
 
 

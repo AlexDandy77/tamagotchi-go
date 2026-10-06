@@ -33,17 +33,17 @@ Requires Docker Compose v2 and Python 3. Published images run without access to 
 
 | Service | Docker Hub image | REST access |
 | --- | --- | --- |
-| Gateway | `alexdandy77/pad-team-8-gateway:2.0.0` | `http://localhost:8080` |
-| User Management | `alexdandy77/pad-team-8-user-management:2.0.0` | Gateway `/services/user-management` |
-| Battle | `alexdandy77/pad-team-8-battle:2.0.0` | Gateway `/services/battle` |
-| Map | `ralex225/pad-team-8-map:0.1.0` | Gateway migration pending |
-| Monster Raid | `ralex225/pad-team-8-monster-raid:0.1.0` | Gateway migration pending |
-| Guild | `xnikug/pad-team-8-guild:0.1.0` | Gateway migration pending; direct WebSocket on 8087 |
-| Package Registry | `xnikug/pad-team-8-package-registry:0.1.0` | Gateway migration pending |
-| Tamagotchi | `arturtugui/pad-team-8-tamagotchi:0.4.1` | Gateway migration pending |
-| Notification | `arturtugui/pad-team-8-notification:0.4.1` | Gateway migration pending |
+| Gateway | `alexdandy77/pad-team-8-gateway:latest` | `http://localhost:8080` |
+| User Management | `alexdandy77/pad-team-8-user-management:latest` | Gateway `/services/user-management` |
+| Battle | `alexdandy77/pad-team-8-battle:latest` | Gateway `/services/battle` |
+| Map | `ralex225/pad-team-8-map:latest` | Gateway migration pending |
+| Monster Raid | `ralex225/pad-team-8-monster-raid:latest` | Gateway migration pending |
+| Guild | `xnikug/pad-team-8-guild:latest` | Gateway migration pending; direct WebSocket on 8087 |
+| Package Registry | `xnikug/pad-team-8-package-registry:latest` | Gateway migration pending |
+| Tamagotchi | `arturtugui/pad-team-8-tamagotchi:latest` | Gateway migration pending |
+| Notification | `arturtugui/pad-team-8-notification:latest` | Gateway migration pending |
 
-**Release prerequisite:** the three updated service PRs must merge and publish their images before these new pins can be pulled. Put their published tags in `.env` as `GATEWAY_IMAGE`, `USER_MANAGEMENT_IMAGE` and `BATTLE_IMAGE`. Setup preserves existing image selections and credentials. GitHub Actions needs `DOCKERHUB_TOKEN` in each service repository; local Docker login does not configure CI.
+**Release prerequisite:** publish the paired User Management migration fix and Gateway public-auth fix before merging this deployment update. `.env.example` uses `latest` for every service; each owner must publish that tag. Currently Guild, Package Registry, Tamagotchi and Notification have no `latest`; use their existing versioned tags locally until their owners publish it. Existing `.env` selections are preserved, with a setup hint when they differ. `python3 scripts/lab.py up` pulls current images before starting containers. GitHub Actions uses each repository’s `DOCKERHUB_TOKEN`; local Docker login does not configure CI.
 
 ```sh
 python3 scripts/lab.py setup
@@ -54,7 +54,7 @@ python3 scripts/smoke_gateway.py
 
 `setup` generates missing credentials, JWT and mTLS keys. Adding Gateway replaces an incomplete TLS bundle and keeps the old one under `.secrets/tls.replaced-*`; restart all containers to load the same CA. `up` provisions databases and Kafka topics, runs migrations and empty-database seeds, then starts the services. `provision`, `migrate` and `seed` are repeatable; `down` retains data. The existing Compose project name and volumes are preserved.
 
-User Management and Battle have no public host ports. Clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; both Go services send REST dependencies through it. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
+Migrated clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; Battle calls User Management through it. Registry and Tamagotchi dependencies remain direct until their owners migrate. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
 
 Import [the shared Postman environment](postman/local.postman_environment.json), set `seedPassword` locally, and import each service collection:
 
@@ -64,13 +64,20 @@ Import [the shared Postman environment](postman/local.postman_environment.json),
 - [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json)
 - [Tamagotchi](postman/tamagotchi.postman_collection.json) and [Notification](postman/notification.postman_collection.json)
 
-The other six published images still need the Gateway identity contract, request limits and merge publishing. Their direct REST ports remain during migration; their Gateway collection requests fail until owners update them. Registration, full live combat and Guild negotiation depend on those updates. There is no bearer-forwarding fallback. Existing Tamagotchi/Notification mock behavior is described in [architecture](ARCHITECTURE.md#integration-checks).
+During migration:
+
+- The shared Postman environment and smoke scripts use direct URLs for Map `http://localhost:8083`, Monster Raid `:8084`, Tamagotchi `:8085`, Notification `:8086`, Guild `:8087` and Package Registry `:8088`. Each owner switches its client and dependency URLs after publishing compatible transport. Gateway currently routes only User Management and Battle.
+- User Management temporarily keeps `http://localhost:8081` and `GATEWAY_ALLOW_DIRECT=true`. Legacy JWT requests, public JWKS reads and internal mTLS caller allowlists still work. Battle stays Gateway-only. Remove User Management's compatibility flag and host port after every caller migrates.
+- Registry admin requests need `REGISTRY_ADMIN_USER_IDS` in local `.env`: use Alice's ID from **Login alice**, then run `docker compose up -d package-registry`.
+- Tamagotchi and Notification's last verified 0.4.1 images use seeded user IDs as `devToken` because authentication/dependencies remain mocked. Their existing business gaps are listed in [architecture](ARCHITECTURE.md#integration-checks).
+
+There is no bearer-forwarding fallback at Gateway. Guild negotiation remains unavailable until Guild adopts signed identities and is added to Gateway upstreams. Map also needs the [internal batch profile contract in PR #35](https://github.com/AlexDandy77/tamagotchi-go/pull/35) and its paired User Management handler before migrating.
 
 `smoke_gateway.py` checks the three updated services without accepting a battle or changing wallets/friendships. `smoke_live.py` checks the full team workflows and reports unresolved dependencies. Older fixture-based combat and raid scripts remain for explicit test fixtures only. After a service PR merges and publishes, update its image pin and submodule pointer to the actual merged commit through a common PR.
 
 ## Communication contract
 
-Contract version **1.1.0**. All eight services implement their portions.
+Contract version **1.2.0**. All eight services implement their portions.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
@@ -82,16 +89,16 @@ Contract version **1.1.0**. All eight services implement their portions.
 
 | Item | Rule |
 | --- | --- |
-| Addressing | Catalog paths are relative to the owning service; clients prefix them with Gateway `/services/{service}`. Public paths start with `/v1`; `/internal/v1` paths are for service-to-service calls only. |
+| Addressing | Catalog paths are relative to the owning service; migrated clients prefix them with Gateway `/services/{service}`, while services pending migration use the direct URLs above. Public paths start with `/v1`; `/internal/v1` paths are for service-to-service calls only. |
 | Format | `application/json`, UTF-8, camelCase keys. Unknown fields are rejected. IDs are UUID strings; versions are positive integers; times are RFC 3339 UTC (`2026-09-09T10:00:00Z`); currency is whole units up to 2^53 - 1. |
 | User authentication | `Authorization: Bearer <accessToken>`. User Management issues RS256 JWTs valid for 15 minutes; Gateway verifies them with the JWKS endpoint and forwards a signed identity; services enforce resource permissions. Guild verifies the first WebSocket frame itself. Refresh tokens are opaque, rotated on use and valid for at most 30 days. |
 | Roles | `player`: any authenticated user, with ownership or membership checked per resource. `moderator/admin`: a moderator of that package or a global admin. `admin`: global admin. Clients cannot grant roles. |
-| Service authentication | `internal` routes require service mTLS at Gateway and a signed original caller at the destination, checked against the OpenAPI allowlist. A player token alone cannot call them. |
+| Service authentication | `internal` routes require service mTLS and the OpenAPI caller allowlist. Migrated routes pass through Gateway with a signed original caller; legacy callers remain direct during the explicit migration period. A player token alone cannot call them. |
 | Idempotency | Every mutation sends a UUID `Idempotency-Key`, except authentication and location updates. The same key and body replays the stored outcome; a different body returns `409`. Keys are kept for at least 24 hours; settlement and provisioning IDs permanently. |
 | Concurrency | `expectedVersion` and `expectedTurn` reject stale writes with `409`. Balances, reservations and raid HP change inside database transactions. |
 | Pagination | `cursor?` and `limit?` (1 to 100, default 20) return `{items, nextCursor}`. Chat history uses `afterSequence` and `hasMore`. |
 | Responses | Success codes are listed per endpoint; `204` has no body, `202` means work continues and the client polls, `101` is a WebSocket upgrade. Errors: `400` malformed, `401` unauthenticated, `403` forbidden, `404` missing, `409` conflict, `422` invalid value, `429` rate or cooldown limit, `503` dependency unavailable or task capacity reached, `504` task deadline exceeded. All errors use the `Error` body. |
-| Timeouts and retries | Service-to-service calls time out after 2 seconds. Gateway and the two Go APIs default to 5-second tasks and 64 concurrent tasks. After a timeout on a mutation, retry with the same key and read the state; never assume it failed. |
+| Timeouts and retries | Service-to-service calls time out after 2 seconds. Every service must enforce 5-second tasks and 64 concurrent tasks by default, returning `503 TASK_LIMIT_REACHED` or `504 TASK_TIMEOUT`; health/readiness are exempt. Gateway, User Management and Battle implement this; other owners must add it before migration. After a timeout on a mutation, retry with the same key and read the state; never assume it failed. |
 | Evolution | Optional fields may be added compatibly. Breaking HTTP changes get `/v2`; breaking events get a new type suffix. |
 
 Example: `POST /v1/pets/{petId}/care` with a bearer token and an `Idempotency-Key`:

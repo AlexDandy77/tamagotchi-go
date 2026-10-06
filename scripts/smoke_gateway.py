@@ -6,39 +6,12 @@ IDs; never accepts it or changes balances/friendships. This is a transport check
 not a claim that unmigrated live combat dependencies work.
 """
 import argparse
-import json
 from pathlib import Path
-import urllib.error
-import urllib.request
 import uuid
+from lab import environment
+from smoke import request
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def request(
-    base, method, path, body=None, token=None, key=None, expected=200, extra=None
-):
-    headers = {"Content-Type": "application/json", **(extra or {})}
-    if token:
-        headers["Authorization"] = "Bearer " + token
-    if key:
-        headers["Idempotency-Key"] = key
-    req = urllib.request.Request(
-        base + path,
-        data=None if body is None else json.dumps(body).encode(),
-        headers=headers,
-        method=method,
-    )
-    try:
-        response = urllib.request.urlopen(req, timeout=8)
-    except urllib.error.HTTPError as exc:
-        response = exc
-    with response:
-        status = response.status
-        raw = response.read()
-    if status != expected:
-        raise AssertionError(f"{method} {path}: expected {expected}, got {status}")
-    return json.loads(raw) if raw else None
 
 
 def main():
@@ -46,11 +19,7 @@ def main():
     parser.add_argument("--base", default="http://127.0.0.1:8080")
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
     args = parser.parse_args()
-    values = dict(
-        line.split("=", 1)
-        for line in args.env_file.read_text().splitlines()
-        if line and not line.startswith("#")
-    )
+    values = environment(args.env_file)
     users = args.base + "/services/user-management"
     battles = args.base + "/services/battle"
     request(args.base, "GET", "/healthz")

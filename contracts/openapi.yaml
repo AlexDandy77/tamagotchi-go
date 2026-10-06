@@ -1,9 +1,9 @@
 openapi: 3.1.1
 info:
   title: Tamagotchi Go communication contract
-  version: 1.1.0
-  description: Lab 0 proposed API contract, not an implemented backend. Paths are relative to the owning service
-    origin; this document does not require a gateway.
+  version: 1.2.0
+  description: Business API contract. Paths are relative to the owning service. Gateway transport and
+    staged migration are defined in gateway.md; endpoint bodies and ownership are unchanged.
 tags:
 - name: User Management
 - name: Tamagotchi

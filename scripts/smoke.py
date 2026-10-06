@@ -10,8 +10,8 @@ from lab import environment
 USERS = 'http://127.0.0.1:8080/services/user-management'
 BATTLE = 'http://127.0.0.1:8080/services/battle'
 
-def request(base, method, path, body=None, token=None, key=None, expected=200):
-    headers = {'Content-Type': 'application/json'}
+def request(base, method, path, body=None, token=None, key=None, expected=200, extra=None):
+    headers = {'Content-Type': 'application/json', **(extra or {})}
     if token:
         headers['Authorization'] = 'Bearer ' + token
     if key:

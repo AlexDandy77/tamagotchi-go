@@ -75,7 +75,46 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "if(pm.response.code===200){const s=pm.response.json();pm.environment.set(\"aliceToken\",s.accessToken);pm.environment.set(\"aliceId\",s.user.id);}"
+                  "if(pm.response.code===200){const s=pm.response.json();pm.environment.set(\"aliceToken\",s.accessToken);pm.environment.set(\"aliceId\",s.user.id);pm.environment.set(\"aliceRefresh\",s.refreshToken);}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh with expired bearer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJub25lIn0.eyJleHAiOjB9."
+              }
+            ],
+            "url": "{{users}}/v1/auth/refresh",
+            "description": "Deliberately expired, unsigned header fixture: public refresh must ignore it. The real refresh credential in the body is still validated.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"refreshToken\":\"{{aliceRefresh}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Refresh ignores expired bearer\", () => pm.response.to.have.status(200));",
+                  "if(pm.response.code===200){const s=pm.response.json();pm.environment.set(\"aliceToken\",s.accessToken);pm.environment.set(\"aliceRefresh\",s.refreshToken);}"
                 ]
               }
             }
