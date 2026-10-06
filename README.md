@@ -37,7 +37,7 @@ Requires Docker Compose v2 and Python 3. Published images run without access to 
 | User Management | `alexdandy77/pad-team-8-user-management:latest` | Gateway `/services/user-management` |
 | Battle | `alexdandy77/pad-team-8-battle:latest` | Gateway `/services/battle` |
 | Map | `ralex225/pad-team-8-map:latest` | Gateway migration pending |
-| Monster Raid | `ralex225/pad-team-8-monster-raid:latest` | Gateway migration pending |
+| Monster Raid | `ralex225/pad-team-8-monster-raid:latest` | Gateway `/services/monster-raid`; negotiated live socket on 8084 |
 | Guild | `xnikug/pad-team-8-guild:latest` | Gateway migration pending; direct WebSocket on 8087 |
 | Package Registry | `xnikug/pad-team-8-package-registry:latest` | Gateway migration pending |
 | Tamagotchi | `arturtugui/pad-team-8-tamagotchi:latest` | Gateway migration pending |
@@ -54,7 +54,7 @@ python3 scripts/smoke_gateway.py
 
 `setup` generates missing credentials, JWT and mTLS keys. Adding Gateway replaces an incomplete TLS bundle and keeps the old one under `.secrets/tls.replaced-*`; restart all containers to load the same CA. `up` provisions databases and Kafka topics, runs migrations and empty-database seeds, then starts the services. `provision`, `migrate` and `seed` are repeatable; `down` retains data. The existing Compose project name and volumes are preserved.
 
-Migrated clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; Battle calls User Management through it. Registry and Tamagotchi dependencies remain direct until their owners migrate. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
+Migrated clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; Battle and Monster Raid call User Management through it. Registry, Tamagotchi and Guild dependencies remain direct until their owners migrate. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
 
 Import [the shared Postman environment](postman/local.postman_environment.json), set `seedPassword` locally, and import each service collection:
 
@@ -66,7 +66,7 @@ Import [the shared Postman environment](postman/local.postman_environment.json),
 
 During migration:
 
-- The shared Postman environment and smoke scripts use direct URLs for Map `http://localhost:8083`, Monster Raid `:8084`, Tamagotchi `:8085`, Notification `:8086`, Guild `:8087` and Package Registry `:8088`. Each owner switches its client and dependency URLs after publishing compatible transport. Gateway currently routes only User Management and Battle.
+- The shared Postman environment and smoke scripts use direct URLs for Map `http://localhost:8083`, Tamagotchi `:8085`, Notification `:8086`, Guild `:8087` and Package Registry `:8088`. Each owner switches its client and dependency URLs after publishing compatible transport. Gateway routes User Management, Battle and Monster Raid. Monster Raid keeps `:8084` for its negotiated live socket and its probes (`monsterRaidDirect`), and Package Registry sends it raid commands directly until Registry migrates.
 - User Management temporarily keeps `http://localhost:8081` and `GATEWAY_ALLOW_DIRECT=true`. Legacy JWT requests, public JWKS reads and internal mTLS caller allowlists still work. Battle stays Gateway-only. Remove User Management's compatibility flag and host port after every caller migrates.
 - Registry admin requests need `REGISTRY_ADMIN_USER_IDS` in local `.env`: use Alice's ID from **Login alice**, then run `docker compose up -d package-registry`.
 - Tamagotchi and Notification's last verified 0.4.1 images use seeded user IDs as `devToken` because authentication/dependencies remain mocked. Their existing business gaps are listed in [architecture](ARCHITECTURE.md#integration-checks).
@@ -98,7 +98,7 @@ Contract version **1.4.0**. All eight services implement their portions.
 | Concurrency | `expectedVersion` and `expectedTurn` reject stale writes with `409`. Balances, reservations and raid HP change inside database transactions. |
 | Pagination | `cursor?` and `limit?` (1 to 100, default 20) return `{items, nextCursor}`. Chat history uses `afterSequence` and `hasMore`. |
 | Responses | Success codes are listed per endpoint; `204` has no body, `202` means work continues and the client polls, `101` is a WebSocket upgrade. Errors: `400` malformed, `401` unauthenticated, `403` forbidden, `404` missing, `409` conflict, `422` invalid value, `429` rate or cooldown limit, `503` dependency unavailable or task capacity reached, `504` task deadline exceeded. All errors use the `Error` body. |
-| Timeouts and retries | Service-to-service calls time out after 2 seconds. Every service must enforce 5-second tasks and 64 concurrent tasks by default, returning `503 TASK_LIMIT_REACHED` or `504 TASK_TIMEOUT`; health/readiness are exempt. Gateway, User Management and Battle implement this; other owners must add it before migration. After a timeout on a mutation, retry with the same key and read the state; never assume it failed. |
+| Timeouts and retries | Service-to-service calls time out after 2 seconds. Every service must enforce 5-second tasks and 64 concurrent tasks by default, returning `503 TASK_LIMIT_REACHED` or `504 TASK_TIMEOUT`; health/readiness are exempt. Gateway, User Management, Battle, Map and Monster Raid implement this; other owners must add it before migration. After a timeout on a mutation, retry with the same key and read the state; never assume it failed. |
 | Evolution | Optional fields may be added compatibly. Breaking HTTP changes get `/v2`; breaking events get a new type suffix. |
 
 Example: `POST /v1/pets/{petId}/care` with a bearer token and an `Idempotency-Key`:
