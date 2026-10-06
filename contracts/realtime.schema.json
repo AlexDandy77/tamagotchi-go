@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Tamagotchi Go guild chat frames v1",
+  "title": "Tamagotchi Go realtime frames v1: guild chat and live raids",
   "oneOf": [
     {
       "$ref": "#/$defs/ChatAuthenticate"
@@ -19,6 +19,15 @@
     },
     {
       "$ref": "#/$defs/ChatError"
+    },
+    {
+      "$ref": "#/$defs/RaidAuthenticate"
+    },
+    {
+      "$ref": "#/$defs/RaidState"
+    },
+    {
+      "$ref": "#/$defs/RaidError"
     }
   ],
   "$defs": {
@@ -226,6 +235,134 @@
       "required": [
         "type",
         "requestId",
+        "code",
+        "message"
+      ]
+    },
+    "RaidAuthenticate": {
+      "description": "First client frame on a live raid socket. Do not persist or echo the token.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "raid.authenticate"
+          ]
+        },
+        "accessToken": {
+          "type": "string",
+          "writeOnly": true
+        }
+      },
+      "required": [
+        "type",
+        "accessToken"
+      ]
+    },
+    "RaidState": {
+      "description": "The raid as it is now: sent after authentication and whenever the raid changes. Keep the highest version.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "raid.state"
+          ]
+        },
+        "raidId": {
+          "$ref": "#/$defs/ID"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "settling",
+            "won",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "hp": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxHp": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endsAt": {
+          "$ref": "#/$defs/Time"
+        },
+        "participants": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/RaidContribution"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "raidId",
+        "status",
+        "hp",
+        "maxHp",
+        "version",
+        "endsAt",
+        "participants"
+      ]
+    },
+    "RaidContribution": {
+      "description": "One participant's damage so far.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "userId": {
+          "$ref": "#/$defs/ID"
+        },
+        "damageDealt": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "userId",
+        "damageDealt"
+      ]
+    },
+    "RaidError": {
+      "description": "Sent before the server closes a live raid socket it cannot serve.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "raid.error"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "UNAUTHENTICATED",
+            "FORBIDDEN",
+            "NOT_FOUND",
+            "INVALID_MESSAGE",
+            "DEPENDENCY_UNAVAILABLE"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
         "code",
         "message"
       ]
