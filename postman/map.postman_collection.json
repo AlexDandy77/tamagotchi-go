@@ -2,7 +2,7 @@
  "info": {
   "name": "Tamagotchi Go — Map",
   "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-  "description": "Map service (localhost:8083) in the Lab 1 Compose deployment. Set seedPassword locally; tokens and relationships come from User Management. Runs repeatably: it clears both locations, makes Alice and Bob strangers, then enemies, then friends again as seeded. Current reports are dated 5 s ahead: Map accepts up to 30 s of clock skew, and the margin keeps them newer than a clear when the Docker clock runs slightly ahead of the host."
+  "description": "Map through the Gateway ({{map}}) in the shared Compose deployment; Map publishes no host port and accepts REST only through the Gateway. Set seedPassword locally; tokens come from User Management, and Map reads relationships and profiles from it through the Gateway. Runs repeatably: it clears both locations, makes Alice and Bob strangers, then enemies, then friends again as seeded. Current reports are dated 5 s ahead: Map accepts up to 30 s of clock skew, and the margin keeps them newer than a clear when the Docker clock runs slightly ahead of the host."
  },
  "item": [
   {
@@ -74,11 +74,11 @@
    ]
   },
   {
-   "name": "Liveness",
+   "name": "Gateway readiness includes Map",
    "request": {
     "method": "GET",
     "header": [],
-    "url": "{{map}}/healthz"
+    "url": "{{gateway}}/readyz"
    },
    "event": [
     {
@@ -87,27 +87,7 @@
       "type": "text/javascript",
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-       "pm.test(\"Reports its version\", () => { const b = pm.response.json(); pm.expect(b.status).to.eql(\"ok\"); pm.expect(b.version).to.be.a(\"string\").and.not.empty; });"
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "name": "Readiness",
-   "request": {
-    "method": "GET",
-    "header": [],
-    "url": "{{map}}/readyz"
-   },
-   "event": [
-    {
-     "listen": "test",
-     "script": {
-      "type": "text/javascript",
-      "exec": [
-       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-       "pm.test(\"Database is ready\", () => pm.expect(pm.response.json().status).to.eql(\"ready\"));"
+       "pm.test(\"Every Gateway destination is ready, Map included\", () => pm.expect(pm.response.json().status).to.eql(\"ready\"));"
       ]
      }
     }
