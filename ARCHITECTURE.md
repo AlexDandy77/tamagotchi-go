@@ -20,6 +20,7 @@ flowchart LR
   R -->|Direct raid dispatch| MR
   P -->|Direct REST during migration| MP & MR & G & R & T & N
   P -->|Direct WebSocket :8087; negotiation pending| G
+  P -->|Direct WebSocket :8084; negotiation pending| MR
   U --> Users[(PostgreSQL users)]
   B --> Battles[(PostgreSQL battles)]
   MP --> Locations[(PostgreSQL locations)]
@@ -59,7 +60,7 @@ Clients call `http://localhost:8080/services/{service}/{original-path}`. Gateway
 
 Every service is required to default to 5-second request deadlines and 64 active tasks. Capacity returns `503 TASK_LIMIT_REACHED`; timeout returns `504 TASK_TIMEOUT`. Gateway, User Management and Battle implement these limits; the other owners must add them. Health/readiness are exempt. Retry mutations with the same idempotency key because cancellation does not prove they never committed.
 
-Gateway negotiates Guild chat through an authenticated membership read and returns Guild's direct WebSocket URL. Guild checks the first authentication frame and membership again. The membership REST route requires its owner's transport update before negotiation works with the current published image.
+Gateway negotiates Guild chat through an authenticated membership read and returns Guild's direct WebSocket URL. Guild checks the first authentication frame and membership again. The membership REST route requires its owner's transport update before negotiation works with the current published image. Live raids work the same way: Gateway checks the player's raid read and returns Monster Raid's direct `/v1/raids/{raidId}/live` URL, which pushes the raid's HP, damage and result. Monster Raid checks the first authentication frame and raid access again. Raid negotiation starts working when Monster Raid's integration adds it to the Gateway upstreams.
 
 Battle has no published host REST port. User Management temporarily exposes localhost:8081 with explicit migration compatibility, preserving existing JWKS, profile and internal caller access. The other six service ports remain direct. Remove each direct REST port and User Management’s compatibility flag only after its callers migrate. PostgreSQL, MongoDB, Kafka and internal mTLS ports stay private. Kafka and database traffic do not pass through Gateway.
 
