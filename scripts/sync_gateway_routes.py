@@ -36,8 +36,8 @@ def catalog(spec=None):
                 "options",
             ):
                 continue
-            if path.endswith("/chat"):
-                continue  # Guild owns the direct WebSocket.
+            if "101" in operation.get("responses", {}):
+                continue  # WebSockets are direct; the Gateway only negotiates them.
             pattern = "".join(
                 "[^/]+" if part.startswith("{") else re.escape(part)
                 for part in re.split(r"(\{[^}]+\})", path)

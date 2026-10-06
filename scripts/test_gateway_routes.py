@@ -65,6 +65,19 @@ class CatalogTests(unittest.TestCase):
         spec["paths"]["/v1/users/{userId}"] = {"post": operation()}
         self.assertEqual(len(json.loads(catalog(spec))), 2)
 
+    def test_websocket_upgrades_stay_out_of_the_catalog(self):
+        upgrade = {**operation(owner="Monster Raid"), "responses": {"101": {}}}
+        spec = {
+            "paths": {
+                "/v1/raids/{raidId}/live": {"get": upgrade},
+                "/v1/raids/{raidId}": {"get": operation(owner="Monster Raid")},
+            }
+        }
+        self.assertEqual(
+            [route["pattern"] for route in json.loads(catalog(spec))],
+            ["/v1/raids/[^/]+"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
