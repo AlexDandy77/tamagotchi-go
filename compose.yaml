@@ -70,15 +70,16 @@ services:
     image: ${GATEWAY_IMAGE:?Set a released Gateway image or build the local validation image}
     environment:
       # Add a destination only after its owner publishes Gateway-compatible transport.
-      UPSTREAMS_JSON: '{"user-management":"https://user-management:8443","battle":"https://battle:8443"}'
+      UPSTREAMS_JSON: '{"user-management":"https://user-management:8443","battle":"https://battle:8443","monster-raid":"https://monster-raid:8443"}'
       JWKS_URL: https://user-management:8443/.well-known/jwks.json
       SERVICE_TLS_CERT_FILE: /run/tls/gateway.pem
       SERVICE_TLS_KEY_FILE: /run/tls/gateway-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       TASK_TIMEOUT_SECONDS: ${GATEWAY_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${GATEWAY_MAX_CONCURRENT_TASKS:-64}
-      READY_SERVICES: user-management,battle
+      READY_SERVICES: user-management,battle,monster-raid
       GUILD_WS_URL: ${GUILD_WS_URL:-ws://localhost:8087}
+      RAID_WS_URL: ${RAID_WS_URL:-ws://localhost:8084}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
@@ -253,24 +254,33 @@ services:
       KAFKA_USERNAME: raids
       KAFKA_PASSWORD: ${KAFKA_RAIDS_PASSWORD:?Run setup}
       DEPENDENCY_MODE: live
+      # User Management is reached through the Gateway; Registry, Tamagotchi and Guild stay direct until they migrate.
+      JWKS_URL: https://gateway:8443/services/user-management/.well-known/jwks.json
+      USER_MANAGEMENT_INTERNAL_URL: https://gateway:8443/services/user-management
       TAMAGOTCHI_INTERNAL_URL: https://tamagotchi:8443
-      JWKS_URL: http://user-management:8080/.well-known/jwks.json
       REGISTRY_INTERNAL_URL: https://package-registry:8443
       REGISTRY_URL: http://package-registry:8080
       GUILD_INTERNAL_URL: https://guild:8443
-      USER_MANAGEMENT_INTERNAL_URL: https://user-management:8443
       SERVICE_TLS_CERT_FILE: /run/tls/monster-raid.pem
       SERVICE_TLS_KEY_FILE: /run/tls/monster-raid-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+      # Accept the Gateway's signed identity. GATEWAY_ONLY stays off while Package Registry sends raid commands directly.
+      GATEWAY_CERT_FILE: /run/tls/gateway.pem
+      TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
+      MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/monster-raid.pem:/run/tls/monster-raid.pem:ro
       - ./.secrets/tls/monster-raid-key.pem:/run/tls/monster-raid-key.pem:ro
+    # The negotiated live raid socket stays direct; REST goes through the Gateway.
     ports: [127.0.0.1:8084:8080]
     depends_on:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
       user-management: {condition: service_healthy}
+      # Started, not healthy: the Gateway's readiness waits for Monster Raid.
+      gateway: {condition: service_started}
       guild: {condition: service_healthy}
       package-registry: {condition: service_healthy}
     healthcheck:
