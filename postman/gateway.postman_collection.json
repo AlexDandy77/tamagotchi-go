@@ -270,6 +270,61 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Live raid WebSocket setup",
+      "item": [
+        {
+          "name": "Raid negotiation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{aliceToken}}"
+              }
+            ],
+            "url": "{{gateway}}/v1/realtime/raids/{{practiceRaidId}}/connection"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200){const c=pm.response.json();pm.test(\"Direct raid socket without token\",()=>{pm.expect(c.url).to.match(/^wss?:/);pm.expect(c.url).to.include(\"/v1/raids/\"+pm.environment.get(\"practiceRaidId\")+\"/live\");pm.expect(c.url).not.to.include(\"token=\");});pm.test(\"Authenticate with the first frame\",()=>pm.expect(c.authentication).to.eql(\"RaidAuthenticate\"));pm.environment.set(\"raidLiveUrl\",c.url);}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject a raid negotiation with a malformed ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{aliceToken}}"
+              }
+            ],
+            "url": "{{gateway}}/v1/realtime/raids/not-a-raid/connection"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\",()=>pm.response.to.have.status(422));",
+                  "pm.test(\"INVALID_ID\",()=>pm.expect(pm.response.json().error.code).to.eql(\"INVALID_ID\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }
