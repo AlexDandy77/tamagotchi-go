@@ -15,7 +15,7 @@ PETS = 'http://127.0.0.1:8085'
 NOTIFICATIONS = 'http://127.0.0.1:8086'
 REGISTRY = 'http://127.0.0.1:8088'
 GUILD = 'http://127.0.0.1:8087'
-MAP = 'http://127.0.0.1:8083'
+MAP = 'http://127.0.0.1:8080/services/map'
 RAIDS = 'http://127.0.0.1:8080/services/monster-raid'
 PACKAGE = '11111111-1111-4111-8111-111111111111'
 
