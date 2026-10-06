@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise paired Monster Raid through the Gateway with real User Management tokens, Guild membership and Package Registry schedules, negotiate its live socket, call its mutual TLS API as Package Registry directly and through the Gateway, and read its Kafka start event, without printing credentials."""
+"""Exercise paired Monster Raid through the Gateway with real User Management tokens, Guild membership and Package Registry schedules, negotiate its live socket, call its mutual TLS API as Package Registry through the Gateway, check that it refuses direct REST, and read its Kafka start event, without printing credentials."""
 import json
 import subprocess
 import time
@@ -9,6 +9,7 @@ from smoke import request, USERS
 
 GATEWAY = 'http://127.0.0.1:8080'
 RAIDS = GATEWAY + '/services/monster-raid'
+DIRECT = 'http://127.0.0.1:8084'  # only the live socket and the probes answer here
 PETS = 'http://127.0.0.1:8085'  # Tamagotchi stays direct until its owner migrates
 NIGHT_OWLS = '22222222-2222-4222-8222-222222222222'
 PRACTICE = '44444444-4444-4444-8444-444444444444'  # the raid of the schedule Package Registry seeds
@@ -96,17 +97,21 @@ def main():
     assert live['url'].endswith(f'/v1/raids/{PRACTICE}/live') and live['authentication'] == 'RaidAuthenticate', \
         f'Raid negotiation answered {live}'
 
-    # Internal routes need a service certificate. Monster Raid answers Package Registry's, both
-    # directly, as Registry calls it until it migrates, and through the Gateway's signed identity.
+    # REST reaches Monster Raid only through the Gateway: a player calling the published port and
+    # Package Registry calling the mutual TLS port directly are both refused.
+    request(DIRECT, 'GET', '/v1/raids?guildId=' + NIGHT_OWLS, token=a, expected=401)
     start = {'scheduleId': PRACTICE, 'scheduleVersion': 1}
+    direct = internal('PUT', '/internal/v1/raids/' + PRACTICE, start)
+    assert direct['status'] == 401 and direct['body']['error']['code'] == 'GATEWAY_REQUIRED', f'Direct start answered {direct["status"]}'
+
+    # Internal routes need a service certificate, which the Gateway checks before it forwards
+    # Package Registry's signed identity.
     request(RAIDS, 'PUT', '/internal/v1/raids/' + PRACTICE, start, key=key(), expected=401)
-    replay = internal('PUT', '/internal/v1/raids/' + PRACTICE, start)
+    replay = internal('PUT', '/services/monster-raid/internal/v1/raids/' + PRACTICE, start, host='gateway')
     assert replay['status'] == 200 and replay['body']['id'] == PRACTICE, f'Start replay answered {replay["status"]}'
-    through = internal('PUT', '/services/monster-raid/internal/v1/raids/' + PRACTICE, start, host='gateway')
-    assert through['status'] == 200 and through['body']['id'] == PRACTICE, f'Start through the Gateway answered {through["status"]}'
     # An unknown schedule makes Monster Raid ask Package Registry over mutual TLS, which does not know it.
     unknown = str(uuid.uuid4())
-    missing = internal('PUT', '/internal/v1/raids/' + unknown, {'scheduleId': unknown, 'scheduleVersion': 1})
+    missing = internal('PUT', '/services/monster-raid/internal/v1/raids/' + unknown, {'scheduleId': unknown, 'scheduleVersion': 1}, host='gateway')
     assert missing['status'] == 422 and missing['body']['error']['details'][0]['field'] == 'scheduleVersion', \
         f'Unknown schedule answered {missing["status"]}'
 
@@ -114,7 +119,7 @@ def main():
     event = next((e for e in reversed(start_events()) if e['aggregateId'] == PRACTICE), None)
     assert event, 'No start event of the practice raid reached Kafka'
     assert event['producer'] == 'monster-raid' and set(event['data']['recipientIds']) == {alice, bob}
-    print('Paired Monster Raid reads, joins and attacks through the Gateway, its live socket negotiation, its Package Registry mutual TLS API directly and through the Gateway, and its Kafka start event passed.')
+    print('Paired Monster Raid reads, joins and attacks through the Gateway, its live socket negotiation, its Package Registry mutual TLS API through the Gateway, its refusal of direct REST and its Kafka start event passed.')
 
 if __name__ == '__main__':
     main()
