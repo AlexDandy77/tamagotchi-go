@@ -54,7 +54,7 @@ python3 scripts/smoke_gateway.py
 
 `setup` generates missing credentials, JWT and mTLS keys. Adding Gateway replaces an incomplete TLS bundle and keeps the old one under `.secrets/tls.replaced-*`; restart all containers to load the same CA. `up` provisions databases and Kafka topics, runs migrations and empty-database seeds, then starts the services. `provision`, `migrate` and `seed` are repeatable; `down` retains data. The existing Compose project name and volumes are preserved.
 
-Migrated clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; Battle and Monster Raid call User Management through it. Registry, Tamagotchi and Guild dependencies remain direct until their owners migrate. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
+Migrated clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; Battle and Monster Raid call User Management through it, and Package Registry sends its raid commands to Monster Raid through it. Calls to Registry, Tamagotchi and Guild remain direct until their owners migrate. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
 
 Import [the shared Postman environment](postman/local.postman_environment.json), set `seedPassword` locally, and import each service collection:
 
@@ -66,7 +66,7 @@ Import [the shared Postman environment](postman/local.postman_environment.json),
 
 During migration:
 
-- The shared Postman environment and smoke scripts use direct URLs for Map `http://localhost:8083`, Tamagotchi `:8085`, Notification `:8086`, Guild `:8087` and Package Registry `:8088`. Each owner switches its client and dependency URLs after publishing compatible transport. Gateway routes User Management, Battle and Monster Raid. Monster Raid keeps `:8084` for its negotiated live socket and its probes (`monsterRaidDirect`), and Package Registry sends it raid commands directly until Registry migrates.
+- The shared Postman environment and smoke scripts use direct URLs for Map `http://localhost:8083`, Tamagotchi `:8085`, Notification `:8086`, Guild `:8087` and Package Registry `:8088`. Each owner switches its client and dependency URLs after publishing compatible transport. Gateway routes User Management, Battle and Monster Raid. Monster Raid accepts REST only through the Gateway (`GATEWAY_ONLY`); `:8084` serves just its negotiated live socket and its probes (`monsterRaidDirect`).
 - User Management temporarily keeps `http://localhost:8081` and `GATEWAY_ALLOW_DIRECT=true`. Legacy JWT requests, public JWKS reads and internal mTLS caller allowlists still work. Battle stays Gateway-only. Remove User Management's compatibility flag and host port after every caller migrates.
 - Registry admin requests need `REGISTRY_ADMIN_USER_IDS` in local `.env`: use Alice's ID from **Login alice**, then run `docker compose up -d package-registry`.
 - Tamagotchi and Notification's last verified 0.4.1 images use seeded user IDs as `devToken` because authentication/dependencies remain mocked. Their existing business gaps are listed in [architecture](ARCHITECTURE.md#integration-checks).

@@ -16,7 +16,7 @@ flowchart LR
   MP -->|Direct profiles / relationships| U
   G -->|Direct relationships| U
   MR -->|Direct rules / pets / membership| R & T & G
-  R -->|Direct raid dispatch| MR
+  R -->|Raid dispatch| GW
   P -->|Direct REST during migration| MP & G & R & T & N
   P -->|Direct WebSocket :8087; negotiation pending| G
   P -->|Negotiated direct WebSocket :8084| MR
@@ -55,13 +55,13 @@ Solid edges show current traffic; dashed edges show pending Gateway transport. E
 
 Gateway uses Python 3.13/aiohttp; Go services use `net/http`, pgx and franz-go; TypeScript services use Fastify, Ajv and Kafka clients. Containers resolve each other by Compose service name.
 
-Clients call `http://localhost:8080/services/{service}/{original-path}`. Gateway verifies RS256 access tokens, strips Authorization and spoofed headers, then forwards an ES256 request-bound identity over TLS 1.3 with client certificates. User Management, Battle and Monster Raid check this identity and retain their ownership/caller rules. Battle’s and Monster Raid’s User Management dependencies, Monster Raid’s token-key read included, point through Gateway. Registry, Tamagotchi and Guild destinations remain direct during migration. User Management explicitly enables temporary direct JWT/mTLS compatibility for the other callers; Gateway assertions are still verified and never fall back. Gateway's direct mTLS JWKS read bootstraps authentication. See [transport contract](contracts/gateway.md).
+Clients call `http://localhost:8080/services/{service}/{original-path}`. Gateway verifies RS256 access tokens, strips Authorization and spoofed headers, then forwards an ES256 request-bound identity over TLS 1.3 with client certificates. User Management, Battle and Monster Raid check this identity and retain their ownership/caller rules. Battle’s and Monster Raid’s User Management dependencies, Monster Raid’s token-key read included, point through Gateway. Monster Raid refuses direct REST (`GATEWAY_ONLY`), so Package Registry dispatches raids through Gateway. Registry, Tamagotchi and Guild destinations remain direct during migration. User Management explicitly enables temporary direct JWT/mTLS compatibility for the other callers; Gateway assertions are still verified and never fall back. Gateway's direct mTLS JWKS read bootstraps authentication. See [transport contract](contracts/gateway.md).
 
 Every service is required to default to 5-second request deadlines and 64 active tasks. Capacity returns `503 TASK_LIMIT_REACHED`; timeout returns `504 TASK_TIMEOUT`. Gateway, User Management, Battle, Map and Monster Raid implement these limits; the other owners must add them. Health/readiness are exempt. Retry mutations with the same idempotency key because cancellation does not prove they never committed.
 
 Gateway negotiates Guild chat through an authenticated membership read and returns Guild's direct WebSocket URL. Guild checks the first authentication frame and membership again. The membership REST route requires its owner's transport update before negotiation works with the current published image. Live raids work the same way: Gateway checks the player's raid read and returns Monster Raid's direct `/v1/raids/{raidId}/live` URL, which pushes the raid's HP, damage and result. Monster Raid checks the first authentication frame and raid access again.
 
-Battle has no published host REST port. User Management temporarily exposes localhost:8081 with explicit migration compatibility, preserving existing JWKS, profile and internal caller access. Monster Raid's port 8084 stays for its negotiated live socket, and the other five service ports remain direct. Remove each direct REST port and User Management’s compatibility flag only after its callers migrate. PostgreSQL, MongoDB, Kafka and internal mTLS ports stay private. Kafka and database traffic do not pass through Gateway.
+Battle has no published host REST port. User Management temporarily exposes localhost:8081 with explicit migration compatibility, preserving existing JWKS, profile and internal caller access. Monster Raid's port 8084 stays only for its negotiated live socket and its probes, and the other five service ports remain direct. Remove each direct REST port and User Management’s compatibility flag only after its callers migrate. PostgreSQL, MongoDB, Kafka and internal mTLS ports stay private. Kafka and database traffic do not pass through Gateway.
 
 Setup creates development certificates in ignored `.secrets/tls`. Each container receives its own private key and CA; the two Go services also receive Gateway's public certificate. Adding a certificate or replacing an expired bundle regenerates the bundle, preserves a backup and requires restarting every service.
 
