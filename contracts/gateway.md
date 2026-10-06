@@ -68,4 +68,4 @@ Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yam
 
 The Guild, Package Registry, Tamagotchi and Notification images do not implement this contract yet. Update the existing shared deployment as each owner publishes a compatible release; full-team integration remains pending.
 
-Before Map migrates, User Management must serve the batch public-profile read `GET /internal/v1/users`; Map 2.0.4 and later read usernames only through it. Service certificates must not call player-only profile routes.
+Map reads usernames only through the batch public-profile read `GET /internal/v1/users` (Map 2.0.4 and later). Until User Management serves it and the Gateway routes it, Map's nearby view answers `503` when other players are near. Service certificates must not call player-only profile routes.
