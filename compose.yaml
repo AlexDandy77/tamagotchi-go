@@ -196,7 +196,8 @@ services:
       KAFKA_USERNAME: registry
       KAFKA_PASSWORD: ${KAFKA_REGISTRY_PASSWORD}
       DEPENDENCY_MODE: live
-      MONSTER_RAID_INTERNAL_URL: https://monster-raid:8443
+      # Monster Raid accepts raid commands only through the Gateway.
+      MONSTER_RAID_INTERNAL_URL: https://gateway:8443/services/monster-raid
       JWKS_URL: http://user-management:8080/.well-known/jwks.json
       REGISTRY_ADMIN_USER_IDS: ${REGISTRY_ADMIN_USER_IDS:-}
       SERVICE_TLS_CERT_FILE: /run/tls/package-registry.pem
@@ -264,7 +265,8 @@ services:
       SERVICE_TLS_CERT_FILE: /run/tls/monster-raid.pem
       SERVICE_TLS_KEY_FILE: /run/tls/monster-raid-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
-      # Accept the Gateway's signed identity. GATEWAY_ONLY stays off while Package Registry sends raid commands directly.
+      # REST reaches Monster Raid only through the Gateway, verified with its signed identity.
+      GATEWAY_ONLY: 'true'
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
@@ -273,7 +275,7 @@ services:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/monster-raid.pem:/run/tls/monster-raid.pem:ro
       - ./.secrets/tls/monster-raid-key.pem:/run/tls/monster-raid-key.pem:ro
-    # The negotiated live raid socket stays direct; REST goes through the Gateway.
+    # Only the negotiated live raid socket and the probes are direct.
     ports: [127.0.0.1:8084:8080]
     depends_on:
       postgres: {condition: service_healthy}
