@@ -55,10 +55,10 @@ SECRET_KEYS = (
     'KAFKA_GUILDS_PASSWORD', 'KAFKA_REGISTRY_PASSWORD', 'KAFKA_LOCATIONS_PASSWORD', 'KAFKA_RAIDS_PASSWORD',
     'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD',
 )
-# Notification has no internal routes, so it terminates no mTLS and needs no certificate.
-TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'gateway')
+# Prepare every service certificate now; Notification will mount its key when its owner adds mTLS.
+TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway')
 # These images run as an unprivileged user that must read its bind-mounted key.
-NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'gateway')
+NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway')
 # Already required by Compose; provides the openssl CLI so the host needs no OpenSSL.
 TOOLS_IMAGE = 'postgres:17.9'
 TLS_SCRIPT = r'''set -eu
@@ -82,9 +82,9 @@ def run(args, **kwargs):
 def compose(*args, **kwargs):
     return run(['docker', 'compose', *args], **kwargs)
 
-def environment():
+def environment(env_file=None):
     values = {}
-    for line in (ROOT / '.env').read_text().splitlines():
+    for line in (env_file if env_file is not None else ROOT / '.env').read_text().splitlines():
         if line and not line.startswith('#'):
             key, value = line.split('=', 1)
             values[key] = value
@@ -112,6 +112,12 @@ def env_file():
             stream.write('\n# Added by setup for newly introduced services.\n')
             stream.writelines(key + '=' + generate(key, value) + '\n' for key, value in missing)
         print('Added to .env:', ', '.join(key for key, _ in missing))
+    existing = dict(re.findall(r'^([A-Z0-9_]+)=(.*)$', path.read_text(), flags=re.M))
+    image_overrides = [key for key, value in re.findall(r'^([A-Z0-9_]+)=(.*)$', example, flags=re.M)
+                       if key.endswith('_IMAGE') and existing.get(key) != value]
+    if image_overrides:
+        print('Kept existing image selections:', ', '.join(image_overrides),
+              '— review these keys against .env.example before upgrading; setup does not change them.')
 
 def tls_bundle(directory):
     """One development CA and a certificate per service (CN = service name). Replaces an incomplete bundle."""
@@ -207,8 +213,8 @@ def main():
     if command == 'setup':
         setup()
     elif command == 'up':
-        # Release tags never move, so an image already present locally is the published one.
-        compose('pull', '--policy', 'missing')
+        # latest may advance after a merge; refresh images before recreating containers.
+        compose('pull', '--policy', 'always')
         compose('up', '-d', '--wait', 'postgres', 'kafka', 'mongo')
         provision()
         topics()

@@ -6,20 +6,35 @@ One `compose.yaml` runs the existing project: Python Gateway, four Go services, 
 
 ```mermaid
 flowchart LR
-  Player[Player / Postman] -->|REST localhost:8080| GW[Python Gateway]
-  GW -->|mTLS + signed identity| U[User Management / Go]
-  GW -->|mTLS + signed identity| B[Battle / Go]
-  U -->|REST dependencies| GW
-  B -->|REST dependencies| GW
-  GW -.->|Owner migration pending| Other[Guild / Registry / Map / Raid / Tamagotchi / Notification]
-  Player -->|Negotiated direct WebSocket :8087| Guild[Guild chat]
+  P[Player / Postman] -->|REST :8080| GW[Python Gateway]
+  GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go]
+  B -->|User Management REST| GW
+  GW -.->|Pending migration| MP[Map / Go] & MR[Monster Raid / Go] & G[Guild / TypeScript] & R[Registry / TypeScript] & T[Tamagotchi / TypeScript] & N[Notification / TypeScript]
+  MP & MR & G & R & T -.->|REST through Gateway after migration| GW
+  U -->|Direct Registry / starter recovery| R & T
+  B -->|Direct rules / pet reservations| R & T
+  MP -->|Direct profiles / relationships| U
+  G -->|Direct relationships| U
+  MR -->|Direct rewards| U
+  MR -->|Direct rules / pets / membership| R & T & G
+  R -->|Direct raid dispatch| MR
+  P -->|Direct REST during migration| MP & MR & G & R & T & N
+  P -->|Direct WebSocket :8087; negotiation pending| G
   U --> Users[(PostgreSQL users)]
   B --> Battles[(PostgreSQL battles)]
-  Other --> DB[(Owned PostgreSQL / MongoDB databases)]
-  U --> K[Kafka KRaft]
-  B --> K
-  Other --> K
+  MP --> Locations[(PostgreSQL locations)]
+  MR --> Raids[(PostgreSQL raids)]
+  G --> Guilds[(PostgreSQL guilds)]
+  R --> Registry[(MongoDB registry)]
+  T --> Pets[(PostgreSQL tamagotchi)]
+  N --> Notifications[(PostgreSQL notification)]
+  U & B & MP & MR & G & R & T -->|Events / outbox| K[Kafka KRaft]
+  K -->|Enrollment| R & T
+  K -->|Notifications| N
 ```
+
+Solid edges show current traffic; dashed edges show pending Gateway transport. Each owner switches its client and dependency URLs only after publishing a compatible image. Tamagotchi's outbound rules/rewards remain mocked in its last verified image.
+
 
 | Container | Responsibility | Storage |
 | --- | --- | --- |
@@ -40,13 +55,13 @@ flowchart LR
 
 Gateway uses Python 3.13/aiohttp; Go services use `net/http`, pgx and franz-go; TypeScript services use Fastify, Ajv and Kafka clients. Containers resolve each other by Compose service name.
 
-Clients call `http://localhost:8080/services/{service}/{original-path}`. Gateway verifies RS256 access tokens, strips Authorization and spoofed headers, then forwards an ES256 request-bound identity over TLS 1.3 with client certificates. User Management and Battle check this identity and retain their ownership/caller rules. Their REST dependency URLs point through Gateway. Gateway's direct mTLS JWKS read bootstraps authentication. See [transport contract](contracts/gateway.md).
+Clients call `http://localhost:8080/services/{service}/{original-path}`. Gateway verifies RS256 access tokens, strips Authorization and spoofed headers, then forwards an ES256 request-bound identity over TLS 1.3 with client certificates. User Management and Battle check this identity and retain their ownership/caller rules. Battle’s User Management dependency points through Gateway. Registry/Tamagotchi destinations remain direct during migration. User Management explicitly enables temporary direct JWT/mTLS compatibility for the other callers; Gateway assertions are still verified and never fall back. Gateway's direct mTLS JWKS read bootstraps authentication. See [transport contract](contracts/gateway.md).
 
-Gateway and both Go APIs default to 5-second request deadlines and 64 active tasks. Capacity returns `503 TASK_LIMIT_REACHED`; timeout returns `504 TASK_TIMEOUT`. Retry mutations with the same idempotency key because cancellation does not prove they never committed.
+Every service is required to default to 5-second request deadlines and 64 active tasks. Capacity returns `503 TASK_LIMIT_REACHED`; timeout returns `504 TASK_TIMEOUT`. Gateway, User Management and Battle implement these limits; the other owners must add them. Health/readiness are exempt. Retry mutations with the same idempotency key because cancellation does not prove they never committed.
 
 Gateway negotiates Guild chat through an authenticated membership read and returns Guild's direct WebSocket URL. Guild checks the first authentication frame and membership again. The membership REST route requires its owner's transport update before negotiation works with the current published image.
 
-User Management and Battle have no published host REST ports. The other six service ports remain during migration; they must reject direct business REST once updated. PostgreSQL, MongoDB, Kafka and internal mTLS ports stay private. Kafka and database traffic do not pass through Gateway.
+Battle has no published host REST port. User Management temporarily exposes localhost:8081 with explicit migration compatibility, preserving existing JWKS, profile and internal caller access. The other six service ports remain direct. Remove each direct REST port and User Management’s compatibility flag only after its callers migrate. PostgreSQL, MongoDB, Kafka and internal mTLS ports stay private. Kafka and database traffic do not pass through Gateway.
 
 Setup creates development certificates in ignored `.secrets/tls`. Each container receives its own private key and CA; the two Go services also receive Gateway's public certificate. Adding a certificate or replacing an expired bundle regenerates the bundle, preserves a backup and requires restarting every service.
 
@@ -60,7 +75,7 @@ Business changes and outbox events commit together. Kafka outages retain pending
 
 ## Integration checks
 
-Validated in isolated test data: Gateway login, JWT rejection, spoofed-header removal, protected internal routes, wallet/list reads, Battle → Gateway → User Management mTLS, idempotent challenge replay and cancellation. A paired fixture environment also completed combat and real wallet settlement; Registry/Tamagotchi were explicit fixtures in that check.
+Validated with fresh isolated data and existing teammate images: Gateway login/refresh, JWT rejection, spoofed-header removal, protected internal routes, Battle → Gateway → User Management mTLS, challenge replay/cancellation, registration through live Registry, legacy JWKS/profile reads, Map relationships and Kafka events, Guild membership, and Registry permissions/projection. The new Gateway/User Management fixes used local test images; the presentation data was untouched. Earlier fixture checks completed combat and real wallet settlement with explicit Registry/Tamagotchi fixtures.
 
 Use `python3 scripts/smoke_gateway.py` for these three updated services. Use `scripts/smoke_live.py` for team workflows after their owners migrate.
 
@@ -68,7 +83,7 @@ Remaining work in the six teammate services:
 
 - Adopt signed Gateway identities, route REST dependencies through Gateway and add request limits. Notification needs mTLS for its REST listener.
 - Guild must accept the identity on the membership read used for direct socket negotiation.
-- Add merge-triggered image publishing and update shared image pins. Until then, Gateway requests to their existing images fail explicitly.
+- Add merge-triggered image publishing and publish versioned plus latest tags. Until then, their Postman/smoke URLs and dependency calls stay direct, and their Gateway upstreams stay disabled. Map’s batch profile read is tracked in common PR #35 and must land with the paired User Management handler before Map migrates.
 
 Existing Tamagotchi/Notification 0.4.1 business gaps also remain: mock authentication/dependencies, hardcoded care/starter rules, missing real wallet credits and Firebase delivery. One starter per owner/package cannot supply Battle's two-pet loadout. Do not hide these gaps with fake production pets or direct database writes.
 
@@ -79,7 +94,7 @@ Seeded accounts are Alice and Bob at `alice@demo.invalid`/`bob@demo.invalid`, us
 1. Add the owning database/role/password entry to `deployment/databases.json` or MongoDB provisioning. Add secret placeholders and generation keys to `.env.example`/`scripts/lab.py`.
 2. Add the public image, private database credentials and healthcheck to the existing `compose.yaml`. Add its certificate to setup and mount only the required keys.
 3. Follow [Gateway transport contract](contracts/gateway.md), update the route catalog from OpenAPI, and configure Kafka topics/ACLs for its events.
-4. Run `setup`, `provision`, migrations and seeds on the existing volumes. Publish merged service commits, then update image pins and submodule pointers through a common PR.
+4. Run `setup`, `provision`, migrations and seeds on the existing volumes. Publish merged service commits with versioned and latest tags, then update Gateway routing and submodule pointers through a common PR.
 
 ## Future full-system architecture
 

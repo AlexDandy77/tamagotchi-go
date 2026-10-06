@@ -8,7 +8,7 @@ import uuid
 import lab
 from smoke import request, USERS
 
-MAP = 'http://127.0.0.1:8080/services/map'
+MAP = 'http://127.0.0.1:8083'
 TOPIC = 'map.encountered.v1'
 ADMIN = '/run/secrets/kafka-admin.properties'
 HERE = {'latitude': 47.0617, 'longitude': 28.8683}

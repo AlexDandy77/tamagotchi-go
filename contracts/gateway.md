@@ -10,7 +10,7 @@ Services call `https://gateway:8443/services/{destination}/{path}` with their ow
 
 ## Identity
 
-The Gateway validates player `Authorization: Bearer <accessToken>` using User Management's RS256 keys, issuer/audience `tamagotchi-go`, expiration and player UUID. Public routes need no token; a supplied token must still be valid. The Gateway removes Authorization, cookies, caller identity headers and hop-by-hop headers before forwarding. It never retries mutations or follows redirects.
+The Gateway validates player `Authorization: Bearer <accessToken>` using User Management's RS256 keys, issuer/audience `tamagotchi-go`, expiration and player UUID. Public routes ignore and strip Authorization, even when the access token is expired or malformed. Login and refresh credentials are validated by User Management; a stale bearer header cannot prevent refresh. The Gateway removes Authorization, cookies, caller identity headers and hop-by-hop headers before forwarding. It never retries mutations or follows redirects.
 
 Downstream requests use mTLS plus an ES256 JWT in `X-Gateway-Identity`, signed with the Gateway's EC certificate key. Each service mounts `gateway.pem` as its trusted public key and checks the peer certificate's DNS SAN is `gateway`.
 
@@ -25,11 +25,30 @@ Downstream requests use mTLS plus an ES256 JWT in `X-Gateway-Identity`, signed w
 
 Services reject invalid signatures, audiences, expired assertions, changed requests and incoming Authorization headers. Player handlers retain ownership checks. Internal handlers use `sub` as the original caller and enforce their existing allowlists. Never trust an unsigned user-ID header.
 
-With `GATEWAY_ONLY=true`, User Management and Battle reject direct business requests. Health/readiness remain available internally. The Gateway reads User Management's JWKS directly over mTLS to bootstrap verification; this key-discovery call carries no player credentials. Business REST calls go through the Gateway. Replay protection for mutations remains the persistent service idempotency key, not the short-lived transport assertion.
+With `GATEWAY_ONLY=true`, direct business requests are rejected. Health/readiness remain available internally. During migration, User Management explicitly sets `GATEWAY_ALLOW_DIRECT=true`: direct JWT requests, public JWKS and original internal mTLS caller allowlists remain available. Gateway requests still require verified mTLS and signed identities; forged assertions never fall back to legacy authentication. Remove this flag and port 8081 once all callers migrate. Battle remains strict. The Gateway reads User Management's JWKS directly over mTLS to bootstrap verification; this key-discovery call carries no player credentials. Migrate REST dependencies one destination at a time. Until an owner supports signed identities, keep its direct URL; add its Gateway upstream and change its callers/client URLs together after publishing. Replay protection for mutations remains the persistent service idempotency key, not the short-lived transport assertion.
 
 ## Deadlines and capacity
 
-All three updated processes default to `TASK_TIMEOUT_SECONDS=5` and `MAX_CONCURRENT_TASKS=64`, shared across their listeners. Full capacity returns `503 TASK_LIMIT_REACHED`; an expired task returns `504 TASK_TIMEOUT`, using the common error envelope. Health/readiness do not consume business slots. Go cancels the request context and retains the slot until its handler exits. Retry mutations with the same idempotency key after a timeout; cancellation does not guarantee a transaction was never committed.
+Every service and Gateway must default to `TASK_TIMEOUT_SECONDS=5` and `MAX_CONCURRENT_TASKS=64`, shared across their listeners. Full capacity returns `503 TASK_LIMIT_REACHED`; an expired task returns `504 TASK_TIMEOUT`, using the common error envelope. Health/readiness do not consume business slots. Gateway, User Management and Battle implement these limits; other owners must add them before migrating. Go cancels the request context and retains the slot until its handler exits. Retry mutations with the same idempotency key after a timeout; cancellation does not guarantee a transaction was never committed.
+
+## Gateway errors
+
+Gateway and destination errors share the common envelope. Use `error.code`, not only the HTTP status: Gateway's `SERVICE_FORBIDDEN` is not Guild's membership decision. Request bodies are limited to 64 KiB; destination responses to 4 MiB.
+
+| Status | Gateway code | Meaning |
+| --- | --- | --- |
+| 401 | `INVALID_TOKEN`, `UNAUTHENTICATED` | Missing, invalid or expired player credentials |
+| 401 | `SERVICE_CERT_REQUIRED` | Internal route needs a verified service certificate |
+| 403 | `SERVICE_FORBIDDEN` | Caller not permitted; service cannot act as a player |
+| 404 | `NOT_FOUND` | Destination/path/method is not exposed |
+| 413 | `BODY_TOO_LARGE` | Request exceeds 64 KiB |
+| 422 | `INVALID_ID` | Invalid negotiation guild UUID |
+| 502 | `DEPENDENCY_RESPONSE` | Destination response exceeds 4 MiB |
+| 503 | `DEPENDENCY_UNAVAILABLE` | Destination cannot be reached |
+| 503 | `DESTINATION_NOT_CONFIGURED` | Owner's upstream has not been enabled |
+| 503 | `IDENTITY_UNAVAILABLE` | Player verification keys unavailable |
+| 503 | `TASK_LIMIT_REACHED` | All task slots are occupied |
+| 504 | `TASK_TIMEOUT` | Task deadline exceeded |
 
 ## Guild WebSocket
 
@@ -43,6 +62,8 @@ Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yam
 2. Send REST dependencies through the Gateway using the service certificate. Add mTLS to public APIs that previously only served HTTP, including Notification. Keep a safe key-discovery bootstrap for direct Guild socket authentication.
 3. Add configurable deadlines and concurrency limits with the same errors; test failures and recovery.
 4. Publish validated merges to `main` as immutable `2.MINOR.PATCH` images plus `latest`, for AMD64 and ARM64. Give each repository its own `DOCKERHUB_TOKEN` secret.
-5. After publishing, update the shared image pins and remove public REST ports. Guild still needs its direct WebSocket port; reject direct REST business calls there.
+5. After publishing, add the Gateway upstream, switch the owner’s client/dependency URLs and update its merged submodule pointer in one integration PR. Shared image defaults use `latest`; version tags remain available. Remove public REST ports only once their callers migrate. Guild still needs its direct WebSocket port; reject direct REST business calls there.
 
 Their current images do not implement this contract. Update the existing shared deployment as each owner publishes a compatible release; full-team integration remains pending.
+
+Before Map migrates, merge the batch internal public-profile contract tracked in [PR #35](https://github.com/AlexDandy77/tamagotchi-go/pull/35) and its User Management/Map implementations. Service certificates must not call player-only profile routes.

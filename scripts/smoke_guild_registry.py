@@ -4,8 +4,8 @@ import uuid
 from lab import environment
 from smoke import request, USERS
 
-GUILD = 'http://127.0.0.1:8080/services/guild'
-REGISTRY = 'http://127.0.0.1:8080/services/package-registry'
+GUILD = 'http://127.0.0.1:8087'
+REGISTRY = 'http://127.0.0.1:8088'
 PACKAGE = '11111111-1111-4111-8111-111111111111'
 
 def key():

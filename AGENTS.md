@@ -69,6 +69,8 @@
 
 ## Hygiene
 
+- After Docker validation, clean up temporary containers and image tags created for the task, including multi-architecture, validation and review builds. This applies to common work and service submodules. Track their exact names and tags when creating them; clean up after both successful and failed checks.
+- Inspect container references before removing images. Remove only the task's stopped test containers, then its unused image tags with `docker image rm` without `--force`. Preserve presentation containers, release images, unrelated projects and data volumes. Do not use broad Docker prune commands for task cleanup.
 - Follow `.gitignore`; never commit secrets, real `.env` files, keys/tokens, installed dependencies, binaries, coverage reports, logs, local databases or editor/OS files. Do not print secrets in logs or PRs.
 - Commit source, tests, docs, manifests/lockfiles, Docker/CI configuration and `.env.example` containing only documented placeholders.
 - If a secret is exposed, report it and arrange immediate rotation. Deleting it in a later commit is insufficient; coordinate history cleanup with the owner, especially on protected `main`.
