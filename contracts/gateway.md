@@ -29,7 +29,7 @@ With `GATEWAY_ONLY=true`, direct business requests are rejected. Health/readines
 
 ## Deadlines and capacity
 
-Every service and Gateway must default to `TASK_TIMEOUT_SECONDS=5` and `MAX_CONCURRENT_TASKS=64`, shared across their listeners. Full capacity returns `503 TASK_LIMIT_REACHED`; an expired task returns `504 TASK_TIMEOUT`, using the common error envelope. Health/readiness do not consume business slots. Gateway, User Management and Battle implement these limits; other owners must add them before migrating. Go cancels the request context and retains the slot until its handler exits. Retry mutations with the same idempotency key after a timeout; cancellation does not guarantee a transaction was never committed.
+Every service and Gateway must default to `TASK_TIMEOUT_SECONDS=5` and `MAX_CONCURRENT_TASKS=64`, shared across their listeners. Full capacity returns `503 TASK_LIMIT_REACHED`; an expired task returns `504 TASK_TIMEOUT`, using the common error envelope. Health/readiness do not consume business slots. Gateway, User Management, Battle, Map and Monster Raid implement these limits; other owners must add them before migrating. Go cancels the request context and retains the slot until its handler exits. Retry mutations with the same idempotency key after a timeout; cancellation does not guarantee a transaction was never committed.
 
 ## Gateway errors
 
@@ -66,6 +66,6 @@ Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yam
 4. Publish validated merges to `main` as immutable `2.MINOR.PATCH` images plus `latest`, for AMD64 and ARM64. Give each repository its own `DOCKERHUB_TOKEN` secret.
 5. After publishing, add the Gateway upstream, switch the owner’s client/dependency URLs and update its merged submodule pointer in one integration PR. Shared image defaults use `latest`; version tags remain available. Remove public REST ports only once their callers migrate. Guild still needs its direct WebSocket port; reject direct REST business calls there.
 
-Their current images do not implement this contract. Update the existing shared deployment as each owner publishes a compatible release; full-team integration remains pending.
+The Guild, Package Registry, Tamagotchi and Notification images do not implement this contract yet. Update the existing shared deployment as each owner publishes a compatible release; full-team integration remains pending.
 
 Before Map migrates, User Management must serve the batch public-profile read `GET /internal/v1/users`; Map 2.0.4 and later read usernames only through it. Service certificates must not call player-only profile routes.
