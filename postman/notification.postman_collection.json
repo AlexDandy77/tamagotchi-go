@@ -2,7 +2,7 @@
   "info": {
     "name": "Tamagotchi Go \u2014 Notification service (Artur)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Routes for the Notification service. Runs against the team stack (`python3 scripts/lab.py up`, port 8086) or a locally started service. Auth is mocked: the bearer token is the user id, so devToken is the seeded demo user 77777777-7777-4777-8777-777777777777 and otherDevToken another user."
+    "description": "Gateway player checks use two fresh registered users and real JWTs. Set seedPassword in the local environment and run requests in order. Mark-read is skipped if no Kafka event has created a notification for this user."
   },
   "item": [
     {
@@ -10,7 +10,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{notification}}/healthz"
+        "url": "{{gateway}}/healthz"
       },
       "event": [
         {
@@ -26,13 +26,111 @@
       ]
     },
     {
+      "name": "Register Notification test player",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{users}}/v1/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"{{notificationRunName}}\",\"email\":\"{{notificationRunEmail}}\",\"password\":\"{{seedPassword}}\",\"packageId\":\"{{packageId}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const id = pm.variables.replaceIn(\"{{$guid}}\").replace(/-/g, \"\").slice(0, 16);",
+              "pm.collectionVariables.set(\"notificationRunName\", \"notificationRun_\" + id);",
+              "pm.collectionVariables.set(\"notificationRunEmail\", \"notificationRun_\" + id + \"@demo.invalid\");"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) { const s = pm.response.json(); pm.collectionVariables.set(\"notificationToken\", s.accessToken); pm.collectionVariables.set(\"notificationRunUserId\", s.user.id); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Register second Notification test player",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{users}}/v1/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"{{notificationOtherRunName}}\",\"email\":\"{{notificationOtherRunEmail}}\",\"password\":\"{{seedPassword}}\",\"packageId\":\"{{packageId}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const id = pm.variables.replaceIn(\"{{$guid}}\").replace(/-/g, \"\").slice(0, 16);",
+              "pm.collectionVariables.set(\"notificationOtherRunName\", \"notif_other_\" + id);",
+              "pm.collectionVariables.set(\"notificationOtherRunEmail\", \"notif_other_\" + id + \"@demo.invalid\");"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) { const s = pm.response.json(); pm.collectionVariables.set(\"notificationOtherToken\", s.accessToken); pm.collectionVariables.set(\"notificationOtherRunUserId\", s.user.id); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "List notifications",
       "request": {
         "method": "GET",
         "header": [
           {
             "key": "Authorization",
-            "value": "Bearer {{devToken}}"
+            "value": "Bearer {{notificationToken}}"
           }
         ],
         "url": "{{notification}}/v1/notifications"
@@ -44,7 +142,7 @@
             "type": "text/javascript",
             "exec": [
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-              "if(pm.response.code===200){const s=pm.response.json();if(s.items[0]){pm.environment.set(\"notificationId\", s.items[0].id);}}"
+              "pm.collectionVariables.unset(\"notificationRecordId\"); if (pm.response.code === 200) { const s = pm.response.json(); if (s.items[0]) pm.collectionVariables.set(\"notificationRecordId\", s.items[0].id); }"
             ]
           }
         }
@@ -77,7 +175,7 @@
         "header": [
           {
             "key": "Authorization",
-            "value": "Bearer {{devToken}}"
+            "value": "Bearer {{notificationToken}}"
           }
         ],
         "url": "{{notification}}/v1/notifications?limit=1"
@@ -102,7 +200,7 @@
         "header": [
           {
             "key": "Authorization",
-            "value": "Bearer {{devToken}}"
+            "value": "Bearer {{notificationToken}}"
           },
           {
             "key": "Idempotency-Key",
@@ -113,10 +211,10 @@
             "value": "application/json"
           }
         ],
-        "url": "{{notification}}/v1/notification-devices/{{deviceId}}",
+        "url": "{{notification}}/v1/notification-devices/{{notificationDeviceId}}",
         "body": {
           "mode": "raw",
-          "raw": "{\"token\": \"example-push-token\", \"platform\": \"android\", \"packageId\": \"{{packageId}}\"}",
+          "raw": "{\"token\": \"example-push-token-{{notificationDeviceId}}\", \"platform\": \"android\", \"packageId\": \"{{packageId}}\"}",
           "options": {
             "raw": {
               "language": "json"
@@ -130,8 +228,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "// Fix a device id for this run, so later requests (delete) can reuse the same one.",
-              "if(!pm.environment.get(\"deviceId\")){pm.environment.set(\"deviceId\", pm.variables.replaceIn(\"{{$guid}}\"));}"
+              "pm.collectionVariables.set(\"notificationDeviceId\", pm.variables.replaceIn(\"{{$guid}}\"));"
             ]
           }
         },
@@ -154,7 +251,7 @@
         "header": [
           {
             "key": "Authorization",
-            "value": "Bearer {{otherDevToken}}"
+            "value": "Bearer {{notificationOtherToken}}"
           },
           {
             "key": "Idempotency-Key",
@@ -165,10 +262,10 @@
             "value": "application/json"
           }
         ],
-        "url": "{{notification}}/v1/notification-devices/{{deviceId}}",
+        "url": "{{notification}}/v1/notification-devices/{{notificationDeviceId}}",
         "body": {
           "mode": "raw",
-          "raw": "{\"token\": \"example-push-token\", \"platform\": \"android\", \"packageId\": \"{{packageId}}\"}",
+          "raw": "{\"token\": \"example-push-token-{{notificationDeviceId}}\", \"platform\": \"android\", \"packageId\": \"{{packageId}}\"}",
           "options": {
             "raw": {
               "language": "json"
@@ -196,16 +293,26 @@
         "header": [
           {
             "key": "Authorization",
-            "value": "Bearer {{devToken}}"
+            "value": "Bearer {{notificationToken}}"
           },
           {
             "key": "Idempotency-Key",
             "value": "{{$guid}}"
           }
         ],
-        "url": "{{notification}}/v1/notifications/{{notificationId}}/read"
+        "url": "{{notification}}/v1/notifications/{{notificationRecordId}}/read"
       },
       "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// The fresh player may have no delivered events yet.",
+              "if (!pm.collectionVariables.get(\"notificationRecordId\")) pm.execution.skipRequest();"
+            ]
+          }
+        },
         {
           "listen": "test",
           "script": {
@@ -225,7 +332,7 @@
         "header": [
           {
             "key": "Authorization",
-            "value": "Bearer {{devToken}}"
+            "value": "Bearer {{notificationToken}}"
           },
           {
             "key": "Idempotency-Key",
@@ -254,14 +361,14 @@
         "header": [
           {
             "key": "Authorization",
-            "value": "Bearer {{devToken}}"
+            "value": "Bearer {{notificationToken}}"
           },
           {
             "key": "Idempotency-Key",
             "value": "{{$guid}}"
           }
         ],
-        "url": "{{notification}}/v1/notification-devices/{{deviceId}}"
+        "url": "{{notification}}/v1/notification-devices/{{notificationDeviceId}}"
       },
       "event": [
         {
@@ -283,14 +390,14 @@
         "header": [
           {
             "key": "Authorization",
-            "value": "Bearer {{devToken}}"
+            "value": "Bearer {{notificationToken}}"
           },
           {
             "key": "Idempotency-Key",
             "value": "{{$guid}}"
           }
         ],
-        "url": "{{notification}}/v1/notification-devices/{{deviceId}}"
+        "url": "{{notification}}/v1/notification-devices/{{notificationDeviceId}}"
       },
       "event": [
         {
@@ -312,10 +419,10 @@
         "header": [
           {
             "key": "Authorization",
-            "value": "Bearer {{devToken}}"
+            "value": "Bearer {{notificationToken}}"
           }
         ],
-        "url": "{{notification}}/v1/notification-devices/{{deviceId}}"
+        "url": "{{notification}}/v1/notification-devices/{{notificationDeviceId}}"
       },
       "event": [
         {
