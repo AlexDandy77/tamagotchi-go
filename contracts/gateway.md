@@ -61,7 +61,7 @@ Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yam
 ## What other service owners must change
 
 1. Accept the verified Gateway assertion on player/public/internal routes, preserving ownership and original caller permissions. Keep private keys and signing credentials private.
-2. Send REST dependencies through the Gateway using the service certificate. Add mTLS to public APIs that previously only served HTTP, including Notification. Keep a safe key-discovery bootstrap for direct Guild socket authentication.
+2. Send REST dependencies through the Gateway using the service certificate. Use one base URL per destination: `REGISTRY_URL`, `TAMAGOTCHI_URL`, `USER_MANAGEMENT_URL`, `GUILD_URL`, `MONSTER_RAID_URL`. Append `/v1` or `/internal/v1` paths at the call site. Derive JWKS by appending `/.well-known/jwks.json` to `USER_MANAGEMENT_URL`; Gateway uses its User Management upstream. Compose no longer passes `*_INTERNAL_URL` or `JWKS_URL`. Add mTLS to every REST listener and preserve key discovery for direct Guild socket authentication.
 3. Add configurable deadlines and concurrency limits with the same errors; test failures and recovery.
 4. Publish validated merges to `main` as immutable `2.MINOR.PATCH` images plus `latest`, for AMD64 and ARM64. Give each repository its own `DOCKERHUB_TOKEN` secret.
 5. After publishing, add the Gateway upstream, switch the owner’s client/dependency URLs and update its merged submodule pointer in one integration PR. Shared image defaults use `latest`; version tags remain available. The common deployment exposes only Gateway REST and direct Guild/Monster Raid socket ports; those socket listeners must reject business REST.

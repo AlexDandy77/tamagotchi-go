@@ -9,7 +9,7 @@ def compliant():
     services = {name: {'image': 'owner/' + name + ':latest', 'pull_policy': 'always',
                       'environment': {'TASK_TIMEOUT_SECONDS': '5', 'MAX_CONCURRENT_TASKS': '64',
                                       'GATEWAY_ONLY': 'true', 'GATEWAY_CERT_FILE': '/run/tls/gateway.pem',
-                                      'JWKS_URL': 'https://gateway:8443/services/user-management/.well-known/jwks.json'}}
+                                      'USER_MANAGEMENT_URL': 'https://gateway:8443/services/user-management'}}
                 for name in (*SERVICES, 'gateway')}
     services['gateway']['environment'].update(UPSTREAMS_JSON=json.dumps({s: 'https://' + s + ':8443' for s in SERVICES}), READY_SERVICES=','.join(SERVICES))
     return {'services': services}
@@ -44,3 +44,11 @@ class DeploymentTests(unittest.TestCase):
         failures = '\n'.join(audit(config))
         for text in ('missing from Compose', 'TASK_TIMEOUT_SECONDS', 'Gateway verification', 'Gateway-only', 'missing Gateway'):
             self.assertIn(text, failures)
+
+    def test_rejects_legacy_url_settings_even_when_they_use_gateway(self):
+        config = compliant()
+        config['services']['monster-raid']['environment']['REGISTRY_INTERNAL_URL'] = 'https://gateway:8443/services/package-registry'
+        config['services']['gateway']['environment']['JWKS_URL'] = 'https://user-management:8443/.well-known/jwks.json'
+        failures = '\n'.join(audit(config))
+        self.assertIn('monster-raid: REGISTRY_INTERNAL_URL must use a single', failures)
+        self.assertIn('gateway: JWKS_URL must use a single', failures)

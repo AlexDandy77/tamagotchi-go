@@ -66,7 +66,7 @@ Import [one Postman environment](postman/local.postman_environment.json), set `s
 - [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json)
 - [Tamagotchi](postman/tamagotchi.postman_collection.json) and [Notification](postman/notification.postman_collection.json)
 
-`check_lab2.py` checks Compose routing, task-limit settings and image policy without private source access. Passing it does not prove service implementations work: run the smoke checks against compatible releases. See [remaining owner work](ARCHITECTURE.md#integration-checks). Registry admin requests need `REGISTRY_ADMIN_USER_IDS` set locally to the admin user's ID. User Management uses one `REGISTRY_URL` for public and internal Registry routes. Monster Raid retains its legacy two URL settings pending an owner update. There is no bearer-forwarding or direct REST fallback.
+`check_lab2.py` checks Compose routing, task-limit settings and image policy without private source access. Passing it does not prove service implementations work: run the smoke checks against compatible releases. See [remaining owner work](ARCHITECTURE.md#integration-checks). Registry admin requests need `REGISTRY_ADMIN_USER_IDS` set locally to the admin user's ID. Each destination has one base URL: `REGISTRY_URL`, `TAMAGOTCHI_URL`, `USER_MANAGEMENT_URL`, `GUILD_URL` or `MONSTER_RAID_URL`. Services append public or internal endpoint paths; authentication keys come from the User Management base plus `/.well-known/jwks.json`. Owners must update their configuration readers to these names; Compose no longer supplies the old aliases. There is no bearer-forwarding or direct REST fallback.
 
 ## Communication contract
 

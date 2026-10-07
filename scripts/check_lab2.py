@@ -31,6 +31,9 @@ def audit(config):
         for key in ('TASK_TIMEOUT_SECONDS', 'MAX_CONCURRENT_TASKS'):
             if key not in env:
                 failures.append(f'{name}: {key} is not configured')
+        for key in env:
+            if key.endswith('_INTERNAL_URL') or key == 'JWKS_URL':
+                failures.append(f'{name}: {key} must use a single destination base URL')
         if name == 'gateway':
             continue
         if name not in upstreams or name not in ready:
