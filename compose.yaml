@@ -341,7 +341,7 @@ services:
       KAFKA_USERNAME: notification
       KAFKA_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD}
       # Firebase push is logged, not sent (no Firebase project for the lab).
-      DEPENDENCY_MODE: mock
+      DEPENDENCY_MODE: live
       PORT: 8080
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       SERVICE_TLS_CERT_FILE: /run/tls/notification.pem

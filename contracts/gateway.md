@@ -66,6 +66,6 @@ Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yam
 4. Publish validated merges to `main` as immutable `2.MINOR.PATCH` images plus `latest`, for AMD64 and ARM64. Give each repository its own `DOCKERHUB_TOKEN` secret.
 5. After publishing, add the Gateway upstream, switch the owner’s client/dependency URLs and update its merged submodule pointer in one integration PR. Shared image defaults use `latest`; version tags remain available. The common deployment exposes only Gateway REST and direct Guild/Monster Raid socket ports; those socket listeners must reject business REST.
 
-The Guild, Package Registry, Tamagotchi and Notification images do not implement this contract yet. The common configuration requires this contract now; full-team startup remains blocked until compatible releases are published.
+Tamagotchi and Notification have published Gateway transport. Guild and Package Registry still need compatible releases, and all six teammate services must adopt the single URL names above. Full-team startup remains blocked until their releases match Compose.
 
 Map reads usernames only through the batch public-profile read `GET /internal/v1/users` (Map 2.0.4 and later). User Management now has the handler on its task branch; publish its merged release before testing nearby players. Service certificates must not call player-only profile routes.
