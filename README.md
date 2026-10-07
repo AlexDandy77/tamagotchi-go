@@ -43,7 +43,7 @@ Requires Docker Compose v2 and Python 3. Published images run without access to 
 | Tamagotchi | `arturtugui/pad-team-8-tamagotchi:latest` | Gateway `/services/tamagotchi` |
 | Notification | `arturtugui/pad-team-8-notification:latest` | Gateway `/services/notification` |
 
-**Deployment is not ready for the full-team presentation yet.** The configuration requires Gateway-compatible images for all services. As checked on 7 October, Guild and Package Registry have no public `latest` image. Tamagotchi and Notification have published Gateway transport, but all teammates must adopt the single URL settings below; Tamagotchi still needs live dependency integration. The User Management, Battle and Gateway changes also need merged releases. Changing environment variables cannot add missing service code.
+The published deployment passes the shared live workflow through Gateway, including registration, package enrollment, starter provisioning, care rewards, notifications, guild membership, raids and a complete Battle settlement. All services use the single destination URL settings below. Notification keeps Firebase delivery as an explicit local log until project credentials are supplied.
 
 ```sh
 python3 scripts/lab.py setup
