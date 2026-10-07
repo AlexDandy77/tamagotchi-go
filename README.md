@@ -40,10 +40,10 @@ Requires Docker Compose v2 and Python 3. Published images run without access to 
 | Monster Raid | `ralex225/pad-team-8-monster-raid:latest` | Gateway `/services/monster-raid`; negotiated live socket on 8084 |
 | Guild | `xnikug/pad-team-8-guild:latest` | Gateway migration pending; direct WebSocket on 8087 |
 | Package Registry | `xnikug/pad-team-8-package-registry:latest` | Gateway migration pending |
-| Tamagotchi | `arturtugui/pad-team-8-tamagotchi:latest` | Gateway migration pending |
-| Notification | `arturtugui/pad-team-8-notification:latest` | Gateway migration pending |
+| Tamagotchi | `arturtugui/pad-team-8-tamagotchi:latest` | Gateway `/services/tamagotchi`; Registry-backed rules pending |
+| Notification | `arturtugui/pad-team-8-notification:latest` | Gateway `/services/notification` |
 
-**Release prerequisite:** publish the paired User Management migration fix and Gateway public-auth fix before merging this deployment update. `.env.example` uses `latest` for every service; each owner must publish that tag. Currently Guild, Package Registry, Tamagotchi and Notification have no `latest`; use their existing versioned tags locally until their owners publish it. Existing `.env` selections are preserved, with a setup hint when they differ. `python3 scripts/lab.py up` pulls current images before starting containers. GitHub Actions uses each repository’s `DOCKERHUB_TOKEN`; local Docker login does not configure CI.
+**Release prerequisite:** `.env.example` uses `latest` for every service; each owner must publish that tag. Tamagotchi and Notification published Gateway-compatible `v2.0.1` commits with `2.0.1` and `latest` image tags. Guild and Package Registry still need compatible releases. Existing local `.env` selections are preserved, so update old Tamagotchi/Notification pins before starting this Compose version. `python3 scripts/lab.py up` pulls current images before starting containers. GitHub Actions uses each repository’s `DOCKERHUB_TOKEN`; local Docker login does not configure CI.
 
 ```sh
 python3 scripts/lab.py setup
@@ -54,7 +54,7 @@ python3 scripts/smoke_gateway.py
 
 `setup` generates missing credentials, JWT and mTLS keys. Adding Gateway replaces an incomplete TLS bundle and keeps the old one under `.secrets/tls.replaced-*`; restart all containers to load the same CA. `up` provisions databases and Kafka topics, runs migrations and empty-database seeds, then starts the services. `provision`, `migrate` and `seed` are repeatable; `down` retains data. The existing Compose project name and volumes are preserved.
 
-Migrated clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS; Battle, Map and Monster Raid call User Management through it, and Package Registry sends its raid commands to Monster Raid through it. Calls to Registry, Tamagotchi and Guild remain direct until their owners migrate. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
+Migrated clients use `http://localhost:8080/services/{service}/{original-path}`. Gateway validates bearer tokens and forwards signed identities over mTLS. Tamagotchi and Notification now accept this identity and expose no direct REST host ports. User Management, Battle and Monster Raid call Tamagotchi through Gateway; Notification checks enrollment through Gateway. Tamagotchi still uses fixture package rules and rewards until Registry publishes compatible Gateway transport. Guild and Registry remain direct during migration. See [Gateway transport contract](contracts/gateway.md). Database and Kafka connections remain direct.
 
 Import [the shared Postman environment](postman/local.postman_environment.json), set `seedPassword` locally, and import each service collection:
 
@@ -66,10 +66,10 @@ Import [the shared Postman environment](postman/local.postman_environment.json),
 
 During migration:
 
-- The shared Postman environment and smoke scripts use direct URLs for Tamagotchi `http://localhost:8085`, Notification `:8086`, Guild `:8087` and Package Registry `:8088`. Each owner switches its client and dependency URLs after publishing compatible transport. Gateway routes User Management, Battle, Map and Monster Raid. Map and Monster Raid accept REST only through the Gateway (`GATEWAY_ONLY`); Map publishes no host port, and Monster Raid's `:8084` serves just its negotiated live socket and its probes (`monsterRaidDirect`).
+- The live smoke script uses Gateway URLs for Tamagotchi and Notification. The older fixture-oriented Tamagotchi and Notification Postman player requests still use local mock bearer IDs and need a JWT-based rewrite before they can run against this deployment. Guild `:8087` and Package Registry `:8088` stay direct. Map publishes no host port, and Monster Raid's `:8084` serves its negotiated live socket and probes (`monsterRaidDirect`).
 - User Management temporarily keeps `http://localhost:8081` and `GATEWAY_ALLOW_DIRECT=true`. Legacy JWT requests, public JWKS reads and internal mTLS caller allowlists still work. Battle stays Gateway-only. Remove User Management's compatibility flag and host port after every caller migrates.
 - Registry admin requests need `REGISTRY_ADMIN_USER_IDS` in local `.env`: use Alice's ID from **Login alice**, then run `docker compose up -d package-registry`.
-- Tamagotchi and Notification's last verified 0.4.1 images use seeded user IDs as `devToken` because authentication/dependencies remain mocked. Their existing business gaps are listed in [architecture](ARCHITECTURE.md#integration-checks).
+- The Tamagotchi internal Postman folder uses Gateway's mTLS port through `compose.postman.internal.yaml` and needs the caller certificates listed in its description. Tamagotchi's Registry rules/rewards and Notification's Firebase delivery remain pending; see [architecture](ARCHITECTURE.md#integration-checks).
 
 There is no bearer-forwarding fallback at Gateway. Guild negotiation remains unavailable until Guild adopts signed identities and is added to Gateway upstreams. Map's nearby view needs User Management to serve the internal batch profile read `GET /internal/v1/users` and the Gateway to route it; until then it answers `503` when other players are near.
 

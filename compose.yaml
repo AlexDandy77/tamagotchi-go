@@ -70,14 +70,14 @@ services:
     image: ${GATEWAY_IMAGE:?Set a released Gateway image or build the local validation image}
     environment:
       # Add a destination only after its owner publishes Gateway-compatible transport.
-      UPSTREAMS_JSON: '{"user-management":"https://user-management:8443","battle":"https://battle:8443","map":"https://map:8443","monster-raid":"https://monster-raid:8443"}'
+      UPSTREAMS_JSON: '{"user-management":"https://user-management:8443","battle":"https://battle:8443","map":"https://map:8443","monster-raid":"https://monster-raid:8443","tamagotchi":"https://tamagotchi:8443","notification":"https://notification:8443"}'
       JWKS_URL: https://user-management:8443/.well-known/jwks.json
       SERVICE_TLS_CERT_FILE: /run/tls/gateway.pem
       SERVICE_TLS_KEY_FILE: /run/tls/gateway-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       TASK_TIMEOUT_SECONDS: ${GATEWAY_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${GATEWAY_MAX_CONCURRENT_TASKS:-64}
-      READY_SERVICES: user-management,battle,map,monster-raid
+      READY_SERVICES: user-management,battle,map,monster-raid,tamagotchi,notification
       GUILD_WS_URL: ${GUILD_WS_URL:-ws://localhost:8087}
       RAID_WS_URL: ${RAID_WS_URL:-ws://localhost:8084}
     volumes:
@@ -101,7 +101,7 @@ services:
       DEPENDENCY_MODE: live
       REGISTRY_URL: http://package-registry:8080
       REGISTRY_INTERNAL_URL: https://package-registry:8443
-      TAMAGOTCHI_INTERNAL_URL: https://tamagotchi:8443
+      TAMAGOTCHI_INTERNAL_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/user-management.pem
       SERVICE_TLS_KEY_FILE: /run/tls/user-management-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
@@ -139,7 +139,7 @@ services:
       KAFKA_PASSWORD: ${KAFKA_BATTLES_PASSWORD}
       DEPENDENCY_MODE: live
       REGISTRY_URL: http://package-registry:8080
-      TAMAGOTCHI_INTERNAL_URL: https://tamagotchi:8443
+      TAMAGOTCHI_INTERNAL_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/battle.pem
       SERVICE_TLS_KEY_FILE: /run/tls/battle-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
@@ -262,10 +262,10 @@ services:
       KAFKA_USERNAME: raids
       KAFKA_PASSWORD: ${KAFKA_RAIDS_PASSWORD:?Run setup}
       DEPENDENCY_MODE: live
-      # User Management is reached through the Gateway; Registry, Tamagotchi and Guild stay direct until they migrate.
+      # User Management and Tamagotchi are reached through Gateway; Registry and Guild stay direct until they migrate.
       JWKS_URL: https://gateway:8443/services/user-management/.well-known/jwks.json
       USER_MANAGEMENT_INTERNAL_URL: https://gateway:8443/services/user-management
-      TAMAGOTCHI_INTERNAL_URL: https://tamagotchi:8443
+      TAMAGOTCHI_INTERNAL_URL: https://gateway:8443/services/tamagotchi
       REGISTRY_INTERNAL_URL: https://package-registry:8443
       REGISTRY_URL: http://package-registry:8080
       GUILD_INTERNAL_URL: https://guild:8443
@@ -305,20 +305,24 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: tamagotchi
       KAFKA_PASSWORD: ${KAFKA_TAMAGOTCHI_PASSWORD}
-      # Package Registry and User Management's local-reward route are fixtures;
-      # this service makes no outbound calls. Internal routes: mTLS on 8443.
+      # Registry's Gateway transport is pending; keep fixtures until its compatible release.
       DEPENDENCY_MODE: mock
       SERVICE_TLS_CERT_FILE: /run/tls/tamagotchi.pem
       SERVICE_TLS_KEY_FILE: /run/tls/tamagotchi-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+      GATEWAY_ONLY: 'true'
+      GATEWAY_CERT_FILE: /run/tls/gateway.pem
+      TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
+      MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/tamagotchi.pem:/run/tls/tamagotchi.pem:ro
       - ./.secrets/tls/tamagotchi-key.pem:/run/tls/tamagotchi-key.pem:ro
-    ports: [127.0.0.1:8085:8080]
     depends_on:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
+      gateway: {condition: service_started}
     restart: unless-stopped
   notification:
     image: ${NOTIFICATION_IMAGE:?Set a published Notification image tag}
@@ -328,11 +332,24 @@ services:
       KAFKA_USERNAME: notification
       KAFKA_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD}
       # Firebase push is logged, not sent (no Firebase project for the lab).
-      DEPENDENCY_MODE: mock
-    ports: [127.0.0.1:8086:8080]
+      DEPENDENCY_MODE: live
+      USER_MANAGEMENT_INTERNAL_URL: https://gateway:8443/services/user-management
+      SERVICE_TLS_CERT_FILE: /run/tls/notification.pem
+      SERVICE_TLS_KEY_FILE: /run/tls/notification-key.pem
+      SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+      GATEWAY_ONLY: 'true'
+      GATEWAY_CERT_FILE: /run/tls/gateway.pem
+      TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
+      MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
+    volumes:
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/notification.pem:/run/tls/notification.pem:ro
+      - ./.secrets/tls/notification-key.pem:/run/tls/notification-key.pem:ro
     depends_on:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
+      gateway: {condition: service_started}
     restart: unless-stopped
 volumes:
   postgres-data:

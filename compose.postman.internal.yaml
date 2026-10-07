@@ -1,7 +1,8 @@
-# Optional local-only access to Tamagotchi's internal mTLS listener for Postman.
-# Use with: docker compose -f compose.yaml -f compose.postman.internal.yaml up -d tamagotchi
+# Optional local-only access to Gateway's internal mTLS listener for Postman.
+# Each host port can use a different service certificate in Postman.
+# Use with: docker compose -f compose.yaml -f compose.postman.internal.yaml up -d gateway
 services:
-  tamagotchi:
+  gateway:
     ports:
       - "127.0.0.1:18443:8443"
       - "127.0.0.1:18444:8443"
