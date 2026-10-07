@@ -62,13 +62,16 @@ def main():
         entry = on_map(a, bob)
         assert entry and entry['relationship'] == 'unknown' and entry['distanceMeters'] <= 6 and not entry['stale']
         wait_for_empty_outbox()
-        # The relay deletes an outbox row only after Kafka acknowledges it.
-        message = kafka('kafka-console-consumer.sh', '--consumer.config', ADMIN, '--topic', TOPIC,
-                        '--partition', '0', '--offset', offset, '--max-messages', '1', '--timeout-ms', '10000')
-        assert message, 'No encounter event reached Kafka'
-        event = json.loads(message)
+        # The relay deletes an outbox row only after Kafka acknowledges it. Players left near the
+        # same spot, for example by smoke_live.py, meet Bob too, so read every new event.
+        end = kafka('kafka-get-offsets.sh', '--command-config', ADMIN, '--topic', TOPIC).rsplit(':', 1)[1]
+        messages = kafka('kafka-console-consumer.sh', '--consumer.config', ADMIN, '--topic', TOPIC, '--partition', '0',
+                         '--offset', offset, '--max-messages', str(int(end) - int(offset)), '--timeout-ms', '10000')
+        events = [json.loads(line) for line in messages.splitlines() if line]
+        event = next((e for e in events if set(e['data']['userIds']) == {alice, bob}), None)
+        assert event, 'No Alice and Bob encounter event reached Kafka'
         assert event['type'] == TOPIC and event['producer'] == 'map'
-        assert set(event['data']['userIds']) == {alice, bob} and event['data']['distanceMeters'] <= 6
+        assert event['data']['distanceMeters'] <= 6
     finally:
         # Restore the seeded friendship.
         friend = request(USERS, 'POST', '/v1/friend-requests', {'recipientId': bob}, a, key(), 201)
