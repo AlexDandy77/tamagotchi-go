@@ -7,16 +7,19 @@ One `compose.yaml` runs the existing project: Python Gateway, four Go services, 
 ```mermaid
 flowchart LR
   P[Player / Postman] -->|REST :8080| GW[Python Gateway]
-  GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go] & MP[Map / Go] & MR[Monster Raid / Go]
-  B & MP & MR -->|User Management REST| GW
-  GW -.->|Pending migration| G[Guild / TypeScript] & R[Registry / TypeScript] & T[Tamagotchi / TypeScript] & N[Notification / TypeScript]
-  G & R & T -.->|REST through Gateway after migration| GW
-  U -->|Direct Registry / starter recovery| R & T
-  B -->|Direct rules / pet reservations| R & T
+  GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go] & MP[Map / Go] & MR[Monster Raid / Go] & T[Tamagotchi / TypeScript] & N[Notification / TypeScript]
+  B & MP & MR & N -->|User Management REST| GW
+  GW -.->|Pending migration| G[Guild / TypeScript] & R[Registry / TypeScript]
+  G & R -.->|REST through Gateway after migration| GW
+  U -->|Starter recovery| GW
+  U -->|Direct Registry| R
+  B -->|Pet reservations| GW
+  B -->|Direct rules| R
   G -->|Direct relationships| U
-  MR -->|Direct rules / pets / membership| R & T & G
+  MR -->|Pet reservations| GW
+  MR -->|Direct rules / membership| R & G
   R -->|Raid dispatch| GW
-  P -->|Direct REST during migration| G & R & T & N
+  P -->|Direct REST during migration| G & R
   P -->|Direct WebSocket :8087; negotiation pending| G
   P -->|Negotiated direct WebSocket :8084| MR
   U --> Users[(PostgreSQL users)]
@@ -32,7 +35,7 @@ flowchart LR
   K -->|Notifications| N
 ```
 
-Solid edges show current traffic; dashed edges show pending Gateway transport. Each owner switches its client and dependency URLs only after publishing a compatible image. Tamagotchi's outbound rules/rewards remain mocked in its last verified image.
+Solid edges show configured traffic; dashed edges show pending Gateway transport. Tamagotchi and Notification published Gateway-compatible `2.0.1`/`latest` images. Tamagotchi's outbound rules and rewards remain mocked until Registry publishes a compatible release.
 
 
 | Container | Responsibility | Storage |
@@ -54,7 +57,7 @@ Solid edges show current traffic; dashed edges show pending Gateway transport. E
 
 Gateway uses Python 3.13/aiohttp; Go services use `net/http`, pgx and franz-go; TypeScript services use Fastify, Ajv and Kafka clients. Containers resolve each other by Compose service name.
 
-Clients call `http://localhost:8080/services/{service}/{original-path}`. Gateway verifies RS256 access tokens, strips Authorization and spoofed headers, then forwards an ES256 request-bound identity over TLS 1.3 with client certificates. User Management, Battle, Map and Monster Raid check this identity and retain their ownership/caller rules. Battle’s, Map’s and Monster Raid’s User Management dependencies, Monster Raid’s token-key read included, point through Gateway. Monster Raid refuses direct REST (`GATEWAY_ONLY`), so Package Registry dispatches raids through Gateway. Registry, Tamagotchi and Guild destinations remain direct during migration. User Management explicitly enables temporary direct JWT/mTLS compatibility for the other callers; Gateway assertions are still verified and never fall back. Gateway's direct mTLS JWKS read bootstraps authentication. See [transport contract](contracts/gateway.md).
+Clients call `http://localhost:8080/services/{service}/{original-path}`. Gateway verifies RS256 access tokens, strips Authorization and spoofed headers, then forwards an ES256 request-bound identity over TLS 1.3 with client certificates. User Management, Battle, Map, Monster Raid, Tamagotchi and Notification check this identity and retain their ownership/caller rules. Tamagotchi and Notification expose no direct REST host ports. Notification checks enrollment through Gateway; Tamagotchi keeps fixture rules and rewards until Registry migrates. Guild and Registry remain direct during migration. User Management explicitly enables temporary direct JWT/mTLS compatibility for those callers. Gateway's direct mTLS JWKS read bootstraps authentication. See [transport contract](contracts/gateway.md).
 
 Every service is required to default to 5-second request deadlines and 64 active tasks. Capacity returns `503 TASK_LIMIT_REACHED`; timeout returns `504 TASK_TIMEOUT`. Gateway, User Management, Battle, Map and Monster Raid implement these limits; the other owners must add them. Health/readiness are exempt. Retry mutations with the same idempotency key because cancellation does not prove they never committed.
 
@@ -80,11 +83,11 @@ Use `python3 scripts/smoke_gateway.py` for Gateway, User Management and Battle, 
 
 Remaining work in the services that have not migrated:
 
-- Guild, Package Registry, Tamagotchi and Notification: adopt signed Gateway identities, route REST dependencies through Gateway and add request limits. Notification needs mTLS for its REST listener.
+- Guild and Package Registry: adopt signed Gateway identities, route REST dependencies through Gateway and add request limits.
 - Guild must accept the identity on the membership read used for direct socket negotiation.
-- Add merge-triggered image publishing and publish versioned plus latest tags. Until then, their Postman/smoke URLs and dependency calls stay direct, and their Gateway upstreams stay disabled. Map’s nearby view needs the User Management handler for its batch profile read `GET /internal/v1/users`.
+- Their Gateway upstreams stay disabled until compatible images publish. Map’s nearby view needs the User Management handler for its batch profile read `GET /internal/v1/users`.
 
-Existing Tamagotchi/Notification 0.4.1 business gaps also remain: mock authentication/dependencies, hardcoded care/starter rules, missing real wallet credits and Firebase delivery. One starter per owner/package cannot supply Battle's two-pet loadout. Do not hide these gaps with fake production pets or direct database writes.
+Tamagotchi and Notification now verify Gateway identity. Tamagotchi still uses fixture package rules and rewards in Compose while Registry migration is pending; care results are in memory. Notification checks enrollment through Gateway, while Firebase delivery remains mocked. One starter per owner/package cannot supply Battle's two-pet loadout. Do not hide these gaps with fake production pets or direct database writes.
 
 Seeded accounts are Alice and Bob at `alice@demo.invalid`/`bob@demo.invalid`, using local `SEED_PASSWORD`; fresh accounts start at zero. Guild seeds Night Owls. Configure `REGISTRY_ADMIN_USER_IDS` locally for Registry admin tasks. Existing balances and records are preserved.
 

@@ -11,8 +11,8 @@ import uuid
 from lab import environment
 from smoke import request, USERS, BATTLE
 
-PETS = 'http://127.0.0.1:8085'
-NOTIFICATIONS = 'http://127.0.0.1:8086'
+PETS = 'http://127.0.0.1:8080/services/tamagotchi'
+NOTIFICATIONS = 'http://127.0.0.1:8080/services/notification'
 REGISTRY = 'http://127.0.0.1:8088'
 GUILD = 'http://127.0.0.1:8087'
 MAP = 'http://127.0.0.1:8080/services/map'
