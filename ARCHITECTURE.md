@@ -65,10 +65,10 @@ The lab is not complete until all published images pass the shared deployment te
 | Area | Current finding / remaining work |
 | --- | --- |
 | Gateway | Python implementation, JWT verification, header stripping, signed identities, task limits and both socket negotiations have automated tests. |
-| User Management | New batch public-profile handler fixes Map's missing dependency; merge and publish the service fix. Strict Gateway authentication remains enabled. |
+| User Management | Published image supports the batch public-profile dependency used by Map and keeps strict Gateway authentication enabled. |
 | Battle, Map, Monster Raid | Gateway transport and request limits implemented; complete live workflows still depend on compatible TypeScript destinations. |
-| Guild, Package Registry | `latest` tags were missing on 7 October. Owners must publish Gateway-compatible releases, including limits and merge-triggered CI. Guild must support the membership read used in socket negotiation. |
-| Tamagotchi, Notification | Published 2.0.1/`latest` images support Gateway identity and limits. Owners must adopt the new URL settings; Tamagotchi still needs live rules/rewards integration. Notification uses live enrollment checks with explicit local Firebase logging. |
+| Guild, Package Registry | Published `latest` images support Gateway transport; the live workflow verifies package configuration, enrollment projection, guild membership and raid dispatch. |
+| Tamagotchi, Notification | Published `latest` images support Gateway identity, limits and the single URL settings. The live workflow verifies Registry-backed starter/care rules, User Management rewards, enrollment checks, pet reservations and settlements. Notification uses explicit local Firebase logging. |
 | Shared runtime | All REST URLs now use Gateway; readiness checks every destination. `up` pulls latest before migrations and stops if an image is unavailable. |
 
 Run `scripts/check_lab2.py` for configuration checks, `scripts/smoke_gateway.py` for authentication and Battle-to-User-Management routing, then the service smoke scripts and `scripts/smoke_live.py` for real workflows. Full-team success cannot be claimed from the isolated service tests.
