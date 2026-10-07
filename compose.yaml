@@ -102,7 +102,6 @@ services:
       KAFKA_PASSWORD: ${KAFKA_USERS_PASSWORD}
       DEPENDENCY_MODE: live
       REGISTRY_URL: https://gateway:8443/services/package-registry
-      REGISTRY_INTERNAL_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_INTERNAL_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/user-management.pem
       SERVICE_TLS_KEY_FILE: /run/tls/user-management-key.pem
@@ -278,6 +277,7 @@ services:
       JWKS_URL: https://gateway:8443/services/user-management/.well-known/jwks.json
       USER_MANAGEMENT_INTERNAL_URL: https://gateway:8443/services/user-management
       TAMAGOTCHI_INTERNAL_URL: https://gateway:8443/services/tamagotchi
+      # Legacy Monster Raid settings; remove the duplicate after its owner unifies the client.
       REGISTRY_INTERNAL_URL: https://gateway:8443/services/package-registry
       REGISTRY_URL: https://gateway:8443/services/package-registry
       GUILD_INTERNAL_URL: https://gateway:8443/services/guild
