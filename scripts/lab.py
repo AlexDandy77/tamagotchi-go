@@ -55,7 +55,7 @@ SECRET_KEYS = (
     'KAFKA_GUILDS_PASSWORD', 'KAFKA_REGISTRY_PASSWORD', 'KAFKA_LOCATIONS_PASSWORD', 'KAFKA_RAIDS_PASSWORD',
     'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD',
 )
-# Prepare every service certificate now; Notification will mount its key when its owner adds mTLS.
+# Prepare every service certificate; owners mount them when enabling Gateway transport.
 TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway')
 # These images run as an unprivileged user that must read its bind-mounted key.
 NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway')
@@ -206,6 +206,24 @@ def topics():
     for principal, topic, group in CONSUMERS:
         kafka('/opt/kafka/bin/kafka-acls.sh', '--add', '--allow-principal', 'User:' + principal, '--consumer', '--topic', topic, '--group', group)
 
+def refresh_images():
+    """Use the configured repositories' latest service images on every startup."""
+    values = environment()
+    for service in (*SERVICES, 'gateway'):
+        key = service.upper().replace('-', '_') + '_IMAGE'
+        image = values.get(key)
+        if not image:
+            raise SystemExit(f"Missing {key}; run python3 scripts/lab.py setup first.")
+        # Strip a digest or a tag, preserving an optional registry port.
+        image = image.split('@', 1)[0]
+        prefix, separator, name = image.rpartition('/')
+        repository = name.split(':', 1)[0]
+        os.environ[key] = (prefix + separator if separator else '') + repository + ':latest'
+    print('Checking Docker Hub for latest service images before startup.', flush=True)
+    # A missing/inaccessible tag aborts before migrations or container changes.
+    compose('pull', '--policy', 'always')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['setup', 'up', 'provision', 'migrate', 'seed', 'down', 'status'])
@@ -213,15 +231,14 @@ def main():
     if command == 'setup':
         setup()
     elif command == 'up':
-        # latest may advance after a merge; refresh images before recreating containers.
-        compose('pull', '--policy', 'always')
-        compose('up', '-d', '--wait', 'postgres', 'kafka', 'mongo')
+        refresh_images()
+        compose('up', '-d', '--wait', '--pull', 'never', 'postgres', 'kafka', 'mongo')
         provision()
         topics()
         for service in SERVICES:
-            compose('run', '--rm', '--no-deps', service, 'migrate')
-            compose('run', '--rm', '--no-deps', service, 'seed')
-        compose('up', '-d', '--wait')
+            compose('run', '--rm', '--no-deps', '--pull', 'never', service, 'migrate')
+            compose('run', '--rm', '--no-deps', '--pull', 'never', service, 'seed')
+        compose('up', '-d', '--wait', '--pull', 'never')
     elif command == 'provision':
         provision()
     elif command in ('migrate', 'seed'):
@@ -233,4 +250,7 @@ def main():
         compose('ps')
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError:
+        raise SystemExit('Docker operation failed; resolve the error above and retry. No stale-image fallback is used.')

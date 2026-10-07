@@ -25,7 +25,7 @@ Downstream requests use mTLS plus an ES256 JWT in `X-Gateway-Identity`, signed w
 
 Services reject invalid signatures, audiences, expired assertions, changed requests and incoming Authorization headers. Player handlers retain ownership checks. Internal handlers use `sub` as the original caller and enforce their existing allowlists. Never trust an unsigned user-ID header.
 
-With `GATEWAY_ONLY=true`, direct business requests are rejected. Health/readiness remain available internally. During migration, User Management explicitly sets `GATEWAY_ALLOW_DIRECT=true`: direct JWT requests, public JWKS and original internal mTLS caller allowlists remain available. Gateway requests still require verified mTLS and signed identities; forged assertions never fall back to legacy authentication. Remove this flag and port 8081 once all callers migrate. Battle remains strict. The Gateway reads User Management's JWKS directly over mTLS to bootstrap verification; this key-discovery call carries no player credentials. Migrate REST dependencies one destination at a time. Until an owner supports signed identities, keep its direct URL; add its Gateway upstream and change its callers/client URLs together after publishing. Replay protection for mutations remains the persistent service idempotency key, not the short-lived transport assertion.
+With `GATEWAY_ONLY=true`, direct business requests are rejected. Health/readiness remain available internally. The common deployment has no direct REST compatibility mode. Gateway reads User Management's JWKS over mTLS to bootstrap token verification; this request originates at Gateway and carries no player credentials. All other service REST dependencies use Gateway. Mutation replay protection remains the persistent service idempotency key, not the short-lived transport assertion.
 
 ## Deadlines and capacity
 
@@ -54,7 +54,7 @@ Gateway and destination errors share the common envelope. Use `error.code`, not 
 
 Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yaml). Sockets never pass through the Gateway; it only checks access and returns the owner's direct URL.
 
-`GET /v1/realtime/guilds/{guildId}/connection` requires a player token. The Gateway verifies membership through Guild's existing REST read and returns `{url, expiresAt, authentication: "ChatAuthenticate"}`. The URL is a direct Guild `ws://`/`wss://` URL without credentials. Send the existing `chat.authenticate` frame described in [realtime.schema.json](realtime.schema.json) as the first frame within five seconds. Guild validates that token and membership again. The Gateway holds no WebSocket connection.
+`GET /v1/realtime/guilds/{guildId}/connection` requires a player token. The Gateway verifies membership through Guild's existing REST read and returns `{url, expiresAt, authentication: "ChatAuthenticate"}`. The URL is a direct Guild `ws://`/`wss://` URL without credentials. Send the existing `authenticate` frame described in [realtime.schema.json](realtime.schema.json) as the first frame within five seconds. Guild validates that token and membership again. The Gateway holds no WebSocket connection.
 
 `GET /v1/realtime/raids/{raidId}/connection` works the same way for live raids: the Gateway reads `GET /v1/raids/{raidId}` as the player and returns Monster Raid's direct `ws://.../v1/raids/{raidId}/live` URL with `authentication: "RaidAuthenticate"`. Monster Raid checks the token and guild membership again on the first frame.
 
@@ -64,8 +64,8 @@ Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yam
 2. Send REST dependencies through the Gateway using the service certificate. Add mTLS to public APIs that previously only served HTTP, including Notification. Keep a safe key-discovery bootstrap for direct Guild socket authentication.
 3. Add configurable deadlines and concurrency limits with the same errors; test failures and recovery.
 4. Publish validated merges to `main` as immutable `2.MINOR.PATCH` images plus `latest`, for AMD64 and ARM64. Give each repository its own `DOCKERHUB_TOKEN` secret.
-5. After publishing, add the Gateway upstream, switch the owner’s client/dependency URLs and update its merged submodule pointer in one integration PR. Shared image defaults use `latest`; version tags remain available. Remove public REST ports only once their callers migrate. Guild still needs its direct WebSocket port; reject direct REST business calls there.
+5. After publishing, add the Gateway upstream, switch the owner’s client/dependency URLs and update its merged submodule pointer in one integration PR. Shared image defaults use `latest`; version tags remain available. The common deployment exposes only Gateway REST and direct Guild/Monster Raid socket ports; those socket listeners must reject business REST.
 
-The Guild, Package Registry, Tamagotchi and Notification images do not implement this contract yet. Update the existing shared deployment as each owner publishes a compatible release; full-team integration remains pending.
+The Guild, Package Registry, Tamagotchi and Notification images do not implement this contract yet. The common configuration requires this contract now; full-team startup remains blocked until compatible releases are published.
 
-Map reads usernames only through the batch public-profile read `GET /internal/v1/users` (Map 2.0.4 and later). Until User Management serves it and the Gateway routes it, Map's nearby view answers `503` when other players are near. Service certificates must not call player-only profile routes.
+Map reads usernames only through the batch public-profile read `GET /internal/v1/users` (Map 2.0.4 and later). User Management now has the handler on its task branch; publish its merged release before testing nearby players. Service certificates must not call player-only profile routes.

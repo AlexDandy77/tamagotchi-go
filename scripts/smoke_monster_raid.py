@@ -10,7 +10,7 @@ from smoke import request, USERS
 GATEWAY = 'http://127.0.0.1:8080'
 RAIDS = GATEWAY + '/services/monster-raid'
 DIRECT = 'http://127.0.0.1:8084'  # only the live socket and the probes answer here
-PETS = 'http://127.0.0.1:8085'  # Tamagotchi stays direct until its owner migrates
+PETS = 'http://127.0.0.1:8080/services/tamagotchi'
 NIGHT_OWLS = '22222222-2222-4222-8222-222222222222'
 PRACTICE = '44444444-4444-4444-8444-444444444444'  # the raid of the schedule Package Registry seeds
 FIXTURE = 'a6c9ad3a-3890-5750-adae-a8b0a30af066'  # the won raid whose reward User Management's seed pays

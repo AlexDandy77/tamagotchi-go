@@ -68,16 +68,17 @@ services:
     restart: unless-stopped
   gateway:
     image: ${GATEWAY_IMAGE:?Set a released Gateway image or build the local validation image}
+    pull_policy: always
     environment:
-      # Add a destination only after its owner publishes Gateway-compatible transport.
-      UPSTREAMS_JSON: '{"user-management":"https://user-management:8443","battle":"https://battle:8443","map":"https://map:8443","monster-raid":"https://monster-raid:8443","tamagotchi":"https://tamagotchi:8443","notification":"https://notification:8443"}'
+      # All REST destinations must implement the shared Gateway identity contract.
+      UPSTREAMS_JSON: '{"user-management":"https://user-management:8443","battle":"https://battle:8443","map":"https://map:8443","monster-raid":"https://monster-raid:8443","guild":"https://guild:8443","package-registry":"https://package-registry:8443","tamagotchi":"https://tamagotchi:8443","notification":"https://notification:8443"}'
       JWKS_URL: https://user-management:8443/.well-known/jwks.json
       SERVICE_TLS_CERT_FILE: /run/tls/gateway.pem
       SERVICE_TLS_KEY_FILE: /run/tls/gateway-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       TASK_TIMEOUT_SECONDS: ${GATEWAY_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${GATEWAY_MAX_CONCURRENT_TASKS:-64}
-      READY_SERVICES: user-management,battle,map,monster-raid,tamagotchi,notification
+      READY_SERVICES: user-management,battle,map,monster-raid,guild,package-registry,tamagotchi,notification
       GUILD_WS_URL: ${GUILD_WS_URL:-ws://localhost:8087}
       RAID_WS_URL: ${RAID_WS_URL:-ws://localhost:8084}
     volumes:
@@ -93,21 +94,20 @@ services:
     restart: unless-stopped
   user-management:
     image: ${USER_MANAGEMENT_IMAGE:?Set a published User Management image tag}
+    pull_policy: always
     environment:
       DATABASE_URL: postgres://users:${USERS_DB_PASSWORD:?Run setup}@postgres:5432/users?sslmode=disable
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: users
       KAFKA_PASSWORD: ${KAFKA_USERS_PASSWORD}
       DEPENDENCY_MODE: live
-      REGISTRY_URL: http://package-registry:8080
-      REGISTRY_INTERNAL_URL: https://package-registry:8443
+      REGISTRY_URL: https://gateway:8443/services/package-registry
+      REGISTRY_INTERNAL_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_INTERNAL_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/user-management.pem
       SERVICE_TLS_KEY_FILE: /run/tls/user-management-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       GATEWAY_ONLY: 'true'
-      # Preserve existing authenticated callers until every owner migrates.
-      GATEWAY_ALLOW_DIRECT: 'true'
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
@@ -119,8 +119,6 @@ services:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/user-management.pem:/run/tls/user-management.pem:ro
       - ./.secrets/tls/user-management-key.pem:/run/tls/user-management-key.pem:ro
-    # Temporary legacy access; remove with GATEWAY_ALLOW_DIRECT after all callers migrate.
-    ports: [127.0.0.1:8081:8080]
     depends_on:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
@@ -132,13 +130,14 @@ services:
     restart: unless-stopped
   battle:
     image: ${BATTLE_IMAGE:?Set a published Battle image tag}
+    pull_policy: always
     environment:
       DATABASE_URL: postgres://battles:${BATTLES_DB_PASSWORD:?Run setup}@postgres:5432/battles?sslmode=disable
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: battles
       KAFKA_PASSWORD: ${KAFKA_BATTLES_PASSWORD}
       DEPENDENCY_MODE: live
-      REGISTRY_URL: http://package-registry:8080
+      REGISTRY_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_INTERNAL_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/battle.pem
       SERVICE_TLS_KEY_FILE: /run/tls/battle-key.pem
@@ -164,18 +163,24 @@ services:
     restart: unless-stopped
   guild:
     image: ${GUILD_IMAGE:?Set a published Guild image tag}
+    pull_policy: always
     environment:
       DATABASE_URL: postgres://guilds:${GUILDS_DB_PASSWORD:?Run setup}@postgres:5432/guilds?sslmode=disable
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: guilds
       KAFKA_PASSWORD: ${KAFKA_GUILDS_PASSWORD}
       DEPENDENCY_MODE: live
-      JWKS_URL: http://user-management:8080/.well-known/jwks.json
-      USER_MANAGEMENT_INTERNAL_URL: https://user-management:8443
+      JWKS_URL: https://gateway:8443/services/user-management/.well-known/jwks.json
+      USER_MANAGEMENT_INTERNAL_URL: https://gateway:8443/services/user-management
       SERVICE_TLS_CERT_FILE: /run/tls/guild.pem
       SERVICE_TLS_KEY_FILE: /run/tls/guild-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+      GATEWAY_ONLY: 'true'
+      GATEWAY_CERT_FILE: /run/tls/gateway.pem
+      TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
+      MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
     volumes:
+      - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/guild.pem:/run/tls/guild.pem:ro
       - ./.secrets/tls/guild-key.pem:/run/tls/guild-key.pem:ro
@@ -190,6 +195,7 @@ services:
     restart: unless-stopped
   package-registry:
     image: ${PACKAGE_REGISTRY_IMAGE:?Set a published Package Registry image tag}
+    pull_policy: always
     environment:
       MONGODB_URL: mongodb://registry:${REGISTRY_DB_PASSWORD:?Run setup}@mongo:27017/registry?replicaSet=rs0&authSource=registry
       KAFKA_BROKERS: kafka:9092
@@ -198,16 +204,20 @@ services:
       DEPENDENCY_MODE: live
       # Monster Raid accepts raid commands only through the Gateway.
       MONSTER_RAID_INTERNAL_URL: https://gateway:8443/services/monster-raid
-      JWKS_URL: http://user-management:8080/.well-known/jwks.json
+      JWKS_URL: https://gateway:8443/services/user-management/.well-known/jwks.json
       REGISTRY_ADMIN_USER_IDS: ${REGISTRY_ADMIN_USER_IDS:-}
       SERVICE_TLS_CERT_FILE: /run/tls/package-registry.pem
       SERVICE_TLS_KEY_FILE: /run/tls/package-registry-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+      GATEWAY_ONLY: 'true'
+      GATEWAY_CERT_FILE: /run/tls/gateway.pem
+      TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
+      MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
     volumes:
+      - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/package-registry.pem:/run/tls/package-registry.pem:ro
       - ./.secrets/tls/package-registry-key.pem:/run/tls/package-registry-key.pem:ro
-    ports: [127.0.0.1:8088:8080]
     depends_on:
       mongo: {condition: service_healthy}
       kafka: {condition: service_healthy}
@@ -220,6 +230,7 @@ services:
     restart: unless-stopped
   map:
     image: ${MAP_IMAGE:?Set a published Map image tag}
+    pull_policy: always
     environment:
       DATABASE_URL: postgres://locations:${LOCATIONS_DB_PASSWORD:?Run setup}@postgres:5432/locations?sslmode=disable
       KAFKA_BROKERS: kafka:9092
@@ -256,19 +267,20 @@ services:
     restart: unless-stopped
   monster-raid:
     image: ${MONSTER_RAID_IMAGE:?Set a published Monster Raid image tag}
+    pull_policy: always
     environment:
       DATABASE_URL: postgres://raids:${RAIDS_DB_PASSWORD:?Run setup}@postgres:5432/raids?sslmode=disable
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: raids
       KAFKA_PASSWORD: ${KAFKA_RAIDS_PASSWORD:?Run setup}
       DEPENDENCY_MODE: live
-      # User Management and Tamagotchi are reached through Gateway; Registry and Guild stay direct until they migrate.
+      # All REST dependencies pass through Gateway.
       JWKS_URL: https://gateway:8443/services/user-management/.well-known/jwks.json
       USER_MANAGEMENT_INTERNAL_URL: https://gateway:8443/services/user-management
       TAMAGOTCHI_INTERNAL_URL: https://gateway:8443/services/tamagotchi
-      REGISTRY_INTERNAL_URL: https://package-registry:8443
-      REGISTRY_URL: http://package-registry:8080
-      GUILD_INTERNAL_URL: https://guild:8443
+      REGISTRY_INTERNAL_URL: https://gateway:8443/services/package-registry
+      REGISTRY_URL: https://gateway:8443/services/package-registry
+      GUILD_INTERNAL_URL: https://gateway:8443/services/guild
       SERVICE_TLS_CERT_FILE: /run/tls/monster-raid.pem
       SERVICE_TLS_KEY_FILE: /run/tls/monster-raid-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
@@ -300,13 +312,17 @@ services:
     restart: unless-stopped
   tamagotchi:
     image: ${TAMAGOTCHI_IMAGE:?Set a published Tamagotchi image tag}
+    pull_policy: always
     environment:
       DATABASE_URL: postgres://tamagotchi:${TAMAGOTCHI_DB_PASSWORD:?Run setup}@postgres:5432/tamagotchi?sslmode=disable
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: tamagotchi
       KAFKA_PASSWORD: ${KAFKA_TAMAGOTCHI_PASSWORD}
-      # Registry's Gateway transport is pending; keep fixtures until its compatible release.
-      DEPENDENCY_MODE: mock
+      DEPENDENCY_MODE: live
+      PORT: 8080
+      REGISTRY_URL: https://gateway:8443/services/package-registry
+      USER_MANAGEMENT_INTERNAL_URL: https://gateway:8443/services/user-management
+      JWKS_URL: https://gateway:8443/services/user-management/.well-known/jwks.json
       SERVICE_TLS_CERT_FILE: /run/tls/tamagotchi.pem
       SERVICE_TLS_KEY_FILE: /run/tls/tamagotchi-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
@@ -315,25 +331,26 @@ services:
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
     volumes:
-      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/tamagotchi.pem:/run/tls/tamagotchi.pem:ro
       - ./.secrets/tls/tamagotchi-key.pem:/run/tls/tamagotchi-key.pem:ro
     depends_on:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
-      gateway: {condition: service_started}
     restart: unless-stopped
   notification:
     image: ${NOTIFICATION_IMAGE:?Set a published Notification image tag}
+    pull_policy: always
     environment:
       DATABASE_URL: postgres://notification:${NOTIFICATION_DB_PASSWORD:?Run setup}@postgres:5432/notification?sslmode=disable
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: notification
       KAFKA_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD}
       # Firebase push is logged, not sent (no Firebase project for the lab).
-      DEPENDENCY_MODE: live
-      USER_MANAGEMENT_INTERNAL_URL: https://gateway:8443/services/user-management
+      DEPENDENCY_MODE: mock
+      PORT: 8080
+      JWKS_URL: https://gateway:8443/services/user-management/.well-known/jwks.json
       SERVICE_TLS_CERT_FILE: /run/tls/notification.pem
       SERVICE_TLS_KEY_FILE: /run/tls/notification-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
@@ -342,14 +359,13 @@ services:
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
     volumes:
-      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/notification.pem:/run/tls/notification.pem:ro
       - ./.secrets/tls/notification-key.pem:/run/tls/notification-key.pem:ro
     depends_on:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
-      gateway: {condition: service_started}
     restart: unless-stopped
 volumes:
   postgres-data:

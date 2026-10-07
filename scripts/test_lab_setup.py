@@ -44,6 +44,27 @@ class SetupTests(unittest.TestCase):
         self.assertIn("notification", lab.TLS_SERVICES)
         self.assertIn("notification", lab.NON_ROOT_SERVICES)
 
+class StartupImagesTests(unittest.TestCase):
+    def test_startup_refreshes_all_service_repositories_and_preserves_credentials(self):
+        values = {s.upper().replace('-', '_') + '_IMAGE': 'registry:5000/team/' + s + ':2.0.0'
+                  for s in (*lab.SERVICES, 'gateway')}
+        values['SEED_PASSWORD'] = 'never-display-this'
+        output = io.StringIO()
+        with patch.object(lab, 'environment', return_value=values), patch.object(lab, 'compose') as compose, patch.dict(os.environ, {}, clear=True), contextlib.redirect_stdout(output):
+            lab.refresh_images()
+            for s in (*lab.SERVICES, 'gateway'):
+                self.assertEqual(os.environ[s.upper().replace('-', '_') + '_IMAGE'], 'registry:5000/team/' + s + ':latest')
+            self.assertNotIn('SEED_PASSWORD', os.environ)
+            compose.assert_called_once_with('pull', '--policy', 'always')
+        self.assertNotIn(values['SEED_PASSWORD'], output.getvalue())
+
+    def test_missing_release_aborts_startup(self):
+        import subprocess
+        with patch.object(lab, 'refresh_images', side_effect=subprocess.CalledProcessError(1, 'pull')), patch.object(lab, 'compose') as compose, patch('sys.argv', ['lab.py', 'up']):
+            with self.assertRaises(subprocess.CalledProcessError):
+                lab.main()
+            compose.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
