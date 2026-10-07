@@ -7,20 +7,10 @@ One `compose.yaml` runs the existing project: Python Gateway, four Go services, 
 ```mermaid
 flowchart LR
   P[Player / Postman] -->|REST :8080| GW[Python Gateway]
-  GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go] & MP[Map / Go] & MR[Monster Raid / Go] & T[Tamagotchi / TypeScript] & N[Notification / TypeScript]
-  B & MP & MR & N -->|User Management REST| GW
-  GW -.->|Pending migration| G[Guild / TypeScript] & R[Registry / TypeScript]
-  G & R -.->|REST through Gateway after migration| GW
-  U -->|Starter recovery| GW
-  U -->|Direct Registry| R
-  B -->|Pet reservations| GW
-  B -->|Direct rules| R
-  G -->|Direct relationships| U
-  MR -->|Pet reservations| GW
-  MR -->|Direct rules / membership| R & G
-  R -->|Raid dispatch| GW
-  P -->|Direct REST during migration| G & R
-  P -->|Direct WebSocket :8087; negotiation pending| G
+  GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go] & MP[Map / Go] & MR[Monster Raid / Go]
+  GW -->|mTLS + signed identity| G[Guild / TypeScript] & R[Registry / TypeScript] & T[Tamagotchi / TypeScript] & N[Notification / TypeScript]
+  U & B & MP & MR & G & R & T & N -->|REST dependencies| GW
+  P -->|Negotiated direct WebSocket :8087| G
   P -->|Negotiated direct WebSocket :8084| MR
   U --> Users[(PostgreSQL users)]
   B --> Battles[(PostgreSQL battles)]
@@ -35,8 +25,7 @@ flowchart LR
   K -->|Notifications| N
 ```
 
-Solid edges show configured traffic; dashed edges show pending Gateway transport. Tamagotchi and Notification published Gateway-compatible `2.0.1`/`latest` images. Tamagotchi's outbound rules and rewards remain mocked until Registry publishes a compatible release.
-
+The diagram shows the required deployment. Gateway routing is configured for every service, but the four TypeScript images still need compatible implementations; see Integration checks below. There are no direct service-to-service REST shortcuts.
 
 | Container | Responsibility | Storage |
 | --- | --- | --- |
@@ -53,21 +42,13 @@ Solid edges show configured traffic; dashed edges show pending Gateway transport
 | MongoDB | Single-node replica set for Registry transactions | `mongo-data`, `mongo-config` |
 | Kafka | Events with service SASL credentials and topic ACLs | `kafka-data` |
 
-## Networking and authentication
+## Networking
 
-Gateway uses Python 3.13/aiohttp; Go services use `net/http`, pgx and franz-go; TypeScript services use Fastify, Ajv and Kafka clients. Containers resolve each other by Compose service name.
+Gateway exposes REST on `localhost:8080`. Containers use `https://gateway:8443/services/{destination}` with their own certificates. Gateway forwards requests over mTLS with signed caller identities and never forwards Authorization. Service handlers still check ownership and permissions.
 
-Clients call `http://localhost:8080/services/{service}/{original-path}`. Gateway verifies RS256 access tokens, strips Authorization and spoofed headers, then forwards an ES256 request-bound identity over TLS 1.3 with client certificates. User Management, Battle, Map, Monster Raid, Tamagotchi and Notification check this identity and retain their ownership/caller rules. Tamagotchi and Notification expose no direct REST host ports. Notification checks enrollment through Gateway; Tamagotchi keeps fixture rules and rewards until Registry migrates. Guild and Registry remain direct during migration. User Management explicitly enables temporary direct JWT/mTLS compatibility for those callers. Gateway's direct mTLS JWKS read bootstraps authentication. See [transport contract](contracts/gateway.md).
+Only Guild and Monster Raid publish additional ports, for direct sockets negotiated through Gateway. Their socket listeners must reject direct business REST. PostgreSQL, MongoDB, Kafka and internal mTLS ports stay private.
 
-Every service is required to default to 5-second request deadlines and 64 active tasks. Capacity returns `503 TASK_LIMIT_REACHED`; timeout returns `504 TASK_TIMEOUT`. Gateway, User Management, Battle, Map and Monster Raid implement these limits; the other owners must add them. Health/readiness are exempt. Retry mutations with the same idempotency key because cancellation does not prove they never committed.
-
-Gateway negotiates Guild chat through an authenticated membership read and returns Guild's direct WebSocket URL. Guild checks the first authentication frame and membership again. The membership REST route requires its owner's transport update before negotiation works with the current published image. Live raids work the same way: Gateway checks the player's raid read and returns Monster Raid's direct `/v1/raids/{raidId}/live` URL, which pushes the raid's HP, damage and result. Monster Raid checks the first authentication frame and raid access again.
-
-Battle has no published host REST port. User Management temporarily exposes localhost:8081 with explicit migration compatibility, preserving existing JWKS, profile and internal caller access. Map publishes no host port, Monster Raid's port 8084 stays only for its negotiated live socket and its probes, and the other four service ports remain direct. Remove each direct REST port and User Management’s compatibility flag only after its callers migrate. PostgreSQL, MongoDB, Kafka and internal mTLS ports stay private. Kafka and database traffic do not pass through Gateway.
-
-Setup creates development certificates in ignored `.secrets/tls`. Each container receives its own private key and CA; the two Go services also receive Gateway's public certificate. Adding a certificate or replacing an expired bundle regenerates the bundle, preserves a backup and requires restarting every service.
-
-Compose suits this single-PC lab. A four-PC or cloud cluster requires separate networking, storage and availability decisions. Single-node databases/Kafka and plaintext local HTTP are development choices, not a highly available deployment.
+Setup creates development certificates in ignored `.secrets/tls`. Each service receives its own key, the CA and Gateway's public certificate. Replace expired bundles together and restart all services. Compose fits the single-PC presentation; the databases and broker are single-node development infrastructure.
 
 ## Ownership and durability
 
@@ -77,19 +58,20 @@ Business changes and outbox events commit together. Kafka outages retain pending
 
 ## Integration checks
 
-Validated with fresh isolated data and existing teammate images: Gateway login/refresh, JWT rejection, spoofed-header removal, protected internal routes, Battle → Gateway → User Management mTLS, challenge replay/cancellation, registration through live Registry, legacy JWKS/profile reads, Map relationships and Kafka events, Guild membership, and Registry permissions/projection. The new Gateway/User Management fixes used local test images; the presentation data was untouched. Earlier fixture checks completed combat and real wallet settlement with explicit Registry/Tamagotchi fixtures.
+The lab is not complete until all published images pass the shared deployment tests. Configuration flags do not implement missing authentication or request limits.
 
-Use `python3 scripts/smoke_gateway.py` for Gateway, User Management and Battle, and `python3 scripts/smoke_monster_raid.py` for Monster Raid behind Gateway. Use `scripts/smoke_live.py` for team workflows after their owners migrate.
+| Area | Current finding / remaining work |
+| --- | --- |
+| Gateway | Python implementation, JWT verification, header stripping, signed identities, task limits and both socket negotiations have automated tests. |
+| User Management | New batch public-profile handler fixes Map's missing dependency; merge and publish the service fix. Strict Gateway authentication remains enabled. |
+| Battle, Map, Monster Raid | Gateway transport and request limits implemented; complete live workflows still depend on compatible TypeScript destinations. |
+| Guild, Package Registry | `latest` tags were missing on 7 October. Owners must publish Gateway-compatible releases, including limits and merge-triggered CI. Guild must support the membership read used in socket negotiation. |
+| Tamagotchi, Notification | Newly pulled `latest` images still lack Gateway identity and task-limit configuration. Tamagotchi's published configuration only supports mock/paired dependencies. Owners must complete live integration. |
+| Shared runtime | All REST URLs now use Gateway; readiness checks every destination. `up` pulls latest before migrations and stops if an image is unavailable. |
 
-Remaining work in the services that have not migrated:
+Run `scripts/check_lab2.py` for configuration checks, `scripts/smoke_gateway.py` for authentication and Battle-to-User-Management routing, then the service smoke scripts and `scripts/smoke_live.py` for real workflows. Full-team success cannot be claimed from the isolated service tests.
 
-- Guild and Package Registry: adopt signed Gateway identities, route REST dependencies through Gateway and add request limits.
-- Guild must accept the identity on the membership read used for direct socket negotiation.
-- Their Gateway upstreams stay disabled until compatible images publish. Map’s nearby view needs the User Management handler for its batch profile read `GET /internal/v1/users`.
-
-Tamagotchi and Notification now verify Gateway identity. Tamagotchi still uses fixture package rules and rewards in Compose while Registry migration is pending; care results are in memory. Notification checks enrollment through Gateway, while Firebase delivery remains mocked. One starter per owner/package cannot supply Battle's two-pet loadout. Do not hide these gaps with fake production pets or direct database writes.
-
-Seeded accounts are Alice and Bob at `alice@demo.invalid`/`bob@demo.invalid`, using local `SEED_PASSWORD`; fresh accounts start at zero. Guild seeds Night Owls. Configure `REGISTRY_ADMIN_USER_IDS` locally for Registry admin tasks. Existing balances and records are preserved.
+Do not create fake production pets, forward bearer tokens or bypass Gateway to hide integration failures. Notification's external Firebase delivery remains an explicit local mock. Fresh accounts start with zero currency; Alice/Bob use local `SEED_PASSWORD`. Existing records are preserved.
 
 ## Extending the deployment
 
@@ -107,7 +89,7 @@ The following agreed design is the team's target architecture. The running deplo
 
 ![Shared backend architecture](images/architecture.png)
 
-Client apps reach every service through a single **API Gateway**, and each service owns its database and credentials: MongoDB for Package Registry, PostgreSQL for the other seven services. Services never share a database. Neither of these is drawn as a separate box per service in the diagram above but both apply to all eight backend services. The one exception on the gateway side is Guild's chat: client apps hold a direct WebSocket connection to Guild Service for real-time messages, shown as the green line bypassing the gateway. Firebase Cloud Messaging is also reached directly by client apps for push delivery, independent of the gateway.
+Client apps reach every service through a single **API Gateway**, and each service owns its database and credentials: MongoDB for Package Registry, PostgreSQL for the other seven services. Services never share a database. Neither of these is drawn as a separate box per service in the diagram above but both apply to all eight backend services. Direct sockets are used for Guild chat and Monster Raid live updates. For Guild chat, client apps hold a direct WebSocket connection to Guild Service for real-time messages, shown as the green line bypassing the gateway. Firebase Cloud Messaging is also reached directly by client apps for push delivery, independent of the gateway.
 
 Black arrows show logical HTTP dependencies between services; Gateway carries their REST traffic. Orange arrows are events flowing through Kafka.
 
@@ -142,18 +124,25 @@ The player's request is answered as soon as the result is stored; settlement wit
 sequenceDiagram
     autonumber
     participant C as Client app
+    participant GW as Gateway
     participant B as Battle
     participant UM as User Management
     participant T as Tamagotchi
     participant K as Kafka
     participant N as Notification
-    C->>B: POST /v1/battles/:id/actions (JWT, Idempotency-Key)
+    C->>GW: POST /services/battle/v1/battles/:id/actions (JWT, Idempotency-Key)
+    GW->>B: validated signed identity + action
     B->>B: validate turn, apply damage, detect winner, persist result
-    B-->>C: 200 Battle (status: settling)
-    B->>UM: PUT /internal/v1/battle-settlements/:id
-    UM-->>B: WalletResult (stake moved, boost consumed)
-    B->>T: PUT /internal/v1/pet-battle-settlements/:id
-    T-->>B: PetResult (XP applied, loser's primary transferred)
+    B-->>GW: 200 Battle (status: settling)
+    GW-->>C: 200 Battle
+    B->>GW: PUT /services/user-management/internal/v1/battle-settlements/:id
+    GW->>UM: verified Battle identity + settlement
+    UM-->>GW: WalletResult (stake moved, boost consumed)
+    GW-->>B: WalletResult
+    B->>GW: PUT /services/tamagotchi/internal/v1/pet-battle-settlements/:id
+    GW->>T: verified Battle identity + settlement
+    T-->>GW: PetResult (XP applied, loser's primary transferred)
+    GW-->>B: PetResult
     B->>B: mark finished and write battle.finished.v1 to the outbox
     B->>K: publish battle.finished.v1 (key: battleId)
     K->>N: consume (group: notification)

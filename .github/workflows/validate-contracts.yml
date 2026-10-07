@@ -34,3 +34,5 @@ jobs:
         run: python .github/scripts/check_contracts.py
       - name: Check deployment and routing regressions
         run: python -m unittest discover -s scripts -p 'test_*.py'
+      - name: Check required Gateway deployment configuration
+        run: python scripts/check_lab2.py --env-file .env.example
