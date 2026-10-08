@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Exercise paired Monster Raid through the Gateway with real User Management tokens, Guild membership and Package Registry schedules, negotiate its live socket, call its mutual TLS API as Package Registry through the Gateway, check that it refuses direct REST, and read its Kafka start event, without printing credentials."""
+"""Exercise paired Monster Raid through the Gateway with real User Management tokens, Guild membership and Package Registry schedules, negotiate and open its live socket, call its mutual TLS API as Package Registry through the Gateway, check that it refuses direct REST, and read its Kafka start event, without printing credentials."""
 import json
 import subprocess
 import time
 import uuid
 import lab
-from smoke import request, USERS
+from smoke import LiveSocket, request, USERS
 
 GATEWAY = 'http://127.0.0.1:8080'
 RAIDS = GATEWAY + '/services/monster-raid'
@@ -65,6 +65,16 @@ def start_events():
                      '--max-messages', str(count), '--timeout-ms', '10000')
     return [json.loads(line) for line in messages.splitlines() if line.startswith('{')]
 
+def open_live(url, credential):
+    """Opens the live raid socket with credential in its first frame and returns the first frame
+    the server sends, with the close code that follows a refusal."""
+    with LiveSocket(url) as live:
+        live.send({'type': 'raid.authenticate', 'accessToken': credential})
+        frame = live.receive()
+        if frame.get('type') == 'raid.error':
+            frame['closed'] = live.receive().get('close')
+    return frame
+
 def main():
     password = lab.environment()['SEED_PASSWORD']
     sessions = {name: request(USERS, 'POST', '/v1/auth/login', {'email': name + '@demo.invalid', 'password': password}) for name in ('alice', 'bob')}
@@ -93,9 +103,20 @@ def main():
     request(RAIDS, 'POST', f'/v1/raids/{PRACTICE}/attacks', None, b, key(), 403)
 
     # The Gateway checks that Alice may read the raid and hands back Monster Raid's direct socket.
+    # With socket tickets, it adds a single-use ticket, which the first frame carries instead of
+    # Alice's access token; the socket then refuses the used ticket and the access token alike.
     live = request(GATEWAY, 'GET', f'/v1/realtime/raids/{PRACTICE}/connection', token=a)
-    assert live['url'].endswith(f'/v1/raids/{PRACTICE}/live') and live['authentication'] == 'RaidAuthenticate', \
-        f'Raid negotiation answered {live}'
+    tickets = lab.environment().get('SOCKET_TICKETS_ENABLED', 'true').lower() == 'true'
+    assert live['url'].endswith(f'/v1/raids/{PRACTICE}/live') and live['authentication'] == 'RaidAuthenticate' \
+        and bool(live.get('ticket')) == tickets, f'Raid negotiation answered the fields {sorted(live)}'
+    first = open_live(live['url'], live['ticket'] if tickets else a)
+    assert first.get('type') == 'raid.state' and first.get('raidId') == PRACTICE, \
+        f'The live socket answered {first.get("type")} {first.get("code")}'
+    if tickets:
+        for credential, what in ((live['ticket'], 'A used ticket'), (a, 'An access token')):
+            refusal = open_live(live['url'], credential)
+            assert (refusal.get('type'), refusal.get('code'), refusal.get('closed')) == ('raid.error', 'UNAUTHENTICATED', 1008), \
+                f'{what} answered {refusal.get("type")} {refusal.get("code")} {refusal.get("closed")}'
 
     # REST reaches Monster Raid only through the Gateway: a player calling the published port and
     # Package Registry calling the mutual TLS port directly are both refused.
@@ -119,7 +140,7 @@ def main():
     event = next((e for e in reversed(start_events()) if e['aggregateId'] == PRACTICE), None)
     assert event, 'No start event of the practice raid reached Kafka'
     assert event['producer'] == 'monster-raid' and set(event['data']['recipientIds']) == {alice, bob}
-    print('Paired Monster Raid reads, joins and attacks through the Gateway, its live socket negotiation, its Package Registry mutual TLS API through the Gateway, its refusal of direct REST and its Kafka start event passed.')
+    print('Paired Monster Raid reads, joins and attacks through the Gateway, its live socket opened as negotiated, its Package Registry mutual TLS API through the Gateway, its refusal of direct REST and its Kafka start event passed.')
 
 if __name__ == '__main__':
     main()
