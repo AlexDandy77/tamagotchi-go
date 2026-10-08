@@ -3,7 +3,7 @@
     "_postman_id": "f00fa1eb-6b2a-4f39-8420-350c26638faa",
     "name": "9. Tamagotchi Go — Gateway",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Run Gateway checks first. The separate Guild folder requires its owner transport update and a guildId. Service collections keep domain checks; this collection checks the Gateway."
+    "description": "Run Gateway checks first. The Guild folder negotiates the seeded guild, which Alice belongs to, so other collections that change guildId do not affect it. Service collections keep domain checks; this collection checks the Gateway."
   },
   "item": [
     {
@@ -242,10 +242,10 @@
       ]
     },
     {
-      "name": "Guild WebSocket setup - pending owner migration",
+      "name": "Guild WebSocket negotiation",
       "item": [
         {
-          "name": "Guild negotiation (requires migrated Guild and guildId)",
+          "name": "Guild negotiation (seeded guild)",
           "request": {
             "method": "GET",
             "header": [
@@ -254,7 +254,7 @@
                 "value": "Bearer {{aliceToken}}"
               }
             ],
-            "url": "{{gateway}}/v1/realtime/guilds/{{guildId}}/connection"
+            "url": "{{gateway}}/v1/realtime/guilds/{{seedGuildId}}/connection"
           },
           "event": [
             {
