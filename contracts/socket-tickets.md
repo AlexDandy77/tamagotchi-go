@@ -1,6 +1,6 @@
 # Direct socket tickets
 
-Gateway ticket issuance is enabled with `SOCKET_TICKETS_ENABLED=true`, and the same setting makes Monster Raid require tickets on its live raid socket. Guild still needs to publish a matching validator; its current player-JWT validator rejects Gateway-signed tickets. REST remains independent of this socket rollout.
+Gateway ticket issuance is enabled with `SOCKET_TICKETS_ENABLED=true`, and the same setting makes Guild require tickets on its chat socket and Monster Raid on its live raid socket. REST remains independent of this socket rollout.
 
 ## Gateway response
 
@@ -35,4 +35,4 @@ Publish validated service releases, configure both destinations to require ticke
 ## Status
 
 - **Monster Raid** implements all five points from release 2.0.7, under its own `SOCKET_TICKETS_ENABLED`, which Compose sets with the Gateway's. Used ticket IDs are recorded in its `raids` database (`socket_tickets`) until a minute after they expire, by the database's clock. A ticket allows `iat` at most five seconds ahead of Monster Raid's clock and no leeway on `exp`. A ticket only opens the socket, which then stays open until the raid ends. `scripts/check_lab2.py` requires its setting to match the Gateway's, and `scripts/smoke_monster_raid.py` opens the socket with a ticket and checks that the used ticket and an access token are refused.
-- **Guild** still verifies player access tokens on its chat socket.
+- **Guild** implements all five points from release 2.0.1, under its own `SOCKET_TICKETS_ENABLED`, which Compose sets with the Gateway's. It accepts only `typ=ws-ticket+jwt`, `aud=guild`, `kind=socket`, `resourceType=guild` and the socket's guild ID, with a lifetime of at most 30 seconds and no leeway on `iat` or `exp`. Player JWTs and REST assertions are refused. The membership recheck and the used ticket ID in its `guilds` database (`socket_tickets`, pruned once expired, by Guild's clock) commit in one transaction. A ticket only opens the socket, which then stays open until the player leaves or loses membership. `scripts/check_lab2.py` requires its setting to match the Gateway's, and `scripts/smoke_guild_registry.py` opens the socket with a ticket and checks that the used ticket and an access token are refused.
