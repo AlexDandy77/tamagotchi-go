@@ -1,6 +1,6 @@
 # Direct socket tickets
 
-Gateway ticket issuance is enabled with `SOCKET_TICKETS_ENABLED=true`. Guild and Monster Raid still need to publish matching validators; their current player-JWT validators reject Gateway-signed tickets. REST remains independent of this socket rollout.
+Gateway ticket issuance is enabled with `SOCKET_TICKETS_ENABLED=true`, and the same setting makes Monster Raid require tickets on its live raid socket. Guild still needs to publish a matching validator; its current player-JWT validator rejects Gateway-signed tickets. REST remains independent of this socket rollout.
 
 ## Gateway response
 
@@ -31,3 +31,8 @@ Guild and Monster Raid must each:
 5. Test valid authentication, changed signatures, wrong algorithm/header/issuer/audience/kind/resource/user, expiry, membership removal after negotiation, duplicate/concurrent use, restart replay and missing first frames. A failed authorization must never produce an authenticated socket.
 
 Publish validated service releases, configure both destinations to require tickets, and run real negotiation/authentication/replay tests against both services. Gateway issuance is already enabled. REST/Postman checks can run independently, but direct ticket authentication remains incomplete until both destinations support it.
+
+## Status
+
+- **Monster Raid** implements all five points from release 2.0.7, under its own `SOCKET_TICKETS_ENABLED`, which Compose sets with the Gateway's. Used ticket IDs are recorded in its `raids` database (`socket_tickets`) until a minute after they expire, by the database's clock. A ticket allows `iat` at most five seconds ahead of Monster Raid's clock and no leeway on `exp`. A ticket only opens the socket, which then stays open until the raid ends. `scripts/check_lab2.py` requires its setting to match the Gateway's, and `scripts/smoke_monster_raid.py` opens the socket with a ticket and checks that the used ticket and an access token are refused.
+- **Guild** still verifies player access tokens on its chat socket.

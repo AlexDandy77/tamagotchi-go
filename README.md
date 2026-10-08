@@ -66,7 +66,7 @@ Import [one Postman environment](postman/local.postman_environment.json), set `s
 - [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json)
 - [Tamagotchi](postman/tamagotchi.postman_collection.json) and [Notification](postman/notification.postman_collection.json)
 
-Gateway has independent client/service task budgets. [Socket tickets](contracts/socket-tickets.md) are enabled. Guild and Monster Raid must publish matching validators before clients can authenticate with them.
+Gateway has independent client/service task budgets. [Socket tickets](contracts/socket-tickets.md) are enabled. Monster Raid's live raid socket requires them; Guild must publish a matching validator before chat clients can authenticate with them.
 
 The Tamagotchi internal folder is optional: use [the Postman mTLS port override](compose.postman.internal.yaml), trust the local CA and bind the indicated service certificate to each port. These ports all reach Gateway; they select different caller certificates. Deselect this folder for player-only runs.
 
@@ -345,11 +345,11 @@ The server assigns sender, guild, timestamp and a per-guild increasing sequence.
 
 ### Live raid WebSocket contract
 
-Ask the Gateway for the socket with `GET /v1/realtime/raids/{raidId}/connection`; it checks that the player may read the raid and returns Monster Raid's direct URL, `ws://<monster-raid-origin>/v1/raids/{raidId}/live`. The upgrade grants nothing yet: within five seconds the client sends `RaidAuthenticate`, and the server checks the JWT and guild membership, then sends the first `RaidState`. A failed check sends `RaidError` and closes with `1008`; a dependency failure closes with `1011`. Token expiry also closes the socket with `1008`.
+Ask the Gateway for the socket with `GET /v1/realtime/raids/{raidId}/connection`; it checks that the player may read the raid and returns Monster Raid's direct URL, `ws://<monster-raid-origin>/v1/raids/{raidId}/live`, with a single-use `ticket` when `SOCKET_TICKETS_ENABLED` is on. The upgrade grants nothing yet: within five seconds the client sends `RaidAuthenticate` with that ticket in `accessToken`, and the server verifies the ticket for this raid, uses it up and checks guild membership, then sends the first `RaidState`. A failed check, including a used ticket or an access token in ticket mode, sends `RaidError` and closes with `1008`; a dependency failure closes with `1011`. With tickets off, `accessToken` is the player's access token and its expiry closes the socket with `1008`; a ticket only opens the socket, which then stays open until the raid ends.
 
 | Direction | Frame | Content |
 | --- | --- | --- |
-| client to server | `RaidAuthenticate` | `{type:"raid.authenticate", accessToken}`; must be the first frame |
+| client to server | `RaidAuthenticate` | `{type:"raid.authenticate", accessToken}` with the Gateway's socket ticket, or the access token with tickets off; must be the first frame |
 | server to client | `RaidState` | `{type:"raid.state", raidId, status, hp, maxHp, version, endsAt, participants: [{userId, damageDealt}]}` |
 | server to client | `RaidError` | `{type:"raid.error", code, message}` before closing |
 

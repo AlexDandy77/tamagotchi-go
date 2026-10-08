@@ -58,7 +58,7 @@ Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yam
 
 `GET /v1/realtime/raids/{raidId}/connection` works the same way for live raids: the Gateway reads `GET /v1/raids/{raidId}` as the player and returns Monster Raid's direct `ws://.../v1/raids/{raidId}/live` URL with `authentication: "RaidAuthenticate"`. Monster Raid checks the token and guild membership again on the first frame.
 
-`SOCKET_TICKETS_ENABLED=true` adds a short-lived `ticket` to both connection responses. Send that ticket in the existing first frame's `accessToken` field. Guild and Monster Raid must implement [ticket validation and replay protection](socket-tickets.md) before this flow works end to end. Setting the flag to `false` restores legacy player access-token negotiation.
+`SOCKET_TICKETS_ENABLED=true` adds a short-lived `ticket` to both connection responses. Send that ticket in the existing first frame's `accessToken` field. Monster Raid implements [ticket validation and replay protection](socket-tickets.md) and requires tickets under the same setting; Guild must implement them before its chat socket accepts tickets. Setting the flag to `false` restores legacy player access-token negotiation.
 
 ## What other service owners must change
 
