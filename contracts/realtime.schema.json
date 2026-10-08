@@ -32,7 +32,7 @@
   ],
   "$defs": {
     "ChatAuthenticate": {
-      "description": "First client frame, before any chat data. Do not persist or echo the token.",
+      "description": "First client frame, before any chat data. With socket tickets, accessToken carries the Gateway's single-use socket ticket instead of the player's access token. Do not persist or echo it.",
       "type": "object",
       "additionalProperties": false,
       "properties": {

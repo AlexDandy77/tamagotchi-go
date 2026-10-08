@@ -66,7 +66,7 @@ Import [one Postman environment](postman/local.postman_environment.json), set `s
 - [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json)
 - [Tamagotchi](postman/tamagotchi.postman_collection.json) and [Notification](postman/notification.postman_collection.json)
 
-Gateway has independent client/service task budgets. [Socket tickets](contracts/socket-tickets.md) are enabled. Monster Raid's live raid socket requires them; Guild must publish a matching validator before chat clients can authenticate with them.
+Gateway has independent client/service task budgets. [Socket tickets](contracts/socket-tickets.md) are enabled. Guild's chat socket and Monster Raid's live raid socket require them.
 
 The Tamagotchi internal folder is optional: use [the Postman mTLS port override](compose.postman.internal.yaml), trust the local CA and bind the indicated service certificate to each port. These ports all reach Gateway; they select different caller certificates. Deselect this folder for player-only runs.
 
@@ -330,11 +330,11 @@ Notification derives recipients from the payload: the recipient of a friend or g
 
 ### Guild chat WebSocket contract
 
-Connect to the Guild service at `wss://<guild-origin>/v1/guilds/{guildId}/chat`. The upgrade returns `101` but grants nothing yet: within five seconds the client must send `ChatAuthenticate`; the server checks the JWT and guild membership and replies with `ChatAuthenticated`, or closes with code `1008`. Losing membership or token expiry also closes the connection.
+Ask the Gateway for the socket with `GET /v1/realtime/guilds/{guildId}/connection`; it checks guild membership and returns Guild's direct URL, `ws://<guild-origin>/v1/guilds/{guildId}/chat`, with a single-use `ticket` when `SOCKET_TICKETS_ENABLED` is on. The upgrade returns `101` but grants nothing yet: within five seconds the client must send `ChatAuthenticate` with that ticket in `accessToken`; the server verifies the ticket for this guild, uses it up and checks guild membership, then replies with `ChatAuthenticated`. A failed check, including a used ticket or an access token in ticket mode, sends `ChatError` and closes with code `1008`. Losing membership also closes the connection. With tickets off, `accessToken` is the player's access token and its expiry closes the socket; a ticket only opens the socket, which then stays open until the player leaves or loses membership.
 
 | Direction | Frame | Content |
 | --- | --- | --- |
-| client to server | `ChatAuthenticate` | `{type:"authenticate", accessToken}`; must be the first frame |
+| client to server | `ChatAuthenticate` | `{type:"authenticate", accessToken}` with the Gateway's socket ticket, or the access token with tickets off; must be the first frame |
 | server to client | `ChatAuthenticated` | `{type:"authenticated", guildId, userId, latestSequence}` |
 | client to server | `ChatSend` | `{type:"message.send", requestId, content}`; content is 1 to 2,000 characters |
 | server to sender | `ChatAck` | `{type:"message.ack", requestId, message}` after the message is stored |

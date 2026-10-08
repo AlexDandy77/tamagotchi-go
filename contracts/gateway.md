@@ -54,11 +54,11 @@ Gateway and destination errors share the common envelope. Use `error.code`, not 
 
 Gateway-owned routes are described in [gateway.openapi.yaml](gateway.openapi.yaml). Sockets never pass through the Gateway; it only checks access and returns the owner's direct URL.
 
-`GET /v1/realtime/guilds/{guildId}/connection` requires a player token. The Gateway verifies membership through Guild's existing REST read and returns `{url, expiresAt, authentication: "ChatAuthenticate"}`. The URL is a direct Guild `ws://`/`wss://` URL without credentials. Send the existing `authenticate` frame described in [realtime.schema.json](realtime.schema.json) as the first frame within five seconds. Guild validates that token and membership again. The Gateway holds no WebSocket connection.
+`GET /v1/realtime/guilds/{guildId}/connection` requires a player token. The Gateway verifies membership through Guild's existing REST read and returns `{url, expiresAt, authentication: "ChatAuthenticate"}`. The URL is a direct Guild `ws://`/`wss://` URL without credentials. Send the existing `authenticate` frame described in [realtime.schema.json](realtime.schema.json) as the first frame within five seconds. Guild validates that credential (the socket ticket in ticket mode) and membership again. The Gateway holds no WebSocket connection.
 
 `GET /v1/realtime/raids/{raidId}/connection` works the same way for live raids: the Gateway reads `GET /v1/raids/{raidId}` as the player and returns Monster Raid's direct `ws://.../v1/raids/{raidId}/live` URL with `authentication: "RaidAuthenticate"`. Monster Raid checks the token and guild membership again on the first frame.
 
-`SOCKET_TICKETS_ENABLED=true` adds a short-lived `ticket` to both connection responses. Send that ticket in the existing first frame's `accessToken` field. Monster Raid implements [ticket validation and replay protection](socket-tickets.md) and requires tickets under the same setting; Guild must implement them before its chat socket accepts tickets. Setting the flag to `false` restores legacy player access-token negotiation.
+`SOCKET_TICKETS_ENABLED=true` adds a short-lived `ticket` to both connection responses. Send that ticket in the existing first frame's `accessToken` field. Guild and Monster Raid implement [ticket validation and replay protection](socket-tickets.md) and require tickets under the same setting. Setting the flag to `false` restores legacy player access-token negotiation.
 
 ## What other service owners must change
 

@@ -178,6 +178,9 @@ services:
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
+      # The chat socket accepts only the single-use tickets the Gateway issues under the
+      # same setting, never an access token.
+      SOCKET_TICKETS_ENABLED: ${SOCKET_TICKETS_ENABLED:-true}
     volumes:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro

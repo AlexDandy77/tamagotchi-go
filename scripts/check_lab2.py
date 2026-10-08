@@ -14,7 +14,7 @@ from lab import SERVICES
 # Destinations whose live sockets validate the Gateway's socket tickets. Each must require
 # tickets exactly when the Gateway issues them: either mismatch leaves its clients unable to
 # authenticate.
-TICKET_SOCKETS = ('monster-raid',)
+TICKET_SOCKETS = ('monster-raid', 'guild')
 
 
 def tickets_enabled(env, default):
