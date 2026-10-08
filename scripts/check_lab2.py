@@ -11,6 +11,15 @@ import sys
 from urllib.parse import urlsplit
 from lab import SERVICES
 
+# Destinations whose live sockets validate the Gateway's socket tickets. Each must require
+# tickets exactly when the Gateway issues them: either mismatch leaves its clients unable to
+# authenticate.
+TICKET_SOCKETS = ('monster-raid',)
+
+
+def tickets_enabled(env, default):
+    return str(env.get('SOCKET_TICKETS_ENABLED', default)).lower() == 'true'
+
 
 def audit(config):
     failures = []
@@ -18,6 +27,8 @@ def audit(config):
     gateway = services.get('gateway', {})
     upstreams = json.loads(gateway.get('environment', {}).get('UPSTREAMS_JSON', '{}'))
     ready = gateway.get('environment', {}).get('READY_SERVICES', '').split(',')
+    # The Gateway issues tickets unless told not to.
+    gateway_tickets = tickets_enabled(gateway.get('environment', {}), 'true')
     for name in (*SERVICES, 'gateway'):
         service = services.get(name)
         if service is None:
@@ -48,6 +59,8 @@ def audit(config):
             failures.append(f'{name}: Gateway verification certificate is not configured')
         if service.get('ports') and name not in ('guild', 'monster-raid'):
             failures.append(f'{name}: publishes a direct REST port')
+        if name in TICKET_SOCKETS and tickets_enabled(env, 'false') != gateway_tickets:
+            failures.append(f'{name}: SOCKET_TICKETS_ENABLED must match the Gateway, which issues the tickets')
         for key, value in env.items():
             if not key.endswith('_URL') or not isinstance(value, str):
                 continue

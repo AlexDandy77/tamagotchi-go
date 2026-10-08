@@ -11,7 +11,8 @@ def compliant():
                                       'GATEWAY_ONLY': 'true', 'GATEWAY_CERT_FILE': '/run/tls/gateway.pem',
                                       'USER_MANAGEMENT_URL': 'https://gateway:8443/services/user-management'}}
                 for name in (*SERVICES, 'gateway')}
-    services['gateway']['environment'].update(UPSTREAMS_JSON=json.dumps({s: 'https://' + s + ':8443' for s in SERVICES}), READY_SERVICES=','.join(SERVICES), MAX_CONCURRENT_SERVICE_TASKS='64')
+    services['gateway']['environment'].update(UPSTREAMS_JSON=json.dumps({s: 'https://' + s + ':8443' for s in SERVICES}), READY_SERVICES=','.join(SERVICES), MAX_CONCURRENT_SERVICE_TASKS='64', SOCKET_TICKETS_ENABLED='true')
+    services['monster-raid']['environment']['SOCKET_TICKETS_ENABLED'] = 'true'
     return {'services': services}
 
 
@@ -52,6 +53,21 @@ class DeploymentTests(unittest.TestCase):
         failures = '\n'.join(audit(config))
         self.assertIn('monster-raid: REGISTRY_INTERNAL_URL must use a single', failures)
         self.assertIn('gateway: JWKS_URL must use a single', failures)
+
+    def test_socket_destinations_require_tickets_exactly_when_the_gateway_issues_them(self):
+        message = 'monster-raid: SOCKET_TICKETS_ENABLED must match the Gateway, which issues the tickets'
+        config = compliant()
+        del config['services']['monster-raid']['environment']['SOCKET_TICKETS_ENABLED']
+        self.assertIn(message, audit(config))
+        # Without the setting the Gateway still issues tickets.
+        del config['services']['gateway']['environment']['SOCKET_TICKETS_ENABLED']
+        self.assertIn(message, audit(config))
+
+        config = compliant()
+        config['services']['gateway']['environment']['SOCKET_TICKETS_ENABLED'] = 'false'
+        self.assertIn(message, audit(config))
+        config['services']['monster-raid']['environment']['SOCKET_TICKETS_ENABLED'] = 'false'
+        self.assertEqual(audit(config), [])
 
     def test_requires_gateway_service_budget(self):
         config = compliant()
