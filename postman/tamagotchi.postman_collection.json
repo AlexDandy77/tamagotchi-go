@@ -2,7 +2,7 @@
   "info": {
     "name": "7. Tamagotchi Go — Tamagotchi service",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Gateway player-route checks use a fresh registered user and real JWT. Set seedPassword in the local environment, run requests in order, and use Gateway on localhost:8080."
+    "description": "Gateway player-route checks use a fresh registered user and real JWT. Set seedPassword in the local environment. If the player has only one pet, the collection enrolls in another configured active package, waits for starter provisioning, and discovers the second pet from the roster before switching primary pets. Run requests in order using Gateway on localhost:8080."
   },
   "item": [
     {
@@ -69,7 +69,7 @@
             "exec": [
               "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
               "if (pm.response.code === 201) { const s = pm.response.json(); pm.collectionVariables.set(\"tamaToken\", s.accessToken); pm.collectionVariables.set(\"tamaRunUserId\", s.user.id); }",
-              "pm.collectionVariables.unset(\"tamaPetId\"); pm.collectionVariables.unset(\"tamaSecondPetId\"); pm.collectionVariables.unset(\"tamaCareActionId\"); pm.collectionVariables.set(\"tamaRosterAttempts\", 0);"
+              "pm.collectionVariables.unset(\"tamaPetId\"); pm.collectionVariables.unset(\"tamaSecondPetId\"); pm.collectionVariables.unset(\"tamaCareActionId\"); pm.collectionVariables.unset(\"tamaStarterPackage\"); pm.collectionVariables.unset(\"tamaStarterPending\"); pm.collectionVariables.unset(\"tamaRosterDeadline\"); pm.collectionVariables.set(\"tamaRosterAttempts\", 0);"
             ]
           }
         }
@@ -119,7 +119,149 @@
             "type": "text/javascript",
             "exec": [
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-              "if (pm.response.code === 200) { const pets = pm.response.json().pets; const attempts = Number(pm.collectionVariables.get(\"tamaRosterAttempts\") || 0); if (!pets.length && attempts < 20) { pm.collectionVariables.set(\"tamaRosterAttempts\", attempts + 1); pm.execution.setNextRequest(\"Pets roster\"); } else { pm.test(\"Starter pet provisioned\", () => pm.expect(pets.length).to.be.above(0)); if (pets.length) { pm.collectionVariables.set(\"tamaPetId\", pets[0].id); pm.collectionVariables.set(\"tamaPetVersion\", pets[0].version); } if (pets.length > 1) pm.collectionVariables.set(\"tamaSecondPetId\", pets[1].id); else pm.collectionVariables.unset(\"tamaSecondPetId\"); } }"
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const roster = pm.response.json();",
+              "  const owner = pm.collectionVariables.get(\"tamaRunUserId\");",
+              "  const owned = roster.pets.filter(p => p.ownerId === owner);",
+              "  const attempts = Number(pm.collectionVariables.get(\"tamaRosterAttempts\") || 0);",
+              "  if (!owned.length && attempts < 20) {",
+              "    pm.collectionVariables.set(\"tamaRosterAttempts\", attempts + 1);",
+              "    pm.execution.setNextRequest(\"Pets roster\");",
+              "  } else if (!owned.length) {",
+              "    pm.test(\"Starter pet provisioned\", () => pm.expect(owned.length).to.be.above(0));",
+              "    pm.execution.setNextRequest(null);",
+              "  } else {",
+              "    const primary = owned.find(p => p.id === roster.primaryPetId) || owned[0];",
+              "    const secondaryId = (roster.secondaryPetIds || []).find(id => id !== primary.id && owned.some(p => p.id === id));",
+              "    pm.collectionVariables.set(\"tamaPetId\", primary.id);",
+              "    pm.collectionVariables.set(\"tamaPetVersion\", primary.version);",
+              "    if (secondaryId) {",
+              "      pm.collectionVariables.set(\"tamaSecondPetId\", secondaryId);",
+              "      pm.collectionVariables.unset(\"tamaStarterPending\");",
+              "      pm.execution.setNextRequest(\"Missing auth (401)\");",
+              "    } else {",
+              "      pm.collectionVariables.unset(\"tamaSecondPetId\");",
+              "      pm.collectionVariables.set(\"tamaOwnedCount\", owned.length);",
+              "      const deadline = Number(pm.collectionVariables.get(\"tamaRosterDeadline\")) || Date.now() + 30000;",
+              "      pm.collectionVariables.set(\"tamaRosterDeadline\", deadline);",
+              "      const pending = pm.collectionVariables.get(\"tamaStarterPending\");",
+              "      if (pending !== undefined && owned.length > Number(pending)) {",
+              "        pm.test(\"Second pet appears in secondary roster\", () => pm.expect(secondaryId, \"The new starter was not listed as an owned secondary pet.\").to.be.a(\"string\"));",
+              "        pm.execution.setNextRequest(null);",
+              "      } else if (Date.now() >= deadline) {",
+              "        pm.test(\"Second pet provisioned\", () => pm.expect(secondaryId, \"No second owned pet was provisioned within 30 seconds.\").to.be.a(\"string\"));",
+              "        pm.execution.setNextRequest(null);",
+              "      } else if (pending !== undefined) {",
+              "        setTimeout(() => pm.execution.setNextRequest(\"Pets roster\"), 300);",
+              "      } else {",
+              "        pm.execution.setNextRequest(\"Read Tamagotchi package enrollments\");",
+              "      }",
+              "    }",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read Tamagotchi package enrollments",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tamaToken}}"
+          }
+        ],
+        "url": "{{users}}/v1/users/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  pm.collectionVariables.set(\"tamaPackageIds\", pm.response.json().packageIds);",
+              "  pm.collectionVariables.set(\"tamaStarterPackageUrl\", pm.environment.get(\"registry\") + \"/v1/packages?limit=100\");",
+              "  pm.collectionVariables.set(\"tamaStarterPages\", 0);",
+              "  pm.collectionVariables.unset(\"tamaStarterPackage\");",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Find Tamagotchi second starter package",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tamaToken}}"
+          }
+        ],
+        "url": "{{tamaStarterPackageUrl}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const page = pm.response.json();",
+              "  const enrolled = new Set(pm.collectionVariables.get(\"tamaPackageIds\") || []);",
+              "  const candidate = page.items.find(p => p.status === \"active\" && p.configVersion !== null && !enrolled.has(p.id));",
+              "  const pages = Number(pm.collectionVariables.get(\"tamaStarterPages\") || 0) + 1;",
+              "  pm.collectionVariables.set(\"tamaStarterPages\", pages);",
+              "  if (candidate) {",
+              "    pm.collectionVariables.set(\"tamaStarterPackage\", candidate.id);",
+              "    pm.execution.setNextRequest(\"Enroll Tamagotchi player for second starter\");",
+              "  } else if (page.nextCursor && pages < 20 && Date.now() < Number(pm.collectionVariables.get(\"tamaRosterDeadline\"))) {",
+              "    pm.collectionVariables.set(\"tamaStarterPackageUrl\", pm.environment.get(\"registry\") + \"/v1/packages?limit=100&cursor=\" + encodeURIComponent(page.nextCursor));",
+              "    pm.execution.setNextRequest(\"Find Tamagotchi second starter package\");",
+              "  } else {",
+              "    pm.test(\"Unenrolled active package available\", () => pm.expect(candidate, \"Publish another configured active package to provision a second starter.\").to.be.an(\"object\"));",
+              "    pm.execution.setNextRequest(null);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Enroll Tamagotchi player for second starter",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tamaToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{users}}/v1/users/me/packages/{{tamaStarterPackage}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  pm.collectionVariables.set(\"tamaStarterPending\", pm.collectionVariables.get(\"tamaOwnedCount\"));",
+              "  setTimeout(() => pm.execution.setNextRequest(\"Pets roster\"), 300);",
+              "}"
             ]
           }
         }
@@ -226,16 +368,6 @@
       },
       "event": [
         {
-          "listen": "prerequest",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "// One starter per package currently leaves this optional two-pet path unavailable.",
-              "if (!pm.collectionVariables.get(\"tamaSecondPetId\")) pm.execution.skipRequest();"
-            ]
-          }
-        },
-        {
           "listen": "test",
           "script": {
             "type": "text/javascript",
@@ -277,16 +409,6 @@
         }
       },
       "event": [
-        {
-          "listen": "prerequest",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "// One starter per package currently leaves this optional two-pet path unavailable.",
-              "if (!pm.collectionVariables.get(\"tamaSecondPetId\")) pm.execution.skipRequest();"
-            ]
-          }
-        },
         {
           "listen": "test",
           "script": {
