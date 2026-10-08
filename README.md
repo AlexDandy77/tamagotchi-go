@@ -54,7 +54,7 @@ python3 scripts/smoke_gateway.py
 python3 scripts/smoke_live.py
 ```
 
-`setup` generates missing credentials and certificates. `up` checks and pulls every service repository's `latest` image before changing containers, then provisions databases/topics, migrates, seeds and starts the deployment. Failed pulls stop startup; stale cached images are not a fallback. Direct `docker compose up` also checks image updates. `down` retains all data.
+`setup` generates missing credentials and certificates. `up` checks and pulls every service repository's `latest` image before changing containers, then provisions databases/topics, migrates, seeds and starts the deployment. Before running the Battle collection, each player needs two owned pets and at least 10 available global coins. Obtain extra starters through package enrollment and currency through raids; combat changes pet ownership. Failed pulls stop startup; stale cached images are not a fallback. Direct `docker compose up` also checks image updates. `down` retains all data.
 
 All client REST URLs are `http://localhost:8080/services/{service}/{original-path}`. Services call `https://gateway:8443/services/{destination}` with their certificates. Gateway verifies tokens, removes Authorization and sends a signed identity; each destination checks permissions. Only Gateway exposes REST. Guild port 8087 and Monster Raid port 8084 are reserved for negotiated direct WebSockets; their implementations must reject direct business REST. Databases and Kafka remain direct.
 
@@ -66,9 +66,11 @@ Import [one Postman environment](postman/local.postman_environment.json), set `s
 - [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json)
 - [Tamagotchi](postman/tamagotchi.postman_collection.json) and [Notification](postman/notification.postman_collection.json)
 
+Gateway has independent client/service task budgets. [Socket tickets](contracts/socket-tickets.md) are enabled. Guild and Monster Raid must publish matching validators before clients can authenticate with them.
+
 The Tamagotchi internal folder is optional: use [the Postman mTLS port override](compose.postman.internal.yaml), trust the local CA and bind the indicated service certificate to each port. These ports all reach Gateway; they select different caller certificates. Deselect this folder for player-only runs.
 
-`check_lab2.py` checks Compose routing, task-limit settings and image policy without private source access. Passing it does not prove service implementations work: run the smoke checks against compatible releases. See [remaining owner work](ARCHITECTURE.md#integration-checks). Registry admin requests need `REGISTRY_ADMIN_USER_IDS` set locally to the admin user's ID. Each destination has one base URL: `REGISTRY_URL`, `TAMAGOTCHI_URL`, `USER_MANAGEMENT_URL`, `GUILD_URL` or `MONSTER_RAID_URL`. Services append public or internal endpoint paths; authentication keys come from the User Management base plus `/.well-known/jwks.json`. Owners must update their configuration readers to these names; Compose no longer supplies the old aliases. There is no bearer-forwarding or direct REST fallback.
+`check_lab2.py` checks Compose routing, task-limit settings and image policy without private source access. Passing it does not prove service implementations work: run the smoke checks against compatible releases. See [remaining owner work](ARCHITECTURE.md#integration-checks). Local setup fills an empty `REGISTRY_ADMIN_USER_IDS` with seeded Alice's ID and preserves explicit settings. Each destination has one base URL: `REGISTRY_URL`, `TAMAGOTCHI_URL`, `USER_MANAGEMENT_URL`, `GUILD_URL` or `MONSTER_RAID_URL`. Services append public or internal endpoint paths; authentication keys come from the User Management base plus `/.well-known/jwks.json`. Owners must update their configuration readers to these names; Compose no longer supplies the old aliases. There is no bearer-forwarding or direct REST fallback.
 
 ## Communication contract
 

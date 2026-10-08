@@ -77,6 +77,9 @@ services:
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       TASK_TIMEOUT_SECONDS: ${GATEWAY_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${GATEWAY_MAX_CONCURRENT_TASKS:-64}
+      MAX_CONCURRENT_SERVICE_TASKS: ${GATEWAY_MAX_CONCURRENT_SERVICE_TASKS:-64}
+      # Direct socket consumers must validate Gateway-issued tickets.
+      SOCKET_TICKETS_ENABLED: ${SOCKET_TICKETS_ENABLED:-true}
       READY_SERVICES: user-management,battle,map,monster-raid,guild,package-registry,tamagotchi,notification
       GUILD_WS_URL: ${GUILD_WS_URL:-ws://localhost:8087}
       RAID_WS_URL: ${RAID_WS_URL:-ws://localhost:8084}

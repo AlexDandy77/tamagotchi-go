@@ -1,6 +1,6 @@
 {
  "info": {
-  "name": "Tamagotchi Go — Monster Raid",
+  "name": "6. Tamagotchi Go — Monster Raid",
   "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
   "description": "Monster Raid through the Gateway ({{monsterRaid}}) in the shared Compose deployment; its probes use the direct port ({{monsterRaidDirect}}), since the Gateway does not route them. Set seedPassword locally; tokens come from User Management, membership from Guild and Alice's primary pet from Tamagotchi. The requests use the raids that Monster Raid seeds: the practice raid of the schedule Package Registry seeds, open for 30 days, and the fixture raid that Alice and Bob won. Runs repeatably: Alice joins the practice raid once and attacks it on every run, and Bob stays out of it. Package Registry starts and cancels raids with its service certificate, directly or through the Gateway's mutual TLS port, neither of which is published on the host, so those routes are not in this collection."
  },

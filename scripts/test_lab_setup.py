@@ -58,12 +58,42 @@ class StartupImagesTests(unittest.TestCase):
             compose.assert_called_once_with('pull', '--policy', 'always')
         self.assertNotIn(values['SEED_PASSWORD'], output.getvalue())
 
+    def test_startup_completes_without_deleted_demo_helper(self):
+        with patch.object(lab, 'refresh_images'), patch.object(lab, 'provision'), patch.object(lab, 'topics'), patch.object(lab, 'compose') as compose, patch('sys.argv', ['lab.py', 'up']):
+            lab.main()
+        self.assertEqual(compose.call_args.args, ('up', '-d', '--wait', '--pull', 'never'))
+
     def test_missing_release_aborts_startup(self):
         import subprocess
         with patch.object(lab, 'refresh_images', side_effect=subprocess.CalledProcessError(1, 'pull')), patch.object(lab, 'compose') as compose, patch('sys.argv', ['lab.py', 'up']):
             with self.assertRaises(subprocess.CalledProcessError):
                 lab.main()
             compose.assert_not_called()
+
+
+class DemoAdminTests(unittest.TestCase):
+    def test_sets_demo_admin_once_without_changing_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = 'SEED_PASSWORD=private-demo-value\nREGISTRY_ADMIN_USER_IDS=\n'
+            (root / '.env').write_text(original)
+            with patch.object(lab, 'ROOT', root), patch.dict(os.environ, {}, clear=True), contextlib.redirect_stdout(io.StringIO()):
+                lab.demo_admin()
+                once = (root / '.env').read_text()
+                lab.demo_admin()
+            self.assertEqual(once, (root / '.env').read_text())
+            self.assertIn('SEED_PASSWORD=private-demo-value', once)
+            self.assertNotIn('REGISTRY_ADMIN_USER_IDS=\n', once)
+
+    def test_preserves_explicit_admin_in_file_and_process_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for value, override in [('custom-admin', {}), ('', {'REGISTRY_ADMIN_USER_IDS': 'override-admin'})]:
+                original = 'REGISTRY_ADMIN_USER_IDS=' + value + '\n'
+                (root / '.env').write_text(original)
+                with patch.object(lab, 'ROOT', root), patch.dict(os.environ, override, clear=True):
+                    lab.demo_admin()
+                self.assertEqual((root / '.env').read_text(), original)
 
 
 if __name__ == "__main__":

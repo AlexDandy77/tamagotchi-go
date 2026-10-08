@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "Tamagotchi Go \u2014 Tamagotchi service (Artur)",
+    "name": "7. Tamagotchi Go \u2014 Tamagotchi service",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "description": "Gateway player checks use a fresh registered user and real JWT. Set seedPassword in the local environment, run requests in order, and use Gateway on localhost:8080. The optional internal mTLS folder uses separate seeded fixtures and caller certificates."
   },
@@ -42,7 +42,7 @@
         "url": "{{users}}/v1/auth/register",
         "body": {
           "mode": "raw",
-          "raw": "{\"username\":\"{{tamaRunName}}\",\"email\":\"{{tamaRunEmail}}\",\"password\":\"{{seedPassword}}\",\"packageId\":\"{{packageId}}\"}",
+          "raw": "{\"username\":\"{{tamaRunName}}\",\"email\":\"{{tamaRunEmail}}\",\"password\":\"{{seedPassword}}\",\"packageId\":\"{{seedPackageId}}\"}",
           "options": {
             "raw": {
               "language": "json"
@@ -564,7 +564,7 @@
             "url": "{{tamagotchiInternalUserManagement}}/internal/v1/starter-pets/{{internalStarterOperationId}}",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{internalStarterUserId}}\",\n  \"packageId\": \"{{packageId}}\"\n}",
+              "raw": "{\n  \"userId\": \"{{internalStarterUserId}}\",\n  \"packageId\": \"{{seedPackageId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -578,7 +578,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.environment.set(\"internalStarterUserId\", pm.variables.replaceIn(\"{{$guid}}\"));",
+                  "pm.environment.set(\"internalStarterUserId\", pm.collectionVariables.get(\"tamaRunUserId\"));",
                   "pm.environment.set(\"internalStarterOperationId\", pm.variables.replaceIn(\"{{$guid}}\"));",
                   "pm.environment.set(\"internalIdempotencyKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
                 ]

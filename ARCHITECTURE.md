@@ -48,6 +48,8 @@ Gateway exposes REST on `localhost:8080`. Containers use `https://gateway:8443/s
 
 Use one base URL per REST destination, for both `/v1` and `/internal/v1` routes. Compose uses `REGISTRY_URL`, `TAMAGOTCHI_URL`, `USER_MANAGEMENT_URL`, `GUILD_URL` and `MONSTER_RAID_URL`. Derive JWKS from the User Management base plus `/.well-known/jwks.json`; Gateway derives it from its User Management upstream. Other service owners must adopt these names and key discovery before using the updated Compose.
 
+Gateway separately bounds client and authenticated-service traffic, 64 requests each by default. Nested service calls retain capacity when client slots are full. Socket ticket issuance is enabled; Guild and Monster Raid still need matching validators. See [the handoff](contracts/socket-tickets.md).
+
 Only Guild and Monster Raid publish additional ports, for direct sockets negotiated through Gateway. Their socket listeners must reject direct business REST. PostgreSQL, MongoDB, Kafka and internal mTLS ports stay private.
 
 Setup creates development certificates in ignored `.secrets/tls`. Each service receives its own key, the CA and Gateway's public certificate. Replace expired bundles together and restart all services. Compose fits the single-PC presentation; the databases and broker are single-node development infrastructure.

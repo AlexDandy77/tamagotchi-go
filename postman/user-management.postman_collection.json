@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "Tamagotchi Go \u2014 User Management",
+    "name": "1. Tamagotchi Go \u2014 User Management",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "description": "Select the shared local environment and set seedPassword locally. Runs authentication, profile, wallet, enrollment and relationship requests against seeded Alice/Bob accounts."
   },

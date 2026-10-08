@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "Tamagotchi Go \u2014 Battle",
+    "name": "2. Tamagotchi Go \u2014 Battle",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Use the shared local environment and set seedPassword. Logs in Alice/Bob, loads their real pets and checks both wallets before creating challenges. Stops if either player lacks two pets or 10 available coins. Tamagotchi 0.4.1 cannot provision a second pet through normal enrollment. Runner delay: 300 ms. Combat captures a pet and changes ownership; seeding does not reset data."
+    "description": "Use the shared local environment and set seedPassword. Before combat, Alice and Bob each need two owned pets and at least 10 available global coins. Obtain extra starters through package enrollment and currency through raids. Run requests in order with a 300 ms delay. Combat changes pet ownership; request IDs and pets are discovered at runtime."
   },
   "item": [
     {

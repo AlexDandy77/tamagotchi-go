@@ -11,6 +11,7 @@ import secrets
 import subprocess
 import tarfile
 import time
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVICES = (
@@ -141,8 +142,25 @@ def tls_bundle(directory):
             readable = public or member.name.removesuffix('-key.pem') in NON_ROOT_SERVICES
             write_private(tls_dir / member.name, archive.extractfile(member).read(), 0o444 if readable else 0o600)
 
+def demo_admin():
+    """Fill only the local demo default; explicit admins always win."""
+    path = ROOT / '.env'
+    if environment().get('REGISTRY_ADMIN_USER_IDS', '').strip():
+        return
+    data = path.read_text()
+    alice = str(uuid.uuid5(uuid.NAMESPACE_URL, 'tamagotchi-demo:alice'))
+    line = 'REGISTRY_ADMIN_USER_IDS=' + alice
+    if re.search(r'^REGISTRY_ADMIN_USER_IDS=.*$', data, re.M):
+        data = re.sub(r'^REGISTRY_ADMIN_USER_IDS=.*$', line, data, flags=re.M)
+    else:
+        data += '\n' + line + '\n'
+    path.write_text(data)
+    print('Configured the local demo Registry administrator.')
+
+
 def setup():
     env_file()
+    demo_admin()
     directory = ROOT / '.secrets'
     directory.mkdir(mode=0o700, exist_ok=True)
     admin = directory / 'kafka-admin.properties'
