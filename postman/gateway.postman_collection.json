@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "f00fa1eb-6b2a-4f39-8420-350c26638faa",
-    "name": "Gateway",
+    "name": "9. Tamagotchi Go — Gateway",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "description": "Run Gateway checks first. The separate Guild folder requires its owner transport update and a guildId. Service collections keep domain checks; this collection checks the Gateway."
   },

@@ -1,8 +1,8 @@
 {
  "info": {
-  "name": "Tamagotchi Go — Guild",
+  "name": "3. Tamagotchi Go \u2014 Guild",
   "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-  "description": "Guild service (localhost:8087) in the Lab 1 Compose deployment. Set seedPassword locally; tokens come from User Management. Runs repeatably: each run creates its own guild. Chat is a WebSocket (ws://localhost:8087/v1/guilds/{{seedGuildId}}/chat): send {\"type\":\"authenticate\",\"accessToken\":\"<token>\"} first, then {\"type\":\"message.send\",\"requestId\":\"<uuid>\",\"content\":\"hi\"}."
+  "description": "Guild REST checks through Gateway. Set seedPassword locally and run requests in order; each run creates its own guild. For chat, negotiate a connection through Gateway and authenticate its direct socket with the returned credential."
  },
  "item": [
   {
@@ -74,11 +74,11 @@
    ]
   },
   {
-   "name": "Liveness",
+   "name": "Gateway liveness",
    "request": {
     "method": "GET",
     "header": [],
-    "url": "{{guild}}/healthz"
+    "url": "{{gateway}}/healthz"
    },
    "event": [
     {
@@ -94,11 +94,11 @@
    ]
   },
   {
-   "name": "Readiness",
+   "name": "Gateway readiness",
    "request": {
     "method": "GET",
     "header": [],
-    "url": "{{guild}}/readyz"
+    "url": "{{gateway}}/readyz"
    },
    "event": [
     {

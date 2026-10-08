@@ -1,6 +1,6 @@
 {
  "info": {
-  "name": "Tamagotchi Go — Map",
+  "name": "5. Tamagotchi Go — Map",
   "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
   "description": "Map through the Gateway ({{map}}) in the shared Compose deployment; Map publishes no host port and accepts REST only through the Gateway. Set seedPassword locally; tokens come from User Management, and Map reads relationships and profiles from it through the Gateway. Runs repeatably: it clears both locations, makes Alice and Bob strangers, then enemies, then friends again as seeded. Current reports are dated 5 s ahead: Map accepts up to 30 s of clock skew, and the margin keeps them newer than a clear when the Docker clock runs slightly ahead of the host."
  },

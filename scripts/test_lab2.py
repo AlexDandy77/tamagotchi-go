@@ -11,7 +11,7 @@ def compliant():
                                       'GATEWAY_ONLY': 'true', 'GATEWAY_CERT_FILE': '/run/tls/gateway.pem',
                                       'USER_MANAGEMENT_URL': 'https://gateway:8443/services/user-management'}}
                 for name in (*SERVICES, 'gateway')}
-    services['gateway']['environment'].update(UPSTREAMS_JSON=json.dumps({s: 'https://' + s + ':8443' for s in SERVICES}), READY_SERVICES=','.join(SERVICES))
+    services['gateway']['environment'].update(UPSTREAMS_JSON=json.dumps({s: 'https://' + s + ':8443' for s in SERVICES}), READY_SERVICES=','.join(SERVICES), MAX_CONCURRENT_SERVICE_TASKS='64')
     return {'services': services}
 
 
@@ -52,3 +52,8 @@ class DeploymentTests(unittest.TestCase):
         failures = '\n'.join(audit(config))
         self.assertIn('monster-raid: REGISTRY_INTERNAL_URL must use a single', failures)
         self.assertIn('gateway: JWKS_URL must use a single', failures)
+
+    def test_requires_gateway_service_budget(self):
+        config = compliant()
+        del config['services']['gateway']['environment']['MAX_CONCURRENT_SERVICE_TASKS']
+        self.assertIn('gateway: service task budget is not configured', audit(config))

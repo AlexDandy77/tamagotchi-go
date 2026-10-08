@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Tamagotchi Go Gateway
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Gateway-owned endpoints. Business REST uses /services/{service} before the
     owning service's path from openapi.yaml; gateway-routes.json defines allowed
@@ -58,8 +58,9 @@ paths:
                 required: [url, expiresAt, authentication]
                 properties:
                   url: {type: string, pattern: '^wss?://'}
-                  expiresAt: {type: integer, description: Access-token expiration as Unix seconds}
+                  expiresAt: {type: integer, description: Credential expiration as Unix seconds; ticket mode is capped at 30 seconds}
                   authentication: {const: ChatAuthenticate}
+                  ticket: {type: string, description: Optional single-use Gateway-signed socket credential; present only in ticket mode}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
@@ -88,8 +89,9 @@ paths:
                 required: [url, expiresAt, authentication]
                 properties:
                   url: {type: string, pattern: '^wss?://'}
-                  expiresAt: {type: integer, description: Access-token expiration as Unix seconds}
+                  expiresAt: {type: integer, description: Credential expiration as Unix seconds; ticket mode is capped at 30 seconds}
                   authentication: {const: RaidAuthenticate}
+                  ticket: {type: string, description: Optional single-use Gateway-signed socket credential; present only in ticket mode}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}

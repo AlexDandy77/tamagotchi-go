@@ -35,6 +35,8 @@ def audit(config):
             if key.endswith('_INTERNAL_URL') or key == 'JWKS_URL':
                 failures.append(f'{name}: {key} must use a single destination base URL')
         if name == 'gateway':
+            if 'MAX_CONCURRENT_SERVICE_TASKS' not in env:
+                failures.append('gateway: service task budget is not configured')
             continue
         if name not in upstreams or name not in ready:
             failures.append(f'{name}: missing Gateway upstream or readiness check')
