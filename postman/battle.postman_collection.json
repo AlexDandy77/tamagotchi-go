@@ -2,7 +2,7 @@
   "info": {
     "name": "2. Tamagotchi Go \u2014 Battle",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Use the shared local environment and set seedPassword. Before combat, Alice and Bob each need two owned pets and at least 10 available global coins. Obtain extra starters through package enrollment and currency through raids. Run requests in order with a 300 ms delay. Combat changes pet ownership; request IDs and pets are discovered at runtime."
+    "description": "Use the shared local environment and set seedPassword. When Alice or Bob has fewer than two pets, the collection enrolls them in another configured active package and waits for real starter provisioning. Each player still needs at least 10 available global coins, earned through raids. Run requests in order; state polling includes its own 300 ms pause and a 30-second deadline. Combat changes pet ownership; request IDs and pets are discovered at runtime. If a previous capture cleared the primary selection, this collection selects an owned pet before challenging."
   },
   "item": [
     {
@@ -34,6 +34,16 @@
             "exec": [
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
               "if(pm.response.code===200){const s=pm.response.json();pm.environment.set(\"aliceToken\",s.accessToken);pm.environment.set(\"aliceRefresh\",s.refreshToken);pm.environment.set(\"aliceId\",s.user.id);}"
+            ]
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.variables.unset(\"aliceStarterPending\");",
+              "pm.variables.unset(\"aliceStarterDeadline\");"
             ]
           }
         }
@@ -70,6 +80,16 @@
               "if(pm.response.code===200){const s=pm.response.json();pm.environment.set(\"bobToken\",s.accessToken);pm.environment.set(\"bobRefresh\",s.refreshToken);pm.environment.set(\"bobId\",s.user.id);}"
             ]
           }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.variables.unset(\"bobStarterPending\");",
+              "pm.variables.unset(\"bobStarterDeadline\");"
+            ]
+          }
         }
       ]
     },
@@ -94,18 +114,201 @@
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
               "pm.environment.unset(\"alicePrimary\");",
               "pm.environment.unset(\"aliceSecondary\");",
+              "pm.environment.unset(\"aliceNeedsPrimary\");",
               "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
               "  const roster = pm.response.json();",
               "  const owner = pm.environment.get(\"aliceId\");",
-              "  const primary = roster.pets.find(p => p.id === roster.primaryPetId && p.ownerId === owner);",
-              "  const secondary = roster.pets.find(p => p.id !== roster.primaryPetId && p.ownerId === owner && roster.secondaryPetIds.includes(p.id));",
+              "  const owned = roster.pets.filter(p => p.ownerId === owner);",
+              "  pm.variables.set(\"aliceOwnedCount\", owned.length);",
+              "  const pending = pm.variables.get(\"aliceStarterPending\");",
+              "  if (pending !== undefined && owned.length > Number(pending)) pm.variables.unset(\"aliceStarterPending\");",
+              "  if (owned.length < 2) {",
+              "    const deadline = Number(pm.variables.get(\"aliceStarterDeadline\")) || Date.now() + 30000;",
+              "    pm.variables.set(\"aliceStarterDeadline\", deadline);",
+              "    if (Date.now() >= deadline) {",
+              "      pm.test(\"Alice owns two real pets\", () => pm.expect(owned.length, \"Starter provisioning did not supply two pets within 30 seconds.\").to.be.at.least(2));",
+              "      pm.execution.setNextRequest(null);",
+              "    } else if (pm.variables.get(\"aliceStarterPending\") !== undefined) {",
+              "      setTimeout(() => pm.execution.setNextRequest(\"Load alice real pets\"), 300);",
+              "    } else {",
+              "      pm.execution.setNextRequest(\"Read alice package enrollments\");",
+              "    }",
+              "  } else {",
+              "  const selected = owned.find(p => p.id === roster.primaryPetId);",
+              "  const primary = selected || owned[0];",
+              "  const secondary = owned.find(p => p.id !== primary?.id && roster.secondaryPetIds.includes(p.id));",
               "  const valid = Boolean(primary && secondary);",
               "  if (!valid) pm.execution.setNextRequest(null);",
               "  pm.test(\"Alice owns two real pets\", () => pm.expect(valid, \"Battle needs two owned pets. Obtain a second pet through Tamagotchi before running combat; fixture IDs cannot be used in live mode.\").to.eql(true));",
               "  if (valid) {",
+              "    pm.environment.set(\"aliceNeedsPrimary\", String(!selected));",
               "    pm.environment.set(\"alicePrimary\", primary.id);",
               "    pm.environment.set(\"aliceSecondary\", secondary.id);",
+              "    pm.execution.setNextRequest(\"Select alice primary if missing\");",
               "  }",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read alice package enrollments",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{users}}/v1/users/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  pm.variables.set(\"alicePackageIds\", pm.response.json().packageIds);",
+              "  pm.variables.set(\"aliceStarterPackageUrl\", pm.environment.get(\"registry\") + \"/v1/packages?limit=100\");",
+              "  pm.variables.set(\"aliceStarterPages\", 0);",
+              "  pm.variables.unset(\"aliceStarterPackage\");",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Find alice new starter package",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{aliceStarterPackageUrl}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const page = pm.response.json();",
+              "  const enrolled = new Set(pm.variables.get(\"alicePackageIds\"));",
+              "  const candidate = page.items.find(p => p.status === \"active\" && p.configVersion !== null && !enrolled.has(p.id));",
+              "  const pages = Number(pm.variables.get(\"aliceStarterPages\")) + 1;",
+              "  pm.variables.set(\"aliceStarterPages\", pages);",
+              "  if (candidate) {",
+              "    pm.variables.set(\"aliceStarterPackage\", candidate.id);",
+              "  } else if (page.nextCursor && pages < 20 && Date.now() < Number(pm.variables.get(\"aliceStarterDeadline\"))) {",
+              "    pm.variables.set(\"aliceStarterPackageUrl\", pm.environment.get(\"registry\") + \"/v1/packages?limit=100&cursor=\" + encodeURIComponent(page.nextCursor));",
+              "    pm.execution.setNextRequest(\"Find alice new starter package\");",
+              "  } else {",
+              "    pm.test(\"Unenrolled active package available\", () => pm.expect(candidate, \"Publish another configured active package. Existing enrollments cannot recreate captured starters.\").to.be.an(\"object\"));",
+              "    pm.execution.setNextRequest(null);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Enroll alice for a new starter",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{users}}/v1/users/me/packages/{{aliceStarterPackage}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  pm.variables.set(\"aliceStarterPending\", pm.variables.get(\"aliceOwnedCount\"));",
+              "  setTimeout(() => pm.execution.setNextRequest(\"Load alice real pets\"), 300);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Select alice primary if missing",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{tamagotchi}}/v1/pets/primary",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"petId\":\"{{alicePrimary}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get(\"aliceNeedsPrimary\") !== \"true\") pm.execution.skipRequest();"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const roster = pm.response.json();",
+              "  const primary = pm.environment.get(\"alicePrimary\");",
+              "  const secondary = pm.environment.get(\"aliceSecondary\");",
+              "  const owner = pm.environment.get(\"aliceId\");",
+              "  const owned = new Set(roster.pets.filter(p => p.ownerId === owner).map(p => p.id));",
+              "  const valid = roster.primaryPetId === primary && primary !== secondary && owned.has(primary) && owned.has(secondary) && roster.secondaryPetIds.includes(secondary);",
+              "  pm.test(\"Owned battle loadout confirmed\", () => pm.expect(valid).to.eql(true));",
+              "  if (!valid) pm.execution.setNextRequest(null);",
               "}"
             ]
           }
@@ -162,18 +365,201 @@
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
               "pm.environment.unset(\"bobPrimary\");",
               "pm.environment.unset(\"bobSecondary\");",
+              "pm.environment.unset(\"bobNeedsPrimary\");",
               "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
               "  const roster = pm.response.json();",
               "  const owner = pm.environment.get(\"bobId\");",
-              "  const primary = roster.pets.find(p => p.id === roster.primaryPetId && p.ownerId === owner);",
-              "  const secondary = roster.pets.find(p => p.id !== roster.primaryPetId && p.ownerId === owner && roster.secondaryPetIds.includes(p.id));",
+              "  const owned = roster.pets.filter(p => p.ownerId === owner);",
+              "  pm.variables.set(\"bobOwnedCount\", owned.length);",
+              "  const pending = pm.variables.get(\"bobStarterPending\");",
+              "  if (pending !== undefined && owned.length > Number(pending)) pm.variables.unset(\"bobStarterPending\");",
+              "  if (owned.length < 2) {",
+              "    const deadline = Number(pm.variables.get(\"bobStarterDeadline\")) || Date.now() + 30000;",
+              "    pm.variables.set(\"bobStarterDeadline\", deadline);",
+              "    if (Date.now() >= deadline) {",
+              "      pm.test(\"Bob owns two real pets\", () => pm.expect(owned.length, \"Starter provisioning did not supply two pets within 30 seconds.\").to.be.at.least(2));",
+              "      pm.execution.setNextRequest(null);",
+              "    } else if (pm.variables.get(\"bobStarterPending\") !== undefined) {",
+              "      setTimeout(() => pm.execution.setNextRequest(\"Load bob real pets\"), 300);",
+              "    } else {",
+              "      pm.execution.setNextRequest(\"Read bob package enrollments\");",
+              "    }",
+              "  } else {",
+              "  const selected = owned.find(p => p.id === roster.primaryPetId);",
+              "  const primary = selected || owned[0];",
+              "  const secondary = owned.find(p => p.id !== primary?.id && roster.secondaryPetIds.includes(p.id));",
               "  const valid = Boolean(primary && secondary);",
               "  if (!valid) pm.execution.setNextRequest(null);",
               "  pm.test(\"Bob owns two real pets\", () => pm.expect(valid, \"Battle needs two owned pets. Obtain a second pet through Tamagotchi before running combat; fixture IDs cannot be used in live mode.\").to.eql(true));",
               "  if (valid) {",
+              "    pm.environment.set(\"bobNeedsPrimary\", String(!selected));",
               "    pm.environment.set(\"bobPrimary\", primary.id);",
               "    pm.environment.set(\"bobSecondary\", secondary.id);",
+              "    pm.execution.setNextRequest(\"Select bob primary if missing\");",
               "  }",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read bob package enrollments",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          }
+        ],
+        "url": "{{users}}/v1/users/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  pm.variables.set(\"bobPackageIds\", pm.response.json().packageIds);",
+              "  pm.variables.set(\"bobStarterPackageUrl\", pm.environment.get(\"registry\") + \"/v1/packages?limit=100\");",
+              "  pm.variables.set(\"bobStarterPages\", 0);",
+              "  pm.variables.unset(\"bobStarterPackage\");",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Find bob new starter package",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          }
+        ],
+        "url": "{{bobStarterPackageUrl}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const page = pm.response.json();",
+              "  const enrolled = new Set(pm.variables.get(\"bobPackageIds\"));",
+              "  const candidate = page.items.find(p => p.status === \"active\" && p.configVersion !== null && !enrolled.has(p.id));",
+              "  const pages = Number(pm.variables.get(\"bobStarterPages\")) + 1;",
+              "  pm.variables.set(\"bobStarterPages\", pages);",
+              "  if (candidate) {",
+              "    pm.variables.set(\"bobStarterPackage\", candidate.id);",
+              "  } else if (page.nextCursor && pages < 20 && Date.now() < Number(pm.variables.get(\"bobStarterDeadline\"))) {",
+              "    pm.variables.set(\"bobStarterPackageUrl\", pm.environment.get(\"registry\") + \"/v1/packages?limit=100&cursor=\" + encodeURIComponent(page.nextCursor));",
+              "    pm.execution.setNextRequest(\"Find bob new starter package\");",
+              "  } else {",
+              "    pm.test(\"Unenrolled active package available\", () => pm.expect(candidate, \"Publish another configured active package. Existing enrollments cannot recreate captured starters.\").to.be.an(\"object\"));",
+              "    pm.execution.setNextRequest(null);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Enroll bob for a new starter",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{users}}/v1/users/me/packages/{{bobStarterPackage}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  pm.variables.set(\"bobStarterPending\", pm.variables.get(\"bobOwnedCount\"));",
+              "  setTimeout(() => pm.execution.setNextRequest(\"Load bob real pets\"), 300);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Select bob primary if missing",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bobToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{tamagotchi}}/v1/pets/primary",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"petId\":\"{{bobPrimary}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get(\"bobNeedsPrimary\") !== \"true\") pm.execution.skipRequest();"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+              "  const roster = pm.response.json();",
+              "  const primary = pm.environment.get(\"bobPrimary\");",
+              "  const secondary = pm.environment.get(\"bobSecondary\");",
+              "  const owner = pm.environment.get(\"bobId\");",
+              "  const owned = new Set(roster.pets.filter(p => p.ownerId === owner).map(p => p.id));",
+              "  const valid = roster.primaryPetId === primary && primary !== secondary && owned.has(primary) && owned.has(secondary) && roster.secondaryPetIds.includes(secondary);",
+              "  pm.test(\"Owned battle loadout confirmed\", () => pm.expect(valid).to.eql(true));",
+              "  if (!valid) pm.execution.setNextRequest(null);",
               "}"
             ]
           }
@@ -386,8 +772,8 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.variables.set(\"poll_active\", 0);",
-              "pm.variables.set(\"poll_finished\", 0);",
+              "pm.variables.unset(\"poll_active_deadline\");",
+              "pm.variables.unset(\"poll_finished_deadline\");",
               "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
               "if(pm.response.code===201)pm.environment.set(\"battleId\",pm.response.json().id);"
             ]
@@ -460,13 +846,13 @@
               "  pm.execution.setNextRequest(null);",
               "} else {",
               "  const state = pm.response.json();",
-              "  const attempts = Number(pm.variables.get(\"poll_active\") || 0) + 1;",
-              "  pm.variables.set(\"poll_active\", attempts);",
-              "  if (state.status === \"preparing\" && attempts < 30) {",
-              "    pm.execution.setNextRequest(\"Wait for active battle\");",
+              "  const deadline = Number(pm.variables.get(\"poll_active_deadline\")) || Date.now() + 30000;",
+              "  pm.variables.set(\"poll_active_deadline\", deadline);",
+              "  if (state.status === \"preparing\" && Date.now() < deadline) {",
+              "    setTimeout(() => pm.execution.setNextRequest(\"Wait for active battle\"), 300);",
               "  } else {",
               "    if (state.status !== \"active\") pm.execution.setNextRequest(null);",
-              "    pm.test(\"Battle active\", () => pm.expect(state.status, \"Battle did not reach active; runner stopped. Check dependency preparation/settlement and use a 300 ms runner delay.\").to.eql(\"active\"));",
+              "    pm.test(\"Battle active\", () => pm.expect(state.status, \"Battle did not reach active within 30 seconds; runner stopped. Check dependency preparation/settlement.\").to.eql(\"active\"));",
               "  }",
               "}"
             ]
@@ -623,13 +1009,13 @@
               "  pm.execution.setNextRequest(null);",
               "} else {",
               "  const state = pm.response.json();",
-              "  const attempts = Number(pm.variables.get(\"poll_finished\") || 0) + 1;",
-              "  pm.variables.set(\"poll_finished\", attempts);",
-              "  if (state.status === \"settling\" && attempts < 30) {",
-              "    pm.execution.setNextRequest(\"Wait for settlement\");",
+              "  const deadline = Number(pm.variables.get(\"poll_finished_deadline\")) || Date.now() + 30000;",
+              "  pm.variables.set(\"poll_finished_deadline\", deadline);",
+              "  if (state.status === \"settling\" && Date.now() < deadline) {",
+              "    setTimeout(() => pm.execution.setNextRequest(\"Wait for settlement\"), 300);",
               "  } else {",
               "    if (state.status !== \"finished\") pm.execution.setNextRequest(null);",
-              "    pm.test(\"Battle finished\", () => pm.expect(state.status, \"Battle did not reach finished; runner stopped. Check dependency preparation/settlement and use a 300 ms runner delay.\").to.eql(\"finished\"));",
+              "    pm.test(\"Battle finished\", () => pm.expect(state.status, \"Battle did not reach finished within 30 seconds; runner stopped. Check dependency preparation/settlement.\").to.eql(\"finished\"));",
               "  }",
               "}"
             ]
