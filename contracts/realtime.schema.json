@@ -240,7 +240,7 @@
       ]
     },
     "RaidAuthenticate": {
-      "description": "First client frame on a live raid socket. Do not persist or echo the token.",
+      "description": "First client frame on a live raid socket. With socket tickets, accessToken carries the Gateway's single-use socket ticket instead of the player's access token. Do not persist or echo it.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
