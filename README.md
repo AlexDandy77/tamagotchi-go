@@ -68,7 +68,7 @@ Import [one Postman environment](postman/local.postman_environment.json), set `s
 
 Gateway has independent client/service task budgets. [Socket tickets](contracts/socket-tickets.md) are enabled. Guild's chat socket and Monster Raid's live raid socket require them.
 
-The Tamagotchi internal folder is optional: use [the Postman mTLS port override](compose.postman.internal.yaml), trust the local CA and bind the indicated service certificate to each port. These ports all reach Gateway; they select different caller certificates. Deselect this folder for player-only runs.
+The Tamagotchi Postman collection covers player routes only. Internal routes require service mTLS and are not included in that collection; the optional [Postman mTLS port override](compose.postman.internal.yaml) can still be used for separate manual checks. These ports all reach Gateway and select different caller certificates.
 
 `check_lab2.py` checks Compose routing, task-limit settings and image policy without private source access. Passing it does not prove service implementations work: run the smoke checks against compatible releases. See [remaining owner work](ARCHITECTURE.md#integration-checks). Local setup fills an empty `REGISTRY_ADMIN_USER_IDS` with seeded Alice's ID and preserves explicit settings. Each destination has one base URL: `REGISTRY_URL`, `TAMAGOTCHI_URL`, `USER_MANAGEMENT_URL`, `GUILD_URL` or `MONSTER_RAID_URL`. Services append public or internal endpoint paths; authentication keys come from the User Management base plus `/.well-known/jwks.json`. Owners must update their configuration readers to these names; Compose no longer supplies the old aliases. There is no bearer-forwarding or direct REST fallback.
 
