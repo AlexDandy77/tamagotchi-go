@@ -44,15 +44,22 @@ class SetupTests(unittest.TestCase):
         self.assertIn("notification", lab.TLS_SERVICES)
         self.assertIn("notification", lab.NON_ROOT_SERVICES)
 
+    def test_service_discovery_gets_a_readable_certificate_and_its_image_refreshes(self):
+        self.assertIn("service-discovery", lab.TLS_SERVICES)
+        self.assertIn("service-discovery", lab.NON_ROOT_SERVICES)
+        self.assertEqual(lab.IMAGES, (*lab.SERVICES, "gateway", "service-discovery"))
+        # It has no database, so setup neither migrates nor seeds it.
+        self.assertNotIn("service-discovery", lab.SERVICES)
+
 class StartupImagesTests(unittest.TestCase):
     def test_startup_refreshes_all_service_repositories_and_preserves_credentials(self):
         values = {s.upper().replace('-', '_') + '_IMAGE': 'registry:5000/team/' + s + ':2.0.0'
-                  for s in (*lab.SERVICES, 'gateway')}
+                  for s in lab.IMAGES}
         values['SEED_PASSWORD'] = 'never-display-this'
         output = io.StringIO()
         with patch.object(lab, 'environment', return_value=values), patch.object(lab, 'compose') as compose, patch.dict(os.environ, {}, clear=True), contextlib.redirect_stdout(output):
             lab.refresh_images()
-            for s in (*lab.SERVICES, 'gateway'):
+            for s in lab.IMAGES:
                 self.assertEqual(os.environ[s.upper().replace('-', '_') + '_IMAGE'], 'registry:5000/team/' + s + ':latest')
             self.assertNotIn('SEED_PASSWORD', os.environ)
             compose.assert_called_once_with('pull', '--policy', 'always')

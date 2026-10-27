@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVICES = (
     'user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification',
 )
+# Every published image startup refreshes: the services, Gateway and Service Discovery.
+IMAGES = (*SERVICES, 'gateway', 'service-discovery')
 # Topic -> Kafka principal allowed to produce it.
 TOPICS = {
     'user.package-registered.v1': 'users',
@@ -57,9 +59,9 @@ SECRET_KEYS = (
     'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD',
 )
 # Prepare every service certificate; owners mount them when enabling Gateway transport.
-TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway')
+TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery')
 # These images run as an unprivileged user that must read its bind-mounted key.
-NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway')
+NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery')
 # Already required by Compose; provides the openssl CLI so the host needs no OpenSSL.
 TOOLS_IMAGE = 'postgres:17.9'
 TLS_SCRIPT = r'''set -eu
@@ -227,7 +229,7 @@ def topics():
 def refresh_images():
     """Use the configured repositories' latest service images on every startup."""
     values = environment()
-    for service in (*SERVICES, 'gateway'):
+    for service in IMAGES:
         key = service.upper().replace('-', '_') + '_IMAGE'
         image = values.get(key)
         if not image:
