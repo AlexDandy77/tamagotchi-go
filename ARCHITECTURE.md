@@ -89,22 +89,20 @@ Do not create fake production pets, forward bearer tokens or bypass Gateway to h
 Lab 3 scales the deployment horizontally. This is the agreed target; the running environment above changes when the Compose integration lands, and owners adopt it one service at a time. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
 
 ```mermaid
-flowchart LR
+flowchart TB
   P[Player / Postman] -->|REST :8080| GW[Gateway: round-robin and circuit breakers]
   P -->|negotiated socket :8084 / :8085 / :8086| MR
+  GW <-->|pools every 2 s / eject tripped instances| SD[Service Discovery]
+  GW -->|mTLS to the next available instance| MP & MR
+  GW -->|static upstream until they register| O[Other services]
   subgraph MP[Map x3]
     M1[map] ~~~ M2[map] ~~~ M3[map]
   end
   subgraph MR[Monster Raid x3]
     R1[monster-raid] ~~~ R2[monster-raid-2] ~~~ R3[monster-raid-3]
   end
-  GW -->|mTLS to the next available instance| MP & MR
-  MP & MR -->|REST dependencies| GW
-  MP & MR -.->|register, heartbeat every 5 s| SD[Service Discovery]
-  SD -.->|poll /status every 5 s| MP & MR
-  GW -->|read pools every 2 s, eject tripped instances| SD
+  MP & MR <-.->|register and heartbeat / status polls, every 5 s| SD
   SD -->|alerts| TG["Telegram (developers' chat)"]
-  GW -->|static upstream until they register| O[Other services]
   MP & MR --> DB[(PostgreSQL: one leader runs workers and relays)]
 ```
 
@@ -112,7 +110,7 @@ flowchart LR
 | --- | --- |
 | Service Discovery | Python registry of live instances with 15-second leases. It polls every instance's `/status`, drops unhealthy and quarantined instances from the pools, and logs alerts and sends them to Telegram. It keeps no database; heartbeats rebuild the registry after a restart. |
 | Gateway | Reads the pools, sends each REST request to the next available instance and reports `X-Served-By`. A per-instance breaker (3 failures within 3.5 × the task timeout) ejects an instance. `GET`/`HEAD` may move to the next instance; mutations are never retried. Socket negotiation rotates through the registered socket URLs. |
-| Services | Register on startup, renew every 5 seconds and deregister on shutdown. They serve `/status` with their task load, and break their own dependency calls per destination. Background workers and outbox relays run on one leader chosen with a PostgreSQL advisory lock. |
+| Services | Register on startup, renew every 5 seconds and deregister on shutdown. They serve `/status` with their task load, and break their own dependency calls, which still go through Gateway, per destination. Background workers and outbox relays run on one leader chosen with a PostgreSQL advisory lock. |
 
 A request reaches an instance like this:
 
