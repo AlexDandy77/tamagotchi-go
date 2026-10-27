@@ -2,11 +2,11 @@
 
 ## Running environment
 
-One `compose.yaml` runs the existing project: Python Gateway, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
+One `compose.yaml` runs the existing project: a Python API Gateway, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
 
 ```mermaid
 flowchart LR
-  P[Player / Postman] -->|REST :8080| GW[Python Gateway]
+  P[Player / Postman] -->|REST :8080| GW[API Gateway]
   GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go] & MP[Map / Go] & MR[Monster Raid / Go]
   GW -->|mTLS + signed identity| G[Guild / TypeScript] & R[Registry / TypeScript] & T[Tamagotchi / TypeScript] & N[Notification / TypeScript]
   U & B & MP & MR & G & R & T & N -->|REST dependencies| GW
@@ -84,6 +84,43 @@ Do not create fake production pets, forward bearer tokens or bypass Gateway to h
 3. Follow [Gateway transport contract](contracts/gateway.md), update the route catalog from OpenAPI, and configure Kafka topics/ACLs for its events.
 4. Run `setup`, `provision`, migrations and seeds on the existing volumes. Publish merged service commits with versioned and latest tags, then update Gateway routing and submodule pointers through a common PR.
 
+## Scaling with Service Discovery
+
+Lab 3 scales the deployment horizontally. This is the agreed target; the running environment above changes when the Compose integration lands, and owners adopt it one service at a time. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
+
+```mermaid
+flowchart TB
+  P[Player / Postman] -->|REST :8080| GW[API Gateway: round-robin and circuit breakers]
+  P -->|negotiated socket :8084 / :8085 / :8086| MR
+  GW <-->|pools every 2 s / eject tripped instances| SD[Service Discovery]
+  GW -->|mTLS to the next available instance| MP & MR
+  GW -->|static upstream until they register| O[Other services]
+  subgraph MP[Map x3]
+    M1[map] ~~~ M2[map] ~~~ M3[map]
+  end
+  subgraph MR[Monster Raid x3]
+    R1[monster-raid] ~~~ R2[monster-raid-2] ~~~ R3[monster-raid-3]
+  end
+  MP & MR <-.->|register and heartbeat / status polls, every 5 s| SD
+  SD -->|alerts| TG["Telegram (developers' chat)"]
+  MP & MR --> DB[(PostgreSQL: one leader runs workers and relays)]
+```
+
+| Component | Responsibility |
+| --- | --- |
+| Service Discovery | Registry of live instances with 15-second leases. It polls every instance's `/status`, drops unhealthy and quarantined instances from the pools, and logs alerts and sends them to Telegram. It keeps no database; heartbeats rebuild the registry after a restart. |
+| API Gateway | Reads the pools, sends each REST request to the next available instance and reports `X-Served-By`. A per-instance breaker (3 failures within 3.5 × the task timeout) ejects an instance. `GET`/`HEAD` may move to the next instance; mutations are never retried. Socket negotiation rotates through the registered socket URLs. |
+| Services | Register on startup, renew every 5 seconds and deregister on shutdown. They serve `/status` with their task load, and break their own dependency calls, which still go through Gateway, per destination. Background workers and outbox relays run on one leader chosen with a PostgreSQL advisory lock. |
+
+A request reaches an instance like this:
+
+1. An instance opens its listeners and registers. Service Discovery records the mTLS peer address under the certificate's service name.
+2. Gateway's next pool refresh adds the instance. Requests rotate through every available instance, and each replica's certificate is verified against the service name.
+3. A stopped instance stops renewing and leaves the pools within one lease. An instance that keeps failing trips Gateway's breaker and is ejected at once; it returns only after three healthy status polls.
+4. Load at or above 80% of an instance's task slots, an unhealthy instance, an ejection or an expired lease raises an alert. Its recovery is reported too.
+
+While Service Discovery is unreachable, Gateway keeps the last pools it read. Services that have not adopted registration still use their static Compose name.
+
 ## Future full-system architecture
 
 The following agreed design is the team's target architecture. The running deployment is described above; remaining integrations are listed under Integration checks.
@@ -93,7 +130,7 @@ The following agreed design is the team's target architecture. The running deplo
 
 ![Shared backend architecture](images/architecture.png)
 
-Client apps reach every service through a single **API Gateway**, and each service owns its database and credentials: MongoDB for Package Registry, PostgreSQL for the other seven services. Services never share a database. Neither of these is drawn as a separate box per service in the diagram above but both apply to all eight backend services. Direct sockets are used for Guild chat and Monster Raid live updates. For Guild chat, client apps hold a direct WebSocket connection to Guild Service for real-time messages, shown as the green line bypassing the gateway. Firebase Cloud Messaging is also reached directly by client apps for push delivery, independent of the gateway.
+Client apps reach every service through a single **API Gateway**, and each service owns its database and credentials: MongoDB for Package Registry, PostgreSQL for the other seven services. Services never share a database. Neither of these is drawn as a separate box per service in the diagram above but both apply to all eight backend services. Gateway balances each service's requests across its running instances in round-robin order, using the instance pools from **Service Discovery**, which also checks every instance's health and alerts the developers through Telegram (see [Scaling with Service Discovery](#scaling-with-service-discovery)). Direct sockets are used for Guild chat and Monster Raid live updates. For Guild chat, client apps hold a direct WebSocket connection to Guild Service for real-time messages, shown as the green line bypassing the gateway. Firebase Cloud Messaging is also reached directly by client apps for push delivery, independent of the gateway.
 
 Black arrows show logical HTTP dependencies between services; Gateway carries their REST traffic. Orange arrows are events flowing through Kafka.
 

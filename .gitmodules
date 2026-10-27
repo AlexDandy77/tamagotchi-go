@@ -25,3 +25,6 @@
 [submodule "services/gateway"]
 	path = services/gateway
 	url = https://github.com/AlexDandy77/pad-team-8-gateway.git
+[submodule "services/service-discovery"]
+	path = services/service-discovery
+	url = https://github.com/AlexDandy77/pad-team-8-service-discovery.git
