@@ -116,11 +116,16 @@ def stop_one_map_replica(token):
 def pause_one_raid_replica(token, since):
     lab.compose('pause', PAUSED)
     try:
-        # Round robin sends a third of these reads to the paused replica; three of them
-        # outlive the task deadline within one breaker window and trip its breaker.
+        # Round robin sends about a third of each batch to the paused replica, where the reads
+        # outlive the task deadline. Gateway's readiness probes take turns too, so batches
+        # repeat until three timeouts within one breaker window trip its breaker.
         reads = 3 * REPLICAS['monster-raid']
-        with concurrent.futures.ThreadPoolExecutor(reads) as executor:
-            statuses = list(executor.map(lambda _: call(f'{RAIDS}/v1/raids?guildId={NIGHT_OWLS}', token)[0], range(reads)))
+        statuses = []
+        for _ in range(3):
+            with concurrent.futures.ThreadPoolExecutor(reads) as executor:
+                statuses += executor.map(lambda _: call(f'{RAIDS}/v1/raids?guildId={NIGHT_OWLS}', token)[0], range(reads))
+            if gateway_status()['circuits'].get('monster-raid/' + PAUSED) == 'open':
+                break
         assert 504 in statuses, f'No read reached the paused replica: {statuses}'
         status = gateway_status()
         assert status['circuits'].get('monster-raid/' + PAUSED) == 'open', f'The breaker of {PAUSED} is {status["circuits"].get("monster-raid/" + PAUSED)}'
