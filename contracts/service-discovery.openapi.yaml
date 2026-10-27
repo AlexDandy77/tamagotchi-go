@@ -1,0 +1,257 @@
+openapi: 3.1.0
+info:
+  title: Tamagotchi Go Service Discovery
+  version: 1.0.0
+  description: >-
+    Instance registry, health monitor and alerts. The registry routes use the
+    mutual TLS listener; the caller's service name is its certificate DNS SAN and
+    the instance address is the TLS peer IP. The Status schema is also served by
+    every service, Gateway and Service Discovery at GET /status. Rules are in
+    service-discovery.md.
+servers:
+  - url: https://service-discovery:8443
+paths:
+  /healthz:
+    get:
+      operationId: discoveryHealth
+      responses:
+        '200':
+          description: Process is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {const: ok}
+  /readyz:
+    get:
+      operationId: discoveryReady
+      responses:
+        '200':
+          description: Listeners and the health monitor are running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {const: ready}
+        '503': {$ref: '#/components/responses/Error'}
+  /status:
+    get:
+      operationId: discoveryStatus
+      description: The status every service serves. Takes no task slot and never returns secrets.
+      responses:
+        '200':
+          description: Current instance status; reading it resets load.peakInFlight
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Status'}
+  /v1/services:
+    get:
+      operationId: listServiceInstances
+      description: Available instances per service. Only Gateway may call it.
+      security:
+        - serviceTLS: []
+      x-allowed-callers: [gateway]
+      responses:
+        '200':
+          description: Expired, unhealthy and ejected instances are left out
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [services]
+                properties:
+                  services:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items: {$ref: '#/components/schemas/Instance'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
+  /v1/services/{service}/instances/{instanceId}:
+    parameters:
+      - $ref: '#/components/parameters/Service'
+      - $ref: '#/components/parameters/InstanceId'
+    put:
+      operationId: registerInstance
+      description: >-
+        Register or renew one instance. The caller's certificate SAN must equal
+        the service. Repeat every heartbeatSeconds; an unknown instance is
+        registered again.
+      security:
+        - serviceTLS: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Registration'}
+      responses:
+        '200':
+          description: Instance renewed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RegisteredInstance'}
+        '201':
+          description: Instance registered
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RegisteredInstance'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deregisterInstance
+      description: Remove one instance on graceful shutdown. The caller's certificate SAN must equal the service. Repeating it is harmless.
+      security:
+        - serviceTLS: []
+      responses:
+        '204': {description: Instance removed or already absent}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
+  /v1/services/{service}/instances/{instanceId}/eject:
+    parameters:
+      - $ref: '#/components/parameters/Service'
+      - $ref: '#/components/parameters/InstanceId'
+    post:
+      operationId: ejectInstance
+      description: >-
+        Gateway reports a tripped circuit breaker. The instance stays out of every
+        pool until three consecutive healthy status polls, and at least one breaker
+        window has passed.
+      security:
+        - serviceTLS: []
+      x-allowed-callers: [gateway]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Ejection'}
+      responses:
+        '200':
+          description: Instance quarantined
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RegisteredInstance'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    serviceTLS:
+      type: mutualTLS
+      description: CA-signed service certificate; the DNS SAN names the caller.
+  parameters:
+    Service:
+      name: service
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/ServiceName'}
+    InstanceId:
+      name: instanceId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/InstanceId'}
+  schemas:
+    ServiceName:
+      type: string
+      enum: [gateway, user-management, battle, guild, package-registry, tamagotchi, notification, map, monster-raid]
+    InstanceId:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9-]{0,62}$'
+    Registration:
+      type: object
+      additionalProperties: false
+      required: [port, version]
+      properties:
+        port: {type: integer, minimum: 1, maximum: 65535, description: The instance's mTLS listener port}
+        version: {type: string, minLength: 1, maxLength: 64}
+        socketUrl: {type: string, pattern: '^wss?://[^/?#@]+$', description: Public WebSocket origin of this instance, without a path}
+    Instance:
+      type: object
+      additionalProperties: false
+      required: [instanceId, url, version]
+      properties:
+        instanceId: {$ref: '#/components/schemas/InstanceId'}
+        url: {type: string, pattern: '^https://', description: 'https://{peer IP}:{port}; verify the certificate against the service name'}
+        socketUrl: {type: string, pattern: '^wss?://'}
+        version: {type: string}
+    RegisteredInstance:
+      type: object
+      additionalProperties: false
+      required: [service, instanceId, url, version, state, registeredAt, renewedAt, leaseSeconds, heartbeatSeconds]
+      properties:
+        service: {$ref: '#/components/schemas/ServiceName'}
+        instanceId: {$ref: '#/components/schemas/InstanceId'}
+        url: {type: string, pattern: '^https://'}
+        socketUrl: {type: string, pattern: '^wss?://'}
+        version: {type: string}
+        state: {enum: [available, unhealthy, ejected]}
+        registeredAt: {type: string, format: date-time}
+        renewedAt: {type: string, format: date-time}
+        leaseSeconds: {type: integer, minimum: 1}
+        heartbeatSeconds: {type: integer, minimum: 1}
+    Ejection:
+      type: object
+      additionalProperties: false
+      required: [reason, failures, windowSeconds]
+      properties:
+        reason: {const: circuit-breaker}
+        failures: {type: integer, minimum: 1}
+        windowSeconds: {type: number, exclusiveMinimum: 0}
+    Status:
+      type: object
+      required: [service, instanceId, version, status, uptimeSeconds, load, checks, circuits]
+      properties:
+        service: {anyOf: [{$ref: '#/components/schemas/ServiceName'}, {const: service-discovery}]}
+        instanceId: {$ref: '#/components/schemas/InstanceId'}
+        version: {type: string}
+        status: {enum: [ok, degraded]}
+        uptimeSeconds: {type: integer, minimum: 0}
+        load:
+          type: object
+          additionalProperties: false
+          required: [inFlight, peakInFlight, capacity, percent]
+          properties:
+            inFlight: {type: integer, minimum: 0}
+            peakInFlight: {type: integer, minimum: 0, description: Highest inFlight since the previous status read}
+            capacity: {type: integer, minimum: 1}
+            percent: {type: integer, minimum: 0, maximum: 100}
+        checks:
+          type: object
+          additionalProperties: {enum: [ok, failed]}
+        circuits:
+          type: object
+          additionalProperties: {enum: [closed, open, halfOpen]}
+  responses:
+    Error:
+      description: Common service error envelope
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message, requestId, details]
+                properties:
+                  code: {type: string}
+                  message: {type: string}
+                  requestId: {type: string, format: uuid}
+                  details: {type: array, items: {}}
