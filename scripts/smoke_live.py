@@ -115,8 +115,10 @@ def main():
     check('Kafka enrollment projection', projection)
 
     config = request(REGISTRY, 'GET', f'/v1/packages/{PACKAGE}/configurations/1')
+    # The roster has a pet per enrolled package and its order is not part of the contract.
+    starter = next(p for p in rosters[0]['pets'] if p['packageId'] == PACKAGE)
     def starter_rules():
-        pet = rosters[0]['pets'][0]
+        pet = starter
         assert pet['name'] == config['starter']['name'] and pet['packageStats'] == {
             n: v['initial'] for n, v in config['statistics'].items()
         }, 'Tamagotchi starter does not match Registry configuration'
@@ -149,7 +151,7 @@ def main():
     check('Guild membership and Kafka notification', invitation)
 
     def care():
-        pet = rosters[0]['pets'][0]
+        pet = starter
         before = request(USERS, 'GET', '/v1/wallet', token=a)
         request(PETS, 'POST', f"/v1/pets/{pet['id']}/care", {'actionId': 'feed', 'expectedVersion': pet['version']}, a, key())
         eventually(lambda: request(USERS, 'GET', '/v1/wallet', token=a), lambda x: x != before,
