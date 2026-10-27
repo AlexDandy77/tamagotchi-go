@@ -48,6 +48,28 @@
           ]
         },
         {
+          "name": "Gateway status (pools and breakers)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test(\"Map and Monster Raid pools come from Service Discovery\", () => {for (const name of [\"map\", \"monster-raid\"]) {pm.expect(s.pools[name].source).to.eql(\"service-discovery\"); pm.expect(s.pools[name].instances.length).to.be.at.least(2);}});",
+                  "pm.test(\"Load and breakers are reported\", () => {pm.expect(s.load).to.include.keys(\"inFlight\", \"peakInFlight\", \"capacity\", \"percent\"); pm.expect(s.circuits).to.be.an(\"object\");});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Login alice",
           "request": {
             "method": "POST",
