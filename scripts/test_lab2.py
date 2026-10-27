@@ -77,3 +77,13 @@ class DeploymentTests(unittest.TestCase):
         config = compliant()
         del config['services']['gateway']['environment']['MAX_CONCURRENT_SERVICE_TASKS']
         self.assertIn('gateway: service task budget is not configured', audit(config))
+
+    def test_only_the_service_discovery_control_plane_may_skip_the_gateway(self):
+        config = compliant()
+        config['services']['map']['environment']['SERVICE_DISCOVERY_URL'] = 'https://service-discovery:8443'
+        self.assertEqual(audit(config), [])
+        config['services']['map']['environment']['SERVICE_DISCOVERY_URL'] = 'https://service-discovery:9443'
+        config['services']['battle']['environment']['GUILD_URL'] = 'https://service-discovery:8443'
+        failures = audit(config)
+        self.assertIn('map: SERVICE_DISCOVERY_URL bypasses Gateway', failures)
+        self.assertIn('battle: GUILD_URL bypasses Gateway', failures)
