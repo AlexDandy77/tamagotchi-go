@@ -25,7 +25,7 @@ Each service lives in its own private repository, linked under [`services/`](ser
 
 ## Architecture
 
-[ARCHITECTURE.md](ARCHITECTURE.md) describes containers, storage, service ownership and Gateway communication. This is one project and one Compose deployment; new services extend the existing setup.
+[ARCHITECTURE.md](ARCHITECTURE.md) describes containers, storage, service ownership, Gateway communication and [scaling with Service Discovery](ARCHITECTURE.md#scaling-with-service-discovery). This is one project and one Compose deployment; new services extend the existing setup.
 
 ## Run locally
 

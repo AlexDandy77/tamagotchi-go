@@ -84,6 +84,45 @@ Do not create fake production pets, forward bearer tokens or bypass Gateway to h
 3. Follow [Gateway transport contract](contracts/gateway.md), update the route catalog from OpenAPI, and configure Kafka topics/ACLs for its events.
 4. Run `setup`, `provision`, migrations and seeds on the existing volumes. Publish merged service commits with versioned and latest tags, then update Gateway routing and submodule pointers through a common PR.
 
+## Scaling with Service Discovery
+
+Lab 3 scales the deployment horizontally. This is the agreed target; the running environment above changes when the Compose integration lands, and owners adopt it one service at a time. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
+
+```mermaid
+flowchart LR
+  P[Player / Postman] -->|REST :8080| GW[Gateway: round-robin and circuit breakers]
+  P -->|negotiated socket :8084 / :8085 / :8086| MR
+  subgraph MP[Map x3]
+    M1[map] ~~~ M2[map] ~~~ M3[map]
+  end
+  subgraph MR[Monster Raid x3]
+    R1[monster-raid] ~~~ R2[monster-raid-2] ~~~ R3[monster-raid-3]
+  end
+  GW -->|mTLS to the next available instance| MP & MR
+  MP & MR -->|REST dependencies| GW
+  MP & MR -.->|register, heartbeat every 5 s| SD[Service Discovery]
+  SD -.->|poll /status every 5 s| MP & MR
+  GW -->|read pools every 2 s, eject tripped instances| SD
+  SD -->|alerts| TG["Telegram (developers' chat)"]
+  GW -->|static upstream until they register| O[Other services]
+  MP & MR --> DB[(PostgreSQL: one leader runs workers and relays)]
+```
+
+| Component | Responsibility |
+| --- | --- |
+| Service Discovery | Python registry of live instances with 15-second leases. It polls every instance's `/status`, drops unhealthy and quarantined instances from the pools, and logs alerts and sends them to Telegram. It keeps no database; heartbeats rebuild the registry after a restart. |
+| Gateway | Reads the pools, sends each REST request to the next available instance and reports `X-Served-By`. A per-instance breaker (3 failures within 3.5 × the task timeout) ejects an instance. `GET`/`HEAD` may move to the next instance; mutations are never retried. Socket negotiation rotates through the registered socket URLs. |
+| Services | Register on startup, renew every 5 seconds and deregister on shutdown. They serve `/status` with their task load, and break their own dependency calls per destination. Background workers and outbox relays run on one leader chosen with a PostgreSQL advisory lock. |
+
+A request reaches an instance like this:
+
+1. An instance opens its listeners and registers. Service Discovery records the mTLS peer address under the certificate's service name.
+2. Gateway's next pool refresh adds the instance. Requests rotate through every available instance, and each replica's certificate is verified against the service name.
+3. A stopped instance stops renewing and leaves the pools within one lease. An instance that keeps failing trips Gateway's breaker and is ejected at once; it returns only after three healthy status polls.
+4. Load at or above 80% of an instance's task slots, an unhealthy instance, an ejection or an expired lease raises an alert. Its recovery is reported too.
+
+While Service Discovery is unreachable, Gateway keeps the last pools it read. Services that have not adopted registration still use their static Compose name.
+
 ## Future full-system architecture
 
 The following agreed design is the team's target architecture. The running deployment is described above; remaining integrations are listed under Integration checks.
