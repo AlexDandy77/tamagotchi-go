@@ -2,16 +2,19 @@
 
 ## Running environment
 
-One `compose.yaml` runs the existing project: a Python API Gateway, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
+One `compose.yaml` runs the existing project: a Python API Gateway, Python Service Discovery, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. Map and Monster Raid run three replicas each. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
 
 ```mermaid
 flowchart LR
   P[Player / Postman] -->|REST :8080| GW[API Gateway]
-  GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go] & MP[Map / Go] & MR[Monster Raid / Go]
+  GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go] & MP[Map x3 / Go] & MR[Monster Raid x3 / Go]
   GW -->|mTLS + signed identity| G[Guild / TypeScript] & R[Registry / TypeScript] & T[Tamagotchi / TypeScript] & N[Notification / TypeScript]
   U & B & MP & MR & G & R & T & N -->|REST dependencies| GW
+  GW <-->|pools / ejections| SD[Service Discovery / Python]
+  MP & MR -.->|register, heartbeat / status polls| SD
+  SD -->|alerts| TG[Telegram]
   P -->|Negotiated direct WebSocket :8087| G
-  P -->|Negotiated direct WebSocket :8084| MR
+  P -->|Negotiated direct WebSocket :8084-8086| MR
   U --> Users[(PostgreSQL users)]
   B --> Battles[(PostgreSQL battles)]
   MP --> Locations[(PostgreSQL locations)]
@@ -29,11 +32,12 @@ The diagram shows the required deployment. Gateway routing is configured for eve
 
 | Container | Responsibility | Storage |
 | --- | --- | --- |
-| Gateway | REST routing, JWT verification, signed identities, deadlines and WebSocket negotiation | None |
+| Gateway | REST routing, round-robin balancing, circuit breakers, JWT verification, signed identities, deadlines and WebSocket negotiation | None |
+| Service Discovery | Instance registry, health polling and alerts | None; rebuilt from heartbeats |
 | User Management | Accounts, relationships, enrollments, wallets and rewards | PostgreSQL `users` |
 | Battle | Challenges, turns, deadlines, outcomes and settlement | PostgreSQL `battles` |
-| Map | Locations and nearby encounters | PostgreSQL `locations` |
-| Monster Raid | Raids, participants, attacks and rewards | PostgreSQL `raids` |
+| Map, three replicas | Locations and nearby encounters | PostgreSQL `locations` |
+| Monster Raid: `monster-raid`, `-2`, `-3` | Raids, participants, attacks and rewards | PostgreSQL `raids` |
 | Guild | Membership, invitations, roles and chat | PostgreSQL `guilds` |
 | Package Registry | Packages, configurations, rules, monsters and schedules | MongoDB `registry` |
 | Tamagotchi | Pets, care, XP, reservations and ownership | PostgreSQL `tamagotchi` |
@@ -50,9 +54,11 @@ Use one base URL per REST destination, for both `/v1` and `/internal/v1` routes.
 
 Gateway separately bounds client and authenticated-service traffic, 64 requests each by default. Nested service calls retain capacity when client slots are full. Socket ticket issuance is enabled, and Guild's chat socket and Monster Raid's live raid socket both require the tickets. See [the handoff](contracts/socket-tickets.md).
 
-Only Guild and Monster Raid publish additional ports, for direct sockets negotiated through Gateway. Their socket listeners must reject direct business REST. PostgreSQL, MongoDB, Kafka and internal mTLS ports stay private.
+Only Guild and the Monster Raid replicas publish additional ports, for direct sockets negotiated through Gateway: Guild 8087 and Monster Raid 8084, 8085 and 8086. Each Monster Raid replica registers its own socket URL. Their socket listeners must reject direct business REST. PostgreSQL, MongoDB, Kafka, Service Discovery and internal mTLS ports stay private.
 
-Setup creates development certificates in ignored `.secrets/tls`. Each service receives its own key, the CA and Gateway's public certificate. Replace expired bundles together and restart all services. Compose fits the single-PC presentation; the databases and broker are single-node development infrastructure.
+Gateway, Map and Monster Raid set `SERVICE_DISCOVERY_URL=https://service-discovery:8443` and call it directly for registration, heartbeats and pool reads. Gateway reads its routes from it, so this control plane cannot pass through Gateway; `check_lab2.py` allows exactly this URL and no other direct REST.
+
+Setup creates development certificates in ignored `.secrets/tls`. Each service receives its own key, the CA and Gateway's public certificate; replicas share their service's certificate. Replace expired bundles together and restart all services. Adding a service, as Service Discovery was added, makes `setup` replace the whole bundle; run `down` and `up` afterwards so every container mounts the new files. Compose fits the single-PC presentation; the databases and broker are single-node development infrastructure.
 
 ## Ownership and durability
 
@@ -72,8 +78,9 @@ The lab is not complete until all published images pass the shared deployment te
 | Guild, Package Registry | Published `latest` images support Gateway transport; the live workflow verifies package configuration, enrollment projection, guild membership and raid dispatch. |
 | Tamagotchi, Notification | Published `latest` images support Gateway identity, limits and the single URL settings. The live workflow verifies Registry-backed starter/care rules, User Management rewards, enrollment checks, pet reservations and settlements. Notification uses explicit local Firebase logging. |
 | Shared runtime | All REST URLs now use Gateway; readiness checks every destination. `up` pulls latest before migrations and stops if an image is unavailable. |
+| Scaling | Service Discovery, three Map and three Monster Raid replicas run in Compose; Gateway balances and ejects them. The other services keep their static upstream until they register. |
 
-Run `scripts/check_lab2.py` for configuration checks, `scripts/smoke_gateway.py` for authentication and Battle-to-User-Management routing, then the service smoke scripts and `scripts/smoke_live.py` for real workflows. Full-team success cannot be claimed from the isolated service tests.
+Run `scripts/check_lab2.py` and `scripts/check_lab3.py` for configuration checks, `scripts/smoke_gateway.py` for authentication and Battle-to-User-Management routing, `scripts/smoke_discovery.py` for registration, round robin and per-replica sockets, then the service smoke scripts and `scripts/smoke_live.py` for real workflows. `smoke_discovery.py --disruptive` stops and pauses replicas to show them leave and rejoin, and `scripts/load_discovery.py` raises a load alert. Full-team success cannot be claimed from the isolated service tests.
 
 Do not create fake production pets, forward bearer tokens or bypass Gateway to hide integration failures. Notification's external Firebase delivery remains an explicit local mock. Fresh accounts start with zero currency; Alice/Bob use local `SEED_PASSWORD`. Existing records are preserved.
 
@@ -86,7 +93,7 @@ Do not create fake production pets, forward bearer tokens or bypass Gateway to h
 
 ## Scaling with Service Discovery
 
-Lab 3 scales the deployment horizontally. This is the agreed target; the running environment above changes when the Compose integration lands, and owners adopt it one service at a time. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
+Lab 3 scales the deployment horizontally. Compose runs Service Discovery and three replicas each of Map and Monster Raid; the other owners adopt registration one service at a time. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
 
 ```mermaid
 flowchart TB

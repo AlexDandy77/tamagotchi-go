@@ -34,10 +34,11 @@ Requires Docker Compose v2 and Python 3. Published images run without access to 
 | Service | Docker Hub image | REST access |
 | --- | --- | --- |
 | Gateway | `alexdandy77/pad-team-8-gateway:latest` | `http://localhost:8080` |
+| Service Discovery | `alexdandy77/pad-team-8-service-discovery:latest` | None; instances and Gateway call it over mTLS inside Compose |
 | User Management | `alexdandy77/pad-team-8-user-management:latest` | Gateway `/services/user-management` |
 | Battle | `alexdandy77/pad-team-8-battle:latest` | Gateway `/services/battle` |
-| Map | `ralex225/pad-team-8-map:latest` | Gateway `/services/map` |
-| Monster Raid | `ralex225/pad-team-8-monster-raid:latest` | Gateway `/services/monster-raid`; negotiated live socket on 8084 |
+| Map | `ralex225/pad-team-8-map:latest` | Gateway `/services/map`; three replicas |
+| Monster Raid | `ralex225/pad-team-8-monster-raid:latest` | Gateway `/services/monster-raid`; three replicas with negotiated live sockets on 8084, 8085 and 8086 |
 | Guild | `xnikug/pad-team-8-guild:latest` | Gateway `/services/guild`; direct WebSocket on 8087 |
 | Package Registry | `xnikug/pad-team-8-package-registry:latest` | Gateway `/services/package-registry` |
 | Tamagotchi | `arturtugui/pad-team-8-tamagotchi:latest` | Gateway `/services/tamagotchi` |
@@ -50,13 +51,15 @@ python3 scripts/lab.py setup
 python3 scripts/lab.py up
 python3 scripts/lab.py status
 python3 scripts/check_lab2.py
+python3 scripts/check_lab3.py
 python3 scripts/smoke_gateway.py
+python3 scripts/smoke_discovery.py
 python3 scripts/smoke_live.py
 ```
 
 `setup` generates missing credentials and certificates. `up` checks and pulls every service repository's `latest` image before changing containers, then provisions databases/topics, migrates, seeds and starts the deployment. The Battle and Tamagotchi collections obtain a second starter through enrollment in another configured active package; Tamagotchi uses it to exercise changing the primary pet. Battle also selects an owned primary if capture cleared it, and each player needs at least 10 available global coins earned through raids. Combat changes pet ownership; seeding does not reset it. Failed pulls stop startup; stale cached images are not a fallback. Direct `docker compose up` also checks image updates. `down` retains all data.
 
-All client REST URLs are `http://localhost:8080/services/{service}/{original-path}`. Services call `https://gateway:8443/services/{destination}` with their certificates. Gateway verifies tokens, removes Authorization and sends a signed identity; each destination checks permissions. Only Gateway exposes REST. Guild port 8087 and Monster Raid port 8084 are reserved for negotiated direct WebSockets; their implementations must reject direct business REST. Databases and Kafka remain direct.
+All client REST URLs are `http://localhost:8080/services/{service}/{original-path}`. Services call `https://gateway:8443/services/{destination}` with their certificates. Gateway verifies tokens, removes Authorization and sends a signed identity; each destination checks permissions. Only Gateway exposes REST. Guild port 8087 and Monster Raid ports 8084 to 8086, one per replica, are reserved for negotiated direct WebSockets; their implementations must reject direct business REST. Databases and Kafka remain direct. Registration, heartbeats and Gateway's pool reads go directly to `https://service-discovery:8443`: Gateway reads its routes from Service Discovery, so this control plane cannot pass through it.
 
 Import [one Postman environment](postman/local.postman_environment.json), set `seedPassword` locally, and import the collections you need:
 
@@ -69,6 +72,8 @@ Import [one Postman environment](postman/local.postman_environment.json), set `s
 Gateway has independent client/service task budgets. [Socket tickets](contracts/socket-tickets.md) are enabled. Guild's chat socket and Monster Raid's live raid socket require them.
 
 The Tamagotchi Postman collection covers player routes only. Internal routes require service mTLS and are not included in that collection; the optional [Postman mTLS port override](compose.postman.internal.yaml) can still be used for separate manual checks. These ports all reach Gateway and select different caller certificates.
+
+Lab 3 runs Service Discovery and three replicas each of Map and Monster Raid. Gateway balances requests across the registered replicas in round-robin order, names the instance that answered in `X-Served-By` and ejects an instance whose circuit breaker trips. Service Discovery polls every instance's `/status` and raises alerts for critical load, unhealthy and ejected instances and expired leases. They are logged and, with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` set in `.env`, sent to Telegram; the [Service Discovery README](https://github.com/AlexDandy77/pad-team-8-service-discovery#telegram-alerts) explains how to create the bot. An existing lab needs `setup` once, which replaces the certificate bundle so Service Discovery's certificate shares the CA, then `down` and `up`, so every container mounts the new certificates; volumes are kept. `check_lab3.py` checks the replicas, registration settings and socket ports. `smoke_discovery.py` checks the pools, the round robin and a socket on every replica; with `--disruptive` it also stops a Map replica and pauses a Monster Raid replica until its breaker ejects it. `load_discovery.py` loads Map through Gateway until Service Discovery raises a load alert.
 
 `check_lab2.py` checks Compose routing, task-limit settings and image policy without private source access. Passing it does not prove service implementations work: run the smoke checks against compatible releases. See [remaining owner work](ARCHITECTURE.md#integration-checks). Local setup fills an empty `REGISTRY_ADMIN_USER_IDS` with seeded Alice's ID and preserves explicit settings. Each destination has one base URL: `REGISTRY_URL`, `TAMAGOTCHI_URL`, `USER_MANAGEMENT_URL`, `GUILD_URL` or `MONSTER_RAID_URL`. Services append public or internal endpoint paths; authentication keys come from the User Management base plus `/.well-known/jwks.json`. Owners must update their configuration readers to these names; Compose no longer supplies the old aliases. There is no bearer-forwarding or direct REST fallback.
 
