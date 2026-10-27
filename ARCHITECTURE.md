@@ -2,11 +2,11 @@
 
 ## Running environment
 
-One `compose.yaml` runs the existing project: Python Gateway, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
+One `compose.yaml` runs the existing project: a Python API Gateway, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
 
 ```mermaid
 flowchart LR
-  P[Player / Postman] -->|REST :8080| GW[Python Gateway]
+  P[Player / Postman] -->|REST :8080| GW[API Gateway]
   GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go] & MP[Map / Go] & MR[Monster Raid / Go]
   GW -->|mTLS + signed identity| G[Guild / TypeScript] & R[Registry / TypeScript] & T[Tamagotchi / TypeScript] & N[Notification / TypeScript]
   U & B & MP & MR & G & R & T & N -->|REST dependencies| GW
@@ -90,7 +90,7 @@ Lab 3 scales the deployment horizontally. This is the agreed target; the running
 
 ```mermaid
 flowchart TB
-  P[Player / Postman] -->|REST :8080| GW[Gateway: round-robin and circuit breakers]
+  P[Player / Postman] -->|REST :8080| GW[API Gateway: round-robin and circuit breakers]
   P -->|negotiated socket :8084 / :8085 / :8086| MR
   GW <-->|pools every 2 s / eject tripped instances| SD[Service Discovery]
   GW -->|mTLS to the next available instance| MP & MR
@@ -108,8 +108,8 @@ flowchart TB
 
 | Component | Responsibility |
 | --- | --- |
-| Service Discovery | Python registry of live instances with 15-second leases. It polls every instance's `/status`, drops unhealthy and quarantined instances from the pools, and logs alerts and sends them to Telegram. It keeps no database; heartbeats rebuild the registry after a restart. |
-| Gateway | Reads the pools, sends each REST request to the next available instance and reports `X-Served-By`. A per-instance breaker (3 failures within 3.5 × the task timeout) ejects an instance. `GET`/`HEAD` may move to the next instance; mutations are never retried. Socket negotiation rotates through the registered socket URLs. |
+| Service Discovery | Registry of live instances with 15-second leases. It polls every instance's `/status`, drops unhealthy and quarantined instances from the pools, and logs alerts and sends them to Telegram. It keeps no database; heartbeats rebuild the registry after a restart. |
+| API Gateway | Reads the pools, sends each REST request to the next available instance and reports `X-Served-By`. A per-instance breaker (3 failures within 3.5 × the task timeout) ejects an instance. `GET`/`HEAD` may move to the next instance; mutations are never retried. Socket negotiation rotates through the registered socket URLs. |
 | Services | Register on startup, renew every 5 seconds and deregister on shutdown. They serve `/status` with their task load, and break their own dependency calls, which still go through Gateway, per destination. Background workers and outbox relays run on one leader chosen with a PostgreSQL advisory lock. |
 
 A request reaches an instance like this:
