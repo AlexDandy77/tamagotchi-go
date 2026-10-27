@@ -81,6 +81,7 @@ Contract version **1.4.0**. All eight services implement their portions.
 - [`contracts/realtime.schema.json`](contracts/realtime.schema.json): the six guild chat and three live raid WebSocket frames (JSON Schema).
 - [`contracts/field-dictionary.md`](contracts/field-dictionary.md): readable definitions of every request, response, event and frame type named in the tables below.
 - [`contracts/game-rules.md`](contracts/game-rules.md): the numbers and formulas behind the contract.
+- [`contracts/service-discovery.md`](contracts/service-discovery.md): instance registration, status endpoints, load balancing, circuit breakers, replicas and health alerts; Service Discovery's own routes are in [`contracts/service-discovery.openapi.yaml`](contracts/service-discovery.openapi.yaml).
 
 ### Rules
 
@@ -368,15 +369,15 @@ Agents must follow [AGENTS.md](AGENTS.md) for task setup, validation, commits, P
 
 In this common repository, `main` requires two approving reviews from other collaborators, all review conversations resolved, a passing **Validate contracts** check and a branch that is up to date with its target. A new push dismisses earlier approvals. Direct pushes, force pushes and deletion of `main` are blocked, including for administrators.
 
-Gateway requires two approvals. User Management, Battle, Guild, Package Registry, Tamagotchi and Notification use the same task-branch-to-`main` flow, with **no required approving reviews** while each private repository has a single maintainer. Their `main` branches still require a PR and block force pushes and deletion.
+Gateway and Service Discovery require two approvals. User Management, Battle, Guild, Package Registry, Tamagotchi and Notification use the same task-branch-to-`main` flow, with **no required approving reviews** while each private repository has a single maintainer. Their `main` branches still require a PR and block force pushes and deletion.
 
 - **Rebase and merge** focused PRs to keep a linear history.
 - **Squash and merge** PRs with many commits or fix-up commits; use a Conventional Commit title.
-- The three updated service workflows publish validated merges to `main` as `2.MINOR.PATCH` and `latest`, and create the matching immutable Git tag. Image tags identify successive releases of this project. There is no separate integration or release branch.
+- Service workflows publish validated merges to `main` as `MAJOR.MINOR.PATCH` and `latest`, and create the matching immutable Git tag. The major version is the lab: `2` for Lab 2 releases, `3` from Lab 3. Image tags identify successive releases of this project. There is no separate integration or release branch.
 
 ### Branch naming
 
-`<type>/<scope>/<short-description>`, lowercase with hyphens. Scope is a service name (`user-management`, `tamagotchi`, `battle`, `notification`, `map`, `monster-raid`, `guild`, `package-registry`, `gateway`) or `common` for the shared repository. The issue number goes in the PR and the closing commit, not the branch.
+`<type>/<scope>/<short-description>`, lowercase with hyphens. Scope is a service name (`user-management`, `tamagotchi`, `battle`, `notification`, `map`, `monster-raid`, `guild`, `package-registry`, `gateway`, `service-discovery`) or `common` for the shared repository. The issue number goes in the PR and the closing commit, not the branch.
 
 | Type | Example |
 | --- | --- |
