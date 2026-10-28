@@ -411,7 +411,9 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: notification
       KAFKA_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD}
-      # Firebase push is logged, not sent (no Firebase project for the lab).
+      # Firebase push: mock by default; dry-run/live need the key in .secrets/fcm (see .env.example).
+      FCM_MODE: ${FCM_MODE:-mock}
+      FCM_CREDENTIALS_FILE: /run/secrets/fcm/fcm-service-account.json
       DEPENDENCY_MODE: live
       PORT: 8080
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
@@ -429,6 +431,7 @@ services:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/notification.pem:/run/tls/notification.pem:ro
       - ./.secrets/tls/notification-key.pem:/run/tls/notification-key.pem:ro
+      - ./.secrets/fcm:/run/secrets/fcm:ro
     # Idempotency results live in Postgres and the Kafka consumer group lets one replica read each
     # partition, so Notification scales by count; it publishes no host port.
     deploy:

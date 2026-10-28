@@ -76,13 +76,13 @@ The lab is not complete until all published images pass the shared deployment te
 | User Management | Published image supports the batch public-profile dependency used by Map and keeps strict Gateway authentication enabled. |
 | Battle, Map, Monster Raid | Gateway transport and request limits implemented; complete live workflows still depend on compatible TypeScript destinations. |
 | Guild, Package Registry | Published `latest` images support Gateway transport; the live workflow verifies package configuration, enrollment projection, guild membership and raid dispatch. |
-| Tamagotchi, Notification | Published `latest` images support Gateway identity, limits and the single URL settings. The live workflow verifies Registry-backed starter/care rules, User Management rewards, enrollment checks, pet reservations and settlements. Notification uses explicit local Firebase logging. |
+| Tamagotchi, Notification | Published `latest` images support Gateway identity, limits and the single URL settings. The live workflow verifies Registry-backed starter/care rules, User Management rewards, enrollment checks, pet reservations and settlements. Notification logs pushes by default (`FCM_MODE=mock`) and sends them through Firebase with `FCM_MODE=live` and a local key. |
 | Shared runtime | All REST URLs now use Gateway; readiness checks every destination. `up` pulls latest before migrations and stops if an image is unavailable. |
 | Scaling | Service Discovery, three Map, three Monster Raid, three Tamagotchi and three Notification replicas run in Compose; Gateway balances and ejects them. The other services keep their static upstream until they register. |
 
 Run `scripts/check_lab2.py` and `scripts/check_lab3.py` for configuration checks, `scripts/smoke_gateway.py` for authentication and Battle-to-User-Management routing, `scripts/smoke_discovery.py` for registration, round robin and per-replica sockets, then the service smoke scripts and `scripts/smoke_live.py` for real workflows. `smoke_discovery.py --disruptive` stops and pauses replicas to show them leave and rejoin, and `scripts/load_discovery.py` raises a load alert. Full-team success cannot be claimed from the isolated service tests.
 
-Do not create fake production pets, forward bearer tokens or bypass Gateway to hide integration failures. Notification's external Firebase delivery remains an explicit local mock. Fresh accounts start with zero currency; Alice/Bob use local `SEED_PASSWORD`. Existing records are preserved.
+Do not create fake production pets, forward bearer tokens or bypass Gateway to hide integration failures. Notification's Firebase delivery is a logged mock unless `FCM_MODE` is `dry-run` or `live` and the service-account key is in `.secrets/fcm/`. Fresh accounts start with zero currency; Alice/Bob use local `SEED_PASSWORD`. Existing records are preserved.
 
 ## Extending the deployment
 
@@ -287,4 +287,4 @@ The team works in **Go and TypeScript**. Each person implements both of their se
 
 **Kafka for events.** Events are an append-only log: a consumer that was down (Notification, Registry) catches up from its last offset, and a new projection can replay history. Partitioning by `aggregateId` keeps events for one battle, raid or request in order. The cost is a heavier broker to run and no per-message routing; the lab uses a single-node Kafka in Docker and one topic per event type.
 
-**Firebase Cloud Messaging** is the push provider required by the brief. A push carries only `eventId`, `type` and `targetId`; the client fetches the authoritative state after opening it. Firebase needs a project, a service-account key kept out of Git, and a client that produces device tokens.
+**Firebase Cloud Messaging** is the push provider required by the brief. A push carries only `eventId`, `type` and `targetId`; the client fetches the authoritative state after opening it. Firebase needs a project, a service-account key kept out of Git, and a client that produces device tokens. Notification deletes devices whose tokens Firebase rejects, retries outages, and puts Firebase behind its own circuit breaker (`fcm`); a failed push never loses the stored notification.
