@@ -2,13 +2,13 @@
 
 ## Running environment
 
-One `compose.yaml` runs the existing project: a Python API Gateway, Python Service Discovery, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. Map and Monster Raid run three replicas each. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
+One `compose.yaml` runs the existing project: a Python API Gateway, Python Service Discovery, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. Map, Monster Raid, Tamagotchi and Notification run three replicas each. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
 
 ```mermaid
 flowchart LR
   P[Player / Postman] -->|REST :8080| GW[API Gateway]
   GW -->|mTLS + signed identity| U[User Management / Go] & B[Battle / Go] & MP[Map x3 / Go] & MR[Monster Raid x3 / Go]
-  GW -->|mTLS + signed identity| G[Guild / TypeScript] & R[Registry / TypeScript] & T[Tamagotchi / TypeScript] & N[Notification / TypeScript]
+  GW -->|mTLS + signed identity| G[Guild / TypeScript] & R[Registry / TypeScript] & T[Tamagotchi x3 / TypeScript] & N[Notification x3 / TypeScript]
   U & B & MP & MR & G & R & T & N -->|REST dependencies| GW
   GW <-->|pools / ejections| SD[Service Discovery / Python]
   MP & MR -.->|register, heartbeat / status polls| SD
@@ -40,8 +40,8 @@ The diagram shows the required deployment. Gateway routing is configured for eve
 | Monster Raid: `monster-raid`, `-2`, `-3` | Raids, participants, attacks and rewards | PostgreSQL `raids` |
 | Guild | Membership, invitations, roles and chat | PostgreSQL `guilds` |
 | Package Registry | Packages, configurations, rules, monsters and schedules | MongoDB `registry` |
-| Tamagotchi | Pets, care, XP, reservations and ownership | PostgreSQL `tamagotchi` |
-| Notification | Devices and notifications | PostgreSQL `notification` |
+| Tamagotchi, three replicas | Pets, care, XP, reservations and ownership | PostgreSQL `tamagotchi` |
+| Notification, three replicas | Devices and notifications | PostgreSQL `notification` |
 | PostgreSQL | Separate databases and credentials for each owner | `postgres-data` |
 | MongoDB | Single-node replica set for Registry transactions | `mongo-data`, `mongo-config` |
 | Kafka | Events with service SASL credentials and topic ACLs | `kafka-data` |
@@ -78,7 +78,7 @@ The lab is not complete until all published images pass the shared deployment te
 | Guild, Package Registry | Published `latest` images support Gateway transport; the live workflow verifies package configuration, enrollment projection, guild membership and raid dispatch. |
 | Tamagotchi, Notification | Published `latest` images support Gateway identity, limits and the single URL settings. The live workflow verifies Registry-backed starter/care rules, User Management rewards, enrollment checks, pet reservations and settlements. Notification uses explicit local Firebase logging. |
 | Shared runtime | All REST URLs now use Gateway; readiness checks every destination. `up` pulls latest before migrations and stops if an image is unavailable. |
-| Scaling | Service Discovery, three Map and three Monster Raid replicas run in Compose; Gateway balances and ejects them. The other services keep their static upstream until they register. |
+| Scaling | Service Discovery, three Map, three Monster Raid, three Tamagotchi and three Notification replicas run in Compose; Gateway balances and ejects them. The other services keep their static upstream until they register. |
 
 Run `scripts/check_lab2.py` and `scripts/check_lab3.py` for configuration checks, `scripts/smoke_gateway.py` for authentication and Battle-to-User-Management routing, `scripts/smoke_discovery.py` for registration, round robin and per-replica sockets, then the service smoke scripts and `scripts/smoke_live.py` for real workflows. `smoke_discovery.py --disruptive` stops and pauses replicas to show them leave and rejoin, and `scripts/load_discovery.py` raises a load alert. Full-team success cannot be claimed from the isolated service tests.
 
@@ -93,7 +93,7 @@ Do not create fake production pets, forward bearer tokens or bypass Gateway to h
 
 ## Scaling with Service Discovery
 
-Lab 3 scales the deployment horizontally. Compose runs Service Discovery and three replicas each of Map and Monster Raid; the other owners adopt registration one service at a time. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
+Lab 3 scales the deployment horizontally. Compose runs Service Discovery, three replicas each of Map, Monster Raid, Tamagotchi and Notification; the other owners adopt registration one service at a time. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
 
 ```mermaid
 flowchart TB
