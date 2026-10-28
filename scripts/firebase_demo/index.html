@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Push demo</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff; --fg: #111827; --muted: #6b7280; --line: #e5e7eb; --card: #f9fafb;
+      --ok: #15803d; --bad: #b91c1c; --player: #2563eb; --flash: #fef3c7;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111827; --fg: #f3f4f6; --muted: #9ca3af; --line: #374151; --card: #1f2937; --flash: #78350f; }
+    }
+    body { background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; margin: 0; }
+    header { background: var(--player); color: #fff; padding: .6rem .9rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    header h1 { font-size: 1.35rem; margin: 0; letter-spacing: .02em; }
+    header .name { opacity: .85; font-size: .9rem; margin-left: .4rem; }
+    #status { font-size: .85rem; white-space: nowrap; }
+    main { padding: .6rem .9rem; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .6rem .8rem; transition: background .4s; }
+    .card.flash { background: var(--flash); }
+    .label { color: var(--muted); font-size: .8rem; display: flex; justify-content: space-between; }
+    #latest-title { font-size: 1.5rem; font-weight: 650; margin: .15rem 0; }
+    #latest-meta { color: var(--muted); font: .8rem ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+    ul.types { list-style: none; padding: 0; margin: .6rem 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .1rem .8rem; }
+    ul.types li { display: flex; gap: .4rem; align-items: baseline; }
+    ul.types .mark { width: 1.6rem; flex: none; text-align: right; font-weight: 650; }
+    ul.types li.got .mark { color: var(--ok); }
+    ul.types li.na { color: var(--muted); opacity: .6; }
+    ul.types li.na small { font-size: .75rem; }
+    #summary { color: var(--muted); font-size: .85rem; }
+    details { margin-top: .4rem; border-top: 1px solid var(--line); padding-top: .3rem; }
+    summary { cursor: pointer; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    td { padding: .2rem .3rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    td.mono, textarea { font-family: ui-monospace, Consolas, monospace; }
+    textarea { width: 100%; height: 4rem; box-sizing: border-box; font-size: .75rem; }
+    button { padding: .3rem .8rem; }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1 id="player">Push demo</h1></div>
+    <div><button id="enable">Enable notifications</button> <span id="status">not connected</span></div>
+  </header>
+  <main>
+    <section class="card" id="latest">
+      <div class="label"><span>Latest push</span><span id="latest-time"></span></div>
+      <div id="latest-title">Waiting for pushes…</div>
+      <div id="latest-meta">Run the steps in the terminal.</div>
+    </section>
+
+    <ul class="types" id="types"></ul>
+    <div id="summary"></div>
+
+    <details>
+      <summary>History (<span id="count">0</span>)</summary>
+      <table><tbody id="history"></tbody></table>
+    </details>
+    <details>
+      <summary>Token</summary>
+      <textarea id="token" readonly></textarea>
+    </details>
+    <details>
+      <summary>Help</summary>
+      <p>Started by <code>python scripts/demo_firebase.py</code>, which created this player and registered this
+        browser's Firebase token as the player's device. Each push carries only <code>eventId</code>, <code>type</code>
+        and <code>targetId</code>; the title comes from the type. Greyed types go only to the other player.
+        Pushes arriving while this window is in the background appear as system notifications.</p>
+    </details>
+  </main>
+
+  <script src="types.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

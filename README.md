@@ -44,7 +44,7 @@ Requires Docker Compose v2 and Python 3. Published images run without access to 
 | Tamagotchi | `arturtugui/pad-team-8-tamagotchi:latest` | Gateway `/services/tamagotchi`; three replicas |
 | Notification | `arturtugui/pad-team-8-notification:latest` | Gateway `/services/notification`; three replicas |
 
-The published deployment passes the shared live workflow through Gateway, including registration, package enrollment, starter provisioning, care rewards, notifications, guild membership, raids and a complete Battle settlement. All services use the single destination URL settings below. Notification keeps Firebase delivery as an explicit local log until project credentials are supplied.
+The published deployment passes the shared live workflow through Gateway, including registration, package enrollment, starter provisioning, care rewards, notifications, guild membership, raids and a complete Battle settlement. All services use the single destination URL settings below. Notification logs its pushes by default; with `FCM_MODE=live` in `.env` and the Firebase service-account key in `.secrets/fcm/` it sends them through Firebase Cloud Messaging, and `scripts/demo_firebase.py` walks through every notification type arriving in two players' browser windows (setup at the top of that script).
 
 ```sh
 python3 scripts/lab.py setup
