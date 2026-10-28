@@ -1,0 +1,54 @@
+name: Published runtime validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      disruptive:
+        description: Also stop or pause replicas and restart Service Discovery
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: .github/scripts/requirements.txt
+      - run: python -m pip install -r .github/scripts/requirements.txt
+      - name: Prepare and start published images
+        run: |
+          python scripts/lab.py setup
+          python scripts/lab.py up
+      - name: Check contracts and deployment
+        run: |
+          python .github/scripts/check_contracts.py
+          python scripts/check_lab2.py
+          python scripts/check_lab3.py
+      - name: Check authentication and business workflows
+        run: |
+          python scripts/smoke_gateway.py
+          python scripts/smoke_replica_state.py
+          python scripts/smoke_live.py
+          python scripts/smoke_discovery.py
+      - name: Check removal, recovery and discovery restart
+        if: inputs.disruptive
+        run: |
+          python scripts/smoke_discovery.py --disruptive --all-replicas-down user-management --restart-discovery
+          python scripts/smoke_live.py --leader-failover
+      - name: Check load alerts and recovery
+        run: python scripts/load_discovery.py --service user-management --seconds 15
+      - name: Stop validation containers
+        if: always()
+        run: docker compose down

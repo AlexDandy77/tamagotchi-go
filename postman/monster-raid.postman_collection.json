@@ -2,7 +2,7 @@
  "info": {
   "name": "6. Tamagotchi Go — Monster Raid",
   "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-  "description": "Monster Raid through the Gateway ({{monsterRaid}}) in the shared Compose deployment; its probes use the direct port ({{monsterRaidDirect}}), since the Gateway does not route them. Set seedPassword locally; tokens come from User Management, membership from Guild and Alice's primary pet from Tamagotchi. The requests use the raids that Monster Raid seeds: the practice raid of the schedule Package Registry seeds, open for 30 days, and the fixture raid that Alice and Bob won. Runs repeatably: Alice joins the practice raid once and attacks it on every run, and Bob stays out of it. Package Registry starts and cancels raids with its service certificate, directly or through the Gateway's mutual TLS port, neither of which is published on the host, so those routes are not in this collection."
+  "description": "Monster Raid through Gateway. Set seedPassword locally; seeded Alice must be a Registry admin and Alice/Bob members of the seeded guild. Each run creates its own practice monster and raid schedule through Registry, waits for real dispatch, tests join/attack errors and replay, then cancels the schedule and waits for reservation release. The won fixture remains unchanged. Run the complete collection so cleanup executes; IDs for the new raid stay local to this run."
  },
  "item": [
   {
@@ -34,6 +34,15 @@
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
        "if(pm.response.code===200){const b=pm.response.json();pm.environment.set(\"aliceToken\",b.accessToken);pm.environment.set(\"aliceId\",b.user.id);}"
+      ]
+     }
+    },
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "for (const key of [\"raidRunPracticeId\", \"raidRunMonsterId\", \"raidRunScheduleVersion\", \"raidRunActiveDeadline\", \"raidRunCleanupDeadline\", \"raidRunListCursor\", \"raidRunListPages\", \"raidRunSeenPractice\", \"raidRunSeenFixture\"]) pm.variables.unset(key);"
       ]
      }
     }
@@ -92,9 +101,70 @@
       "type": "text/javascript",
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-       "const roster = pm.response.json();",
-       "pm.test(\"Alice has a primary pet\", () => pm.expect(roster.primaryPetId).to.be.a(\"string\").and.not.empty);",
-       "pm.environment.set(\"alicePrimary\", roster.primaryPetId);"
+       "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+       "  const roster = pm.response.json();",
+       "  const owned = roster.pets.filter(p => p.ownerId === pm.environment.get(\"aliceId\"));",
+       "  const selected = owned.find(p => p.id === roster.primaryPetId);",
+       "  const primary = selected || owned[0];",
+       "  pm.test(\"Alice has an owned pet for the raid\", () => pm.expect(primary).to.be.an(\"object\"));",
+       "  if (!primary) { pm.execution.setNextRequest(null); } else {",
+       "    pm.variables.set(\"raidRunPrimary\", primary.id);",
+       "    pm.variables.set(\"raidRunNeedsPrimary\", String(!selected));",
+       "  }",
+       "}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Select Alice's raid primary if missing",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{tamagotchi}}/v1/pets/primary",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"petId\":\"{{raidRunPrimary}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "if (pm.variables.get(\"raidRunNeedsPrimary\") !== \"true\") pm.execution.skipRequest();"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); } else {",
+       "  pm.test(\"Owned primary selected\", () => pm.expect(pm.response.json().primaryPetId).to.eql(pm.variables.get(\"raidRunPrimary\")));",
+       "}"
       ]
      }
     }
@@ -167,7 +237,7 @@
     "header": [
      {
       "key": "Authorization",
-      "value": "Bearer {{forgedToken}}"
+      "value": "Bearer {{raidRunForgedToken}}"
      }
     ],
     "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}"
@@ -178,7 +248,7 @@
      "script": {
       "type": "text/javascript",
       "exec": [
-       "pm.environment.set(\"forgedToken\", pm.environment.get(\"aliceToken\").slice(0, -6) + \"AAAAAA\");"
+       "pm.variables.set(\"raidRunForgedToken\", pm.environment.get(\"aliceToken\").slice(0, -6) + \"AAAAAA\");"
       ]
      }
     },
@@ -220,6 +290,138 @@
    ]
   },
   {
+   "name": "Create this run's practice monster",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/monsters",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"Postman practice {{$guid}}\",\"description\":\"Per-run combat checks; cancelled during cleanup\",\"spriteUrls\":[\"https://example.invalid/practice.png\"],\"maxHp\":1000000,\"baseAttack\":0,\"weaknesses\":[],\"resistances\":[],\"specialProperties\":[\"none\"]}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); } else {",
+       "  pm.variables.set(\"raidRunMonsterId\", pm.response.json().id);",
+       "  pm.variables.set(\"raidRunMonsterVersion\", pm.response.json().version);",
+       "}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Schedule this run's practice raid",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"guildId\":\"{{seedGuildId}}\",\"monsterId\":\"{{raidRunMonsterId}}\",\"monsterVersion\":{{raidRunMonsterVersion}},\"startsAt\":\"{{raidRunStartsAt}}\",\"durationSeconds\":300,\"participantLimit\":20,\"rewards\":{\"globalCurrencyPerParticipant\":0,\"xpPerParticipant\":0}}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.variables.set(\"raidRunStartsAt\", new Date(Date.now() + 3000).toISOString());"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); } else {",
+       "  pm.variables.set(\"raidRunPracticeId\", pm.response.json().id);",
+       "  pm.variables.set(\"raidRunScheduleVersion\", pm.response.json().version);",
+       "  pm.variables.set(\"raidRunActiveDeadline\", Date.now() + 30000);",
+       "}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Wait for this run's practice raid",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "const body = pm.response.code === 200 ? pm.response.json() : {};",
+       "const active = body.status === \"active\" && Date.parse(body.startsAt) <= Date.now();",
+       "if ((pm.response.code === 404 || body.status === \"settling\" || (body.status === \"active\" && !active)) && Date.now() < Number(pm.variables.get(\"raidRunActiveDeadline\"))) {",
+       "  setTimeout(() => pm.execution.setNextRequest(\"Wait for this run's practice raid\"), 300);",
+       "} else {",
+       "  pm.test(\"Practice raid dispatched\", () => pm.response.to.have.status(200));",
+       "  pm.test(\"Practice raid active\", () => pm.expect(active, \"Registry dispatch did not create an active practice raid within 30 seconds\").to.eql(true));",
+       "  if (!active) pm.execution.setNextRequest(\"Read practice schedule before cleanup\");",
+       "}"
+      ]
+     }
+    }
+   ]
+  },
+  {
    "name": "List Night Owls raids",
    "request": {
     "method": "GET",
@@ -229,20 +431,42 @@
       "value": "Bearer {{aliceToken}}"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}"
+    "url": "{{raidRunListUrl}}"
    },
    "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "let url = pm.environment.get(\"monsterRaid\") + \"/v1/raids?guildId=\" + pm.environment.get(\"seedGuildId\") + \"&limit=100\";",
+       "if (pm.variables.get(\"raidRunListCursor\")) url += \"&cursor=\" + encodeURIComponent(pm.variables.get(\"raidRunListCursor\"));",
+       "pm.variables.set(\"raidRunListUrl\", url);"
+      ]
+     }
+    },
     {
      "listen": "test",
      "script": {
       "type": "text/javascript",
       "exec": [
-       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
-       "const items = pm.response.json().items;",
-       "const practice = items.find(r => r.id === pm.environment.get(\"practiceRaidId\"));",
-       "const fixture = items.find(r => r.id === pm.environment.get(\"fixtureRaidId\"));",
-       "pm.test(\"Lists the open practice raid\", () => { pm.expect(practice).to.be.an(\"object\"); pm.expect(practice.status).to.eql(\"active\"); pm.expect(practice.guildId).to.eql(pm.environment.get(\"seedGuildId\")); });",
-       "pm.test(\"Lists the won fixture raid\", () => { pm.expect(fixture).to.be.an(\"object\"); pm.expect(fixture.status).to.eql(\"won\"); pm.expect(fixture.settlement).to.eql(\"complete\"); });"
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if (pm.response.code !== 200) { pm.execution.setNextRequest(\"Read practice schedule before cleanup\"); } else {",
+       "  const page = pm.response.json();",
+       "  const practice = page.items.find(r => r.id === pm.variables.get(\"raidRunPracticeId\"));",
+       "  const fixture = page.items.find(r => r.id === pm.environment.get(\"fixtureRaidId\"));",
+       "  if (practice) pm.variables.set(\"raidRunSeenPractice\", practice);",
+       "  if (fixture) pm.variables.set(\"raidRunSeenFixture\", fixture);",
+       "  const pages = Number(pm.variables.get(\"raidRunListPages\") || 0) + 1;",
+       "  pm.variables.set(\"raidRunListPages\", pages);",
+       "  if ((!pm.variables.get(\"raidRunSeenPractice\") || !pm.variables.get(\"raidRunSeenFixture\")) && page.nextCursor && pages < 20) {",
+       "    pm.variables.set(\"raidRunListCursor\", page.nextCursor);",
+       "    pm.execution.setNextRequest(\"List Night Owls raids\");",
+       "  } else {",
+       "    pm.test(\"Lists the open practice raid\", () => { const r = pm.variables.get(\"raidRunSeenPractice\"); pm.expect(r).to.be.an(\"object\"); pm.expect(r.status).to.eql(\"active\"); pm.expect(r.guildId).to.eql(pm.environment.get(\"seedGuildId\")); });",
+       "    pm.test(\"Lists the won fixture raid\", () => { const r = pm.variables.get(\"raidRunSeenFixture\"); pm.expect(r).to.be.an(\"object\"); pm.expect(r.status).to.eql(\"won\"); pm.expect(r.settlement).to.eql(\"complete\"); });",
+       "  }",
+       "}"
       ]
      }
     }
@@ -269,7 +493,7 @@
        "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
        "const b = pm.response.json();",
        "pm.test(\"One raid and a cursor to the next page\", () => { pm.expect(b.items).to.have.lengthOf(1); pm.expect(b.nextCursor).to.be.a(\"string\").and.not.empty; });",
-       "if(pm.response.code===200){pm.environment.set(\"raidCursor\",b.nextCursor);pm.environment.set(\"firstRaidId\",b.items[0].id);}"
+       "if(pm.response.code===200){pm.variables.set(\"raidRunCursor\",b.nextCursor);pm.variables.set(\"raidRunFirstId\",b.items[0].id);}"
       ]
      }
     }
@@ -285,7 +509,7 @@
       "value": "Bearer {{aliceToken}}"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}&limit=1&cursor={{raidCursor}}"
+    "url": "{{monsterRaid}}/v1/raids?guildId={{seedGuildId}}&limit=1&cursor={{raidRunCursor}}"
    },
    "event": [
     {
@@ -294,7 +518,7 @@
       "type": "text/javascript",
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
-       "pm.test(\"Another raid, newest first\", () => { const b = pm.response.json(); pm.expect(b.items).to.have.lengthOf(1); pm.expect(b.items[0].id).to.not.eql(pm.environment.get(\"firstRaidId\")); });"
+       "pm.test(\"Another raid, newest first\", () => { const b = pm.response.json(); pm.expect(b.items).to.have.lengthOf(1); pm.expect(b.items[0].id).to.not.eql(pm.variables.get(\"raidRunFirstId\")); });"
       ]
      }
     }
@@ -498,7 +722,7 @@
     "url": "{{monsterRaid}}/v1/raids/{{fixtureRaidId}}/participants",
     "body": {
      "mode": "raw",
-     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "raw": "{\"primaryPetId\": \"{{raidRunPrimary}}\"}",
      "options": {
       "raw": {
        "language": "json"
@@ -533,10 +757,10 @@
       "value": "application/json"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/participants",
     "body": {
      "mode": "raw",
-     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "raw": "{\"primaryPetId\": \"{{raidRunPrimary}}\"}",
      "options": {
       "raw": {
        "language": "json"
@@ -575,7 +799,7 @@
       "value": "application/json"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/participants",
     "body": {
      "mode": "raw",
      "raw": "{\"primaryPetId\": ",
@@ -617,10 +841,10 @@
       "value": "application/json"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/participants",
     "body": {
      "mode": "raw",
-     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\", \"xp\": 999}",
+     "raw": "{\"primaryPetId\": \"{{raidRunPrimary}}\", \"xp\": 999}",
      "options": {
       "raw": {
        "language": "json"
@@ -659,10 +883,10 @@
       "value": "application/json"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/participants",
     "body": {
      "mode": "raw",
-     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "raw": "{\"primaryPetId\": \"{{raidRunPrimary}}\"}",
      "options": {
       "raw": {
        "language": "json"
@@ -701,10 +925,10 @@
       "value": "application/json"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/participants",
     "body": {
      "mode": "raw",
-     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "raw": "{\"primaryPetId\": \"{{raidRunPrimary}}\"}",
      "options": {
       "raw": {
        "language": "json"
@@ -718,11 +942,8 @@
      "script": {
       "type": "text/javascript",
       "exec": [
-       "pm.test(\"Alice joined, in this run or an earlier one\", () => {",
-       "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
-       "  if (pm.response.code === 201) { const b = pm.response.json(); pm.expect(b.userId).to.eql(pm.environment.get(\"aliceId\")); pm.expect(b.primaryPetId).to.eql(pm.environment.get(\"alicePrimary\")); }",
-       "  else pm.expect(pm.response.json().error.code).to.eql(\"ALREADY_JOINED\");",
-       "});"
+       "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+       "if (pm.response.code === 201) { const b = pm.response.json(); pm.test(\"Alice joined with her primary pet\", () => { pm.expect(b.userId).to.eql(pm.environment.get(\"aliceId\")); pm.expect(b.primaryPetId).to.eql(pm.variables.get(\"raidRunPrimary\")); }); }"
       ]
      }
     }
@@ -746,10 +967,10 @@
       "value": "application/json"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/participants",
     "body": {
      "mode": "raw",
-     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "raw": "{\"primaryPetId\": \"{{raidRunPrimary}}\"}",
      "options": {
       "raw": {
        "language": "json"
@@ -780,7 +1001,7 @@
       "value": "Bearer {{aliceToken}}"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}"
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}"
    },
    "event": [
     {
@@ -791,7 +1012,7 @@
        "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
        "const b = pm.response.json();",
        "pm.test(\"Alice is a participant of the active raid\", () => { pm.expect(b.status).to.eql(\"active\"); pm.expect(b.participants.map(p => p.userId)).to.include(pm.environment.get(\"aliceId\")); });",
-       "if(pm.response.code===200)pm.environment.set(\"hpBefore\",b.hp);"
+       "if(pm.response.code===200)pm.variables.set(\"raidRunHpBefore\",b.hp);"
       ]
      }
     }
@@ -811,7 +1032,7 @@
       "value": "{{$guid}}"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/attacks"
    },
    "event": [
     {
@@ -837,10 +1058,10 @@
      },
      {
       "key": "Idempotency-Key",
-      "value": "{{attackKey}}"
+      "value": "{{raidRunAttackKey}}"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/attacks"
    },
    "event": [
     {
@@ -848,7 +1069,7 @@
      "script": {
       "type": "text/javascript",
       "exec": [
-       "pm.environment.set(\"attackKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+       "pm.variables.set(\"raidRunAttackKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
       ]
      }
     },
@@ -859,8 +1080,8 @@
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
        "const b = pm.response.json();",
-       "pm.test(\"The monster lost HP\", () => pm.expect(b.hp).to.be.below(Number(pm.environment.get(\"hpBefore\"))));",
-       "if(pm.response.code===200)pm.environment.set(\"hpAfter\",b.hp);"
+       "pm.test(\"The monster lost HP\", () => pm.expect(b.hp).to.be.below(Number(pm.variables.get(\"raidRunHpBefore\"))));",
+       "if(pm.response.code===200)pm.variables.set(\"raidRunHpAfter\",b.hp);"
       ]
      }
     }
@@ -877,10 +1098,10 @@
      },
      {
       "key": "Idempotency-Key",
-      "value": "{{attackKey}}"
+      "value": "{{raidRunAttackKey}}"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/attacks"
    },
    "event": [
     {
@@ -889,7 +1110,7 @@
       "type": "text/javascript",
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
-       "pm.test(\"Replays the stored outcome\", () => { pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"); pm.expect(pm.response.json().hp).to.eql(Number(pm.environment.get(\"hpAfter\"))); });"
+       "pm.test(\"Replays the stored outcome\", () => { pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"); pm.expect(pm.response.json().hp).to.eql(Number(pm.variables.get(\"raidRunHpAfter\"))); });"
       ]
      }
     }
@@ -909,7 +1130,7 @@
       "value": "{{$guid}}"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/attacks"
    },
    "event": [
     {
@@ -935,7 +1156,7 @@
       "value": "Bearer {{aliceToken}}"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/attacks"
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/attacks"
    },
    "event": [
     {
@@ -961,17 +1182,17 @@
      },
      {
       "key": "Idempotency-Key",
-      "value": "{{attackKey}}"
+      "value": "{{raidRunAttackKey}}"
      },
      {
       "key": "Content-Type",
       "value": "application/json"
      }
     ],
-    "url": "{{monsterRaid}}/v1/raids/{{practiceRaidId}}/participants",
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}/participants",
     "body": {
      "mode": "raw",
-     "raw": "{\"primaryPetId\": \"{{alicePrimary}}\"}",
+     "raw": "{\"primaryPetId\": \"{{raidRunPrimary}}\"}",
      "options": {
       "raw": {
        "language": "json"
@@ -1016,6 +1237,183 @@
       "exec": [
        "pm.test(\"HTTP 409\", () => pm.expect(pm.response.code).to.eql(409));",
        "pm.test(\"RAID_NOT_ACTIVE\", () => pm.expect(pm.response.json().error.code).to.eql(\"RAID_NOT_ACTIVE\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read practice schedule before cleanup",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules/{{raidRunPracticeId}}"
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "if (!pm.variables.get(\"raidRunPracticeId\")) pm.execution.skipRequest();"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if (pm.response.code === 200) pm.variables.set(\"raidRunScheduleVersion\", pm.response.json().version);"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Cancel this run's practice schedule",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{registry}}/v1/raid-schedules/{{raidRunPracticeId}}/status",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"expectedVersion\":{{raidRunScheduleVersion}},\"status\":\"cancelled\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "if (!pm.variables.get(\"raidRunPracticeId\")) pm.execution.skipRequest();"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if (pm.response.code === 200) pm.test(\"Schedule cancelled\", () => pm.expect(pm.response.json().status).to.eql(\"cancelled\"));",
+       "pm.variables.set(\"raidRunCleanupDeadline\", Date.now() + 30000);"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Wait for practice raid cancellation and release",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}"
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "if (!pm.variables.get(\"raidRunPracticeId\")) pm.execution.skipRequest();"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "const body = pm.response.code === 200 ? pm.response.json() : {};",
+       "const complete = pm.response.code === 200 && body.status === \"cancelled\" && body.settlement === \"complete\";",
+       "if (!complete && Date.now() < Number(pm.variables.get(\"raidRunCleanupDeadline\"))) {",
+       "  setTimeout(() => pm.execution.setNextRequest(\"Wait for practice raid cancellation and release\"), 300);",
+       "} else {",
+       "  pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "  pm.test(\"Raid cancelled and reservations released\", () => { pm.expect(body.status).to.eql(\"cancelled\"); pm.expect(body.settlement).to.eql(\"complete\"); });",
+       "}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Alice primary is selectable after cleanup",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     },
+     {
+      "key": "Idempotency-Key",
+      "value": "{{$guid}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": "{{tamagotchi}}/v1/pets/primary",
+    "body": {
+     "mode": "raw",
+     "raw": "{\"petId\":\"{{raidRunPrimary}}\"}",
+     "options": {
+      "raw": {
+       "language": "json"
+      }
+     }
+    }
+   },
+   "event": [
+    {
+     "listen": "prerequest",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "if (!pm.variables.get(\"raidRunPracticeId\")) pm.execution.skipRequest();"
+      ]
+     }
+    },
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "if (pm.response.code === 200) pm.test(\"Alice keeps her primary\", () => pm.expect(pm.response.json().primaryPetId).to.eql(pm.variables.get(\"raidRunPrimary\")));"
       ]
      }
     }

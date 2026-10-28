@@ -4,6 +4,8 @@
 Requires live User Management/Battle/Registry/Raid and Alice as a Registry admin.
 Does not alter Alice/Bob's pets, balances or relationships. No secrets are printed.
 """
+import argparse
+from contextlib import nullcontext
 import datetime
 import sys
 import time
@@ -76,6 +78,9 @@ def create_battle_package(admin):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--leader-failover", action="store_true", help="stop the current Battle worker leader during active combat, prove takeover, then restore it")
+    args = parser.parse_args()
     failures = []
 
     def check(name, action):
@@ -208,20 +213,29 @@ def main():
         request(BATTLE, 'POST', path+'/accept', loadouts[1], b, key(), 202)
         state = eventually(lambda: request(BATTLE, 'GET', path, token=a),
                            lambda x: x['status'] == 'active', 'battle did not become active')
-        state = request(BATTLE, 'POST', path+'/actions', {'action': 'attack', 'expectedTurn': state['turn']}, a, key())
-        request(BATTLE, 'POST', path+'/actions', {'action': 'forfeit', 'expectedTurn': state['turn']}, b, key())
-        finished = eventually(lambda: request(BATTLE, 'GET', path, token=a),
-                              lambda x: x['status'] == 'finished', 'battle settlement did not finish')
-        assert finished['winnerId'] == alice, 'challenger did not win after opponent forfeited'
-        assert request(USERS, 'GET', '/v1/wallet', token=a)['globalBalance'] == before[0] + 10, 'winner stake missing'
-        assert request(USERS, 'GET', '/v1/wallet', token=b)['globalBalance'] == before[1] - 10, 'loser stake missing'
-        captured = eventually(lambda: request(PETS, 'GET', '/v1/pets', token=a),
-                              lambda x: any(p['id'] == rosters[1]['primaryPetId'] for p in x['pets']),
-                              'battle winner did not receive the captured pet')
-        assert rosters[1]['primaryPetId'] in captured['secondaryPetIds'], 'captured pet is not a secondary pet'
-        notification(a, 'battle.finished.v1', created['id'])
-        notification(b, 'battle.finished.v1', created['id'])
-    check('live Battle pet/wallet settlement and notification', battle)
+        if args.leader_failover:
+            from leader_failover import stopped_worker_leader
+            leadership = stopped_worker_leader('battle')
+        else:
+            leadership = nullcontext()
+        with leadership:
+            # Read the persisted turn after takeover before submitting the next action.
+            recovered = request(BATTLE, 'GET', path, token=a)
+            assert recovered['status'] == 'active' and recovered['turn'] == state['turn'], 'Battle state changed during leader takeover'
+            state = request(BATTLE, 'POST', path+'/actions', {'action': 'attack', 'expectedTurn': state['turn']}, a, key())
+            request(BATTLE, 'POST', path+'/actions', {'action': 'forfeit', 'expectedTurn': state['turn']}, b, key())
+            finished = eventually(lambda: request(BATTLE, 'GET', path, token=a),
+                                  lambda x: x['status'] == 'finished', 'battle settlement did not finish')
+            assert finished['winnerId'] == alice, 'challenger did not win after opponent forfeited'
+            assert request(USERS, 'GET', '/v1/wallet', token=a)['globalBalance'] == before[0] + 10, 'winner stake missing'
+            assert request(USERS, 'GET', '/v1/wallet', token=b)['globalBalance'] == before[1] - 10, 'loser stake missing'
+            captured = eventually(lambda: request(PETS, 'GET', '/v1/pets', token=a),
+                                  lambda x: any(p['id'] == rosters[1]['primaryPetId'] for p in x['pets']),
+                                  'battle winner did not receive the captured pet')
+            assert rosters[1]['primaryPetId'] in captured['secondaryPetIds'], 'captured pet is not a secondary pet'
+            notification(a, 'battle.finished.v1', created['id'])
+            notification(b, 'battle.finished.v1', created['id'])
+    check('live Battle pet/wallet settlement and notification' + (' with worker leader takeover' if args.leader_failover else ''), battle)
 
     check('Tamagotchi rejects invalid JWTs', lambda: request(PETS, 'GET', '/v1/pets', token='not-a-jwt', expected=401))
     check('Notification rejects invalid JWTs', lambda: request(NOTIFICATIONS, 'GET', '/v1/notifications', token='not-a-jwt', expected=401))
