@@ -27,6 +27,9 @@ def compliant():
     }
     services['map']['environment']['SERVICE_DISCOVERY_URL'] = SD
     services['map']['deploy'] = {'replicas': 3}
+    for scaled in ('tamagotchi', 'notification'):
+        services[scaled]['environment']['SERVICE_DISCOVERY_URL'] = SD
+        services[scaled]['deploy'] = {'replicas': 3}
     raid = services['monster-raid']
     raid['environment'].update(SERVICE_DISCOVERY_URL=SD, INSTANCE_ID='monster-raid', PUBLIC_SOCKET_URL='ws://localhost:8084')
     raid['ports'] = [{'host_ip': '127.0.0.1', 'published': '8084', 'target': 8080}]
@@ -109,6 +112,12 @@ class ScalingTests(unittest.TestCase):
         for text in ('map: 3 replicas cannot share a published port', 'map: 3 replicas cannot share one INSTANCE_ID',
                      'monster-raid-3: must publish exactly one socket port'):
             self.assertIn(text, failures)
+
+    def test_tamagotchi_and_notification_each_need_two_replicas(self):
+        for name in ('tamagotchi', 'notification'):
+            config = compliant()
+            config['services'][name]['deploy'] = {'replicas': 1}
+            self.assertIn(f'{name}: runs 1 instance(s); Lab 3 needs at least 2', audit(config))
 
     def test_other_services_may_register_only_with_service_discovery(self):
         config = compliant()

@@ -388,11 +388,17 @@ services:
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
+      # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.
+      SERVICE_DISCOVERY_URL: https://service-discovery:8443
     volumes:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/tamagotchi.pem:/run/tls/tamagotchi.pem:ro
       - ./.secrets/tls/tamagotchi-key.pem:/run/tls/tamagotchi-key.pem:ro
+    # Idempotency and care results live in Postgres and one replica at a time relays the outbox,
+    # so Tamagotchi scales by count; it publishes no host port.
+    deploy:
+      replicas: 3
     depends_on:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
@@ -416,11 +422,17 @@ services:
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
+      # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.
+      SERVICE_DISCOVERY_URL: https://service-discovery:8443
     volumes:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/notification.pem:/run/tls/notification.pem:ro
       - ./.secrets/tls/notification-key.pem:/run/tls/notification-key.pem:ro
+    # Idempotency results live in Postgres and the Kafka consumer group lets one replica read each
+    # partition, so Notification scales by count; it publishes no host port.
+    deploy:
+      replicas: 3
     depends_on:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
