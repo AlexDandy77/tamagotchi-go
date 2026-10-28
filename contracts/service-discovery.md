@@ -19,13 +19,17 @@ Service Discovery takes the caller's service name from the certificate's DNS SAN
 
 `instanceId` is lowercase letters, digits and hyphens, at most 63 characters, unique per service. It defaults to the container hostname; Compose sets `INSTANCE_ID` only where a readable name helps, such as `monster-raid-2`. The registration answer repeats the instance with `leaseSeconds` and `heartbeatSeconds`, so callers never hardcode them.
 
-`GET /v1/services` returns the available instances of every service and is allowed only for Gateway. Expired, unhealthy and ejected instances are left out. Gateway refreshes its pools every two seconds, keeps the last answer while Service Discovery is unreachable and falls back to the static `UPSTREAMS_JSON` origin for a service with no available instance, so owners can adopt registration one at a time.
+`GET /v1/services` returns the available instances of every service and is allowed only for Gateway. Expired, unhealthy and ejected instances are left out. Gateway refreshes its pools every two seconds and keeps the last answer while Service Discovery is unreachable.
+
+Gateway's `DISCOVERY_MANAGED_SERVICES` is a comma-separated subset of its `UPSTREAMS_JSON` names. It defaults to empty for standalone compatibility; configuring names requires `SERVICE_DISCOVERY_URL`. The common deployment lists every adopted service explicitly, so a restart never forgets which services use discovery. A managed service with no usable instances returns `503 DEPENDENCY_UNAVAILABLE`, including REST and socket negotiation; Gateway readiness returns `503 NOT_READY`. It never falls back to that service's static origin, even when the registry is empty or unreachable. Only services outside the managed list retain static fallback during migration. Cached signing keys remain usable; a managed User Management outage without usable keys returns `503 IDENTITY_UNAVAILABLE`.
+
+Gateway and Service Discovery may probe an instance's `/status` directly over mTLS to check recovery. Those probes may reach quarantined instances but cannot send business requests through them. Business REST still passes through Gateway. No additional Discovery response field is needed: the managed-services list is deployment configuration, separate from the registry's available-instance map.
 
 ## Load balancing
 
 Gateway picks instances of a service in round-robin order for every REST request and returns `X-Served-By: {service}/{instanceId}` so the distribution is visible. It never retries a mutation. A `GET` or `HEAD` that fails before any response byte may move to the next instance within the same task deadline.
 
-Socket negotiation picks the next registered `socketUrl` of Guild or Monster Raid in the same way and falls back to `GUILD_WS_URL` or `RAID_WS_URL`. A socket stays on the instance that accepted it. [Socket tickets](socket-tickets.md) are single-use across replicas because each owner records them in its own database.
+Socket negotiation picks the next usable instance's registered `socketUrl` of Guild or Monster Raid in the same way. Static `GUILD_WS_URL` or `RAID_WS_URL` fallback is allowed only outside `DISCOVERY_MANAGED_SERVICES`; a managed empty pool cannot hand out a static socket URL. A socket stays on the instance that accepted it. [Socket tickets](socket-tickets.md) are single-use across replicas because each owner records them in its own database.
 
 ## Circuit breaker
 
@@ -78,7 +82,7 @@ Never log tokens, tickets, keys, passwords, idempotency payloads or Telegram cre
 The common deployment runs two or three instances of a service once it is instance-agnostic:
 
 - All state lives in the owner's database. In-memory caches may differ between replicas but must not decide outcomes.
-- Background workers and outbox relays run on one leader at a time, chosen with a PostgreSQL advisory lock, so events keep their order and remote calls are not duplicated. Another replica takes over when the leader's connection ends.
+- Background workers and outbox relays run on one leader at a time, so events keep their order and remote calls are not duplicated. PostgreSQL owners use an advisory lock held by a dedicated connection; another replica takes over when that connection ends. Package Registry owns MongoDB and instead uses an atomic database lease or claim with renewal and fencing, so a previous leader cannot continue after takeover. No service writes another owner's database to obtain leadership.
 - Limits such as `MAX_CONCURRENT_TASKS` apply per instance.
 - A service with negotiated sockets gives each replica its own published port and `PUBLIC_SOCKET_URL`, registered as `socketUrl`. Messages for players connected to other replicas must still reach them.
 
@@ -104,3 +108,7 @@ The common deployment runs two or three instances of a service once it is instan
 4. Apply the logging rules.
 5. Make background work and sockets replica-safe as described under Replicas.
 6. Publish validated merges to `main` as `3.MINOR.PATCH` and `latest`, then scale the service and update its submodule pointer in one common integration PR.
+
+## Remaining private-service handoff
+
+Guild and Package Registry owners keep their sources private and complete the same status, registration, breaker and logging rules before joining `DISCOVERY_MANAGED_SERVICES` and scaling. Guild also needs a distinct socket origin per replica, cross-replica chat delivery and shared ticket-replay records in its own database. Registry must prove its MongoDB scheduler/outbox leadership and enrollment inbox remain safe across replicas. Test concurrent requests, leader takeover and removal/recovery of every instance, then publish and update the common deployment. Existing Compose entries and published images do not establish that these private implementations meet the rules.

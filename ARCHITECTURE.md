@@ -2,7 +2,7 @@
 
 ## Running environment
 
-One `compose.yaml` runs the existing project: a Python API Gateway, Python Service Discovery, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. Map, Monster Raid, Tamagotchi and Notification run three replicas each. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
+One `compose.yaml` runs the existing project: a Python API Gateway, Python Service Discovery, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. User Management, Battle, Map, Monster Raid, Tamagotchi and Notification run three replicas each. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
 
 ```mermaid
 flowchart LR
@@ -54,7 +54,7 @@ Use one base URL per REST destination, for both `/v1` and `/internal/v1` routes.
 
 Gateway separately bounds client and authenticated-service traffic, 64 requests each by default. Nested service calls retain capacity when client slots are full. Socket ticket issuance is enabled, and Guild's chat socket and Monster Raid's live raid socket both require the tickets. See [the handoff](contracts/socket-tickets.md).
 
-Only Guild and the Monster Raid replicas publish additional ports, for direct sockets negotiated through Gateway: Guild 8087 and Monster Raid 8084, 8085 and 8086. Each Monster Raid replica registers its own socket URL. Their socket listeners must reject direct business REST. PostgreSQL, MongoDB, Kafka, Service Discovery and internal mTLS ports stay private.
+Only Guild and the Monster Raid replicas publish additional ports, for direct sockets negotiated through Gateway: Guild 8087 and Monster Raid 8084, 8085 and 8086. Each Monster Raid replica registers its own socket URL. Their socket listeners must reject direct business REST. PostgreSQL, MongoDB, Kafka, Service Discovery and internal mTLS ports stay private. PostgreSQL permits 250 connections by default (`POSTGRES_MAX_CONNECTIONS`) for bounded replica pools and dedicated worker-leader connections.
 
 Gateway, Map and Monster Raid set `SERVICE_DISCOVERY_URL=https://service-discovery:8443` and call it directly for registration, heartbeats and pool reads. Gateway reads its routes from it, so this control plane cannot pass through Gateway; `check_lab2.py` allows exactly this URL and no other direct REST.
 
@@ -78,7 +78,7 @@ The lab is not complete until all published images pass the shared deployment te
 | Guild, Package Registry | Published `latest` images support Gateway transport; the live workflow verifies package configuration, enrollment projection, guild membership and raid dispatch. |
 | Tamagotchi, Notification | Published `latest` images support Gateway identity, limits and the single URL settings. The live workflow verifies Registry-backed starter/care rules, User Management rewards, enrollment checks, pet reservations and settlements. Notification logs pushes by default (`FCM_MODE=mock`) and sends them through Firebase with `FCM_MODE=live` and a local key. |
 | Shared runtime | All REST URLs now use Gateway; readiness checks every destination. `up` pulls latest before migrations and stops if an image is unavailable. |
-| Scaling | Service Discovery, three Map, three Monster Raid, three Tamagotchi and three Notification replicas run in Compose; Gateway balances and ejects them. The other services keep their static upstream until they register. |
+| Scaling | Service Discovery, three Map, three Monster Raid, three Tamagotchi and three Notification replicas run in Compose; Gateway balances and ejects them. Guild and Package Registry retain static routing until their owners publish discovery support. |
 
 Run `scripts/check_lab2.py` and `scripts/check_lab3.py` for configuration checks, `scripts/smoke_gateway.py` for authentication and Battle-to-User-Management routing, `scripts/smoke_discovery.py` for registration, round robin and per-replica sockets, then the service smoke scripts and `scripts/smoke_live.py` for real workflows. `smoke_discovery.py --disruptive` stops and pauses replicas to show them leave and rejoin, and `scripts/load_discovery.py` raises a load alert. Full-team success cannot be claimed from the isolated service tests.
 
@@ -93,31 +93,31 @@ Do not create fake production pets, forward bearer tokens or bypass Gateway to h
 
 ## Scaling with Service Discovery
 
-Lab 3 scales the deployment horizontally. Compose runs Service Discovery, three replicas each of Map, Monster Raid, Tamagotchi and Notification; the other owners adopt registration one service at a time. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
+Lab 3 scales the deployment horizontally. Compose runs Service Discovery, three replicas each of User Management, Battle, Map, Monster Raid, Tamagotchi and Notification; the other owners adopt registration one service at a time. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
 
 ```mermaid
 flowchart TB
   P[Player / Postman] -->|REST :8080| GW[API Gateway: round-robin and circuit breakers]
   P -->|negotiated socket :8084 / :8085 / :8086| MR
   GW <-->|pools every 2 s / eject tripped instances| SD[Service Discovery]
-  GW -->|mTLS to the next available instance| MP & MR
-  GW -->|static upstream until they register| O[Other services]
+  GW -->|mTLS to the next available instance| MP & MR & A[User Management / Battle / Tamagotchi / Notification: three replicas each]
+  GW -->|static upstream until they register| O[Guild / Package Registry]
   subgraph MP[Map x3]
     M1[map] ~~~ M2[map] ~~~ M3[map]
   end
   subgraph MR[Monster Raid x3]
     R1[monster-raid] ~~~ R2[monster-raid-2] ~~~ R3[monster-raid-3]
   end
-  MP & MR <-.->|register and heartbeat / status polls, every 5 s| SD
+  MP & MR & A <-.->|register and heartbeat / status polls, every 5 s| SD
   SD -->|alerts| TG["Telegram (developers' chat)"]
-  MP & MR --> DB[(PostgreSQL: one leader runs workers and relays)]
+  MP & MR & A --> DB[(Separate owner databases: one leader runs workers and relays)]
 ```
 
 | Component | Responsibility |
 | --- | --- |
 | Service Discovery | Registry of live instances with 15-second leases. It polls every instance's `/status`, drops unhealthy and quarantined instances from the pools, and logs alerts and sends them to Telegram. It keeps no database; heartbeats rebuild the registry after a restart. |
 | API Gateway | Reads the pools, sends each REST request to the next available instance and reports `X-Served-By`. A per-instance breaker (3 failures within 3.5 × the task timeout) ejects an instance. `GET`/`HEAD` may move to the next instance; mutations are never retried. Socket negotiation rotates through the registered socket URLs. |
-| Services | Register on startup, renew every 5 seconds and deregister on shutdown. They serve `/status` with their task load, and break their own dependency calls, which still go through Gateway, per destination. Background workers and outbox relays run on one leader chosen with a PostgreSQL advisory lock. |
+| Services | Register on startup, renew every 5 seconds and deregister on shutdown. They serve `/status` with their task load, and break their own dependency calls, which still go through Gateway, per destination. PostgreSQL owners run background workers and ordered outbox relays under one session-held advisory-lock leader. Package Registry uses its own MongoDB lease or atomic claim; no service writes into another owner's database. |
 
 A request reaches an instance like this:
 
@@ -126,7 +126,7 @@ A request reaches an instance like this:
 3. A stopped instance stops renewing and leaves the pools within one lease. An instance that keeps failing trips Gateway's breaker and is ejected at once; it returns only after three healthy status polls.
 4. Load at or above 80% of an instance's task slots, an unhealthy instance, an ejection or an expired lease raises an alert. Its recovery is reported too.
 
-While Service Discovery is unreachable, Gateway keeps the last pools it read. Services that have not adopted registration still use their static Compose name.
+While Service Discovery is unreachable, Gateway keeps the last pools it read. `DISCOVERY_MANAGED_SERVICES` makes adoption explicit across restarts: adopted services with no healthy replicas return `503`, while only unmigrated services can use static Compose routing. Gateway also selects User Management replicas for JWKS refresh; all User Management replicas share the same signing key and session database.
 
 ## Future full-system architecture
 

@@ -15,7 +15,7 @@ from check_lab2 import SERVICE_DISCOVERY_URL, service_failures, tickets_enabled
 from lab import SERVICES
 
 # Scaled services and the fewest instances each must run.
-SCALED = {'map': 2, 'monster-raid': 2, 'tamagotchi': 2, 'notification': 2}
+SCALED = {'user-management': 2, 'battle': 2, 'map': 2, 'monster-raid': 2, 'tamagotchi': 2, 'notification': 2}
 # Services whose replicas each publish a socket port registered as their socket origin.
 SOCKET_SERVICES = ('monster-raid',)
 DISCOVERY_SETTINGS = ('SERVICE_TLS_CERT_FILE', 'SERVICE_TLS_KEY_FILE', 'SERVICE_TLS_CA_FILE',
@@ -57,10 +57,18 @@ def audit(config):
     if gateway.get('SERVICE_DISCOVERY_URL') != SERVICE_DISCOVERY_URL:
         failures.append('gateway: SERVICE_DISCOVERY_URL does not name Service Discovery')
     upstreams = json.loads(gateway.get('UPSTREAMS_JSON', '{}'))
+    managed = {name.strip() for name in gateway.get('DISCOVERY_MANAGED_SERVICES', '').split(',') if name.strip()}
+    for name in sorted(managed):
+        if name not in upstreams:
+            failures.append(f'gateway: unknown discovery-managed service {name}')
+        elif services.get(name, {}).get('environment', {}).get('SERVICE_DISCOVERY_URL') != SERVICE_DISCOVERY_URL:
+            failures.append(f'{name}: managed routing requires service registration')
     ready = gateway.get('READY_SERVICES', '').split(',')
     gateway_tickets = tickets_enabled(gateway, 'true')
 
     for name, fewest in SCALED.items():
+        if name not in managed:
+            failures.append(f'{name}: Gateway must require discovery routing')
         group = instances(services, name)
         count = sum(int(services[n].get('deploy', {}).get('replicas', 1)) for n in group)
         if count < fewest:
