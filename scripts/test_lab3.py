@@ -10,7 +10,10 @@ SD = 'https://service-discovery:8443'
 def compliant():
     config = lab2()
     services = config['services']
-    services['gateway']['environment']['SERVICE_DISCOVERY_URL'] = SD
+    services['gateway']['environment'].update(
+        SERVICE_DISCOVERY_URL=SD,
+        DISCOVERY_MANAGED_SERVICES='user-management,battle,map,monster-raid,tamagotchi,notification',
+    )
     services['service-discovery'] = {
         'image': 'owner/service-discovery:latest',
         'pull_policy': 'always',
@@ -27,7 +30,7 @@ def compliant():
     }
     services['map']['environment']['SERVICE_DISCOVERY_URL'] = SD
     services['map']['deploy'] = {'replicas': 3}
-    for scaled in ('tamagotchi', 'notification'):
+    for scaled in ('user-management', 'battle', 'tamagotchi', 'notification'):
         services[scaled]['environment']['SERVICE_DISCOVERY_URL'] = SD
         services[scaled]['deploy'] = {'replicas': 3}
     raid = services['monster-raid']
@@ -44,6 +47,21 @@ def compliant():
 class ScalingTests(unittest.TestCase):
     def test_complete_configuration(self):
         self.assertEqual(audit(compliant()), [])
+
+    def test_every_scaled_service_requires_managed_routing(self):
+        config = compliant()
+        config['services']['gateway']['environment']['DISCOVERY_MANAGED_SERVICES'] = 'map,monster-raid,tamagotchi,notification'
+        failures = audit(config)
+        self.assertIn('user-management: Gateway must require discovery routing', failures)
+        self.assertIn('battle: Gateway must require discovery routing', failures)
+
+    def test_managed_services_cannot_be_unknown_or_unregistered(self):
+        config = compliant()
+        gateway = config['services']['gateway']['environment']
+        gateway['DISCOVERY_MANAGED_SERVICES'] += ',guild,unknown'
+        failures = audit(config)
+        self.assertIn('gateway: unknown discovery-managed service unknown', failures)
+        self.assertIn('guild: managed routing requires service registration', failures)
 
     def test_requires_service_discovery_and_the_gateway_pools(self):
         config = compliant()

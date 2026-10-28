@@ -2,6 +2,8 @@ name: tamagotchi-lab1
 services:
   postgres:
     image: postgres:17.9
+    # Replicas share this server; leave room for bounded pools and leader connections.
+    command: [postgres, -c, 'max_connections=${POSTGRES_MAX_CONNECTIONS:-250}']
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python3 scripts/lab.py setup}
     volumes:
@@ -86,6 +88,8 @@ services:
       # Round-robin pools of registered instances, and Gateway's own registration. Services
       # that have not registered keep their UPSTREAMS_JSON origin.
       SERVICE_DISCOVERY_URL: https://service-discovery:8443
+      # Managed services with no healthy instance return 503; they never use static DNS.
+      DISCOVERY_MANAGED_SERVICES: ${DISCOVERY_MANAGED_SERVICES:-user-management,battle,map,monster-raid,tamagotchi,notification}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
@@ -144,12 +148,15 @@ services:
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       JWT_PRIVATE_KEY_FILE: /run/secrets/jwt.pem
       SEED_PASSWORD: ${SEED_PASSWORD:?Run setup}
+      SERVICE_DISCOVERY_URL: https://service-discovery:8443
     volumes:
       - ./.secrets/jwt.pem:/run/secrets/jwt.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/user-management.pem:/run/tls/user-management.pem:ro
       - ./.secrets/tls/user-management-key.pem:/run/tls/user-management-key.pem:ro
+    deploy:
+      replicas: 3
     depends_on:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
@@ -178,11 +185,14 @@ services:
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
+      SERVICE_DISCOVERY_URL: https://service-discovery:8443
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/battle.pem:/run/tls/battle.pem:ro
       - ./.secrets/tls/battle-key.pem:/run/tls/battle-key.pem:ro
+    deploy:
+      replicas: 3
     depends_on:
       user-management: {condition: service_healthy}
     healthcheck:
