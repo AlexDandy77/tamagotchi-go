@@ -109,6 +109,9 @@ The common deployment runs two or three instances of a service once it is instan
 5. Make background work and sockets replica-safe as described under Replicas.
 6. Publish validated merges to `main` as `3.MINOR.PATCH` and `latest`, then scale the service and update its submodule pointer in one common integration PR.
 
-## Remaining private-service handoff
+## Guild and Package Registry replicas
 
-Guild and Package Registry owners keep their sources private and complete the same status, registration, breaker and logging rules before joining `DISCOVERY_MANAGED_SERVICES` and scaling. Guild also needs a distinct socket origin per replica, cross-replica chat delivery and shared ticket-replay records in its own database. Registry must prove its MongoDB scheduler/outbox leadership and enrollment inbox remain safe across replicas. Test concurrent requests, leader takeover and removal/recovery of every instance, then publish and update the common deployment. Existing Compose entries and published images do not establish that these private implementations meet the rules.
+Guild and Package Registry `3.0.0` follow the status, registration, breaker and logging rules and run as three replicas each.
+
+- **Guild** gives each replica its own socket port (8087, 8088, 8089) and `PUBLIC_SOCKET_URL`. Storing a chat message or removing a member sends a PostgreSQL notification on commit; every other replica delivers it to its own members. Socket tickets are recorded in Guild's database, so a ticket opens one socket across all replicas. One replica at a time, holding a session advisory lock, publishes the outbox.
+- **Package Registry** dispatches raids only from the holder of a MongoDB lease. Each new holder gets a higher term, and each claim records it with a claim token, so a previous holder can neither claim schedules a newer term took nor record results for them. Every replica consumes enrollments in one consumer group; the inbox applies each event once.
