@@ -12,7 +12,7 @@ def compliant():
     services = config['services']
     services['gateway']['environment'].update(
         SERVICE_DISCOVERY_URL=SD,
-        DISCOVERY_MANAGED_SERVICES='user-management,battle,map,monster-raid,tamagotchi,notification',
+        DISCOVERY_MANAGED_SERVICES='user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification',
     )
     services['service-discovery'] = {
         'image': 'owner/service-discovery:latest',
@@ -30,7 +30,7 @@ def compliant():
     }
     services['map']['environment']['SERVICE_DISCOVERY_URL'] = SD
     services['map']['deploy'] = {'replicas': 3}
-    for scaled in ('user-management', 'battle', 'tamagotchi', 'notification'):
+    for scaled in ('user-management', 'battle', 'package-registry', 'tamagotchi', 'notification'):
         services[scaled]['environment']['SERVICE_DISCOVERY_URL'] = SD
         services[scaled]['deploy'] = {'replicas': 3}
     raid = services['monster-raid']
@@ -41,6 +41,14 @@ def compliant():
         replica['environment'].update(INSTANCE_ID=f'monster-raid-{n}', PUBLIC_SOCKET_URL=f'ws://localhost:{port}')
         replica['ports'] = [{'host_ip': '127.0.0.1', 'published': port, 'target': 8080}]
         services[f'monster-raid-{n}'] = replica
+    guild = services['guild']
+    guild['environment'].update(SERVICE_DISCOVERY_URL=SD, INSTANCE_ID='guild', PUBLIC_SOCKET_URL='ws://localhost:8087')
+    guild['ports'] = [{'host_ip': '127.0.0.1', 'published': '8087', 'target': 8080}]
+    for n, port in ((2, '8088'), (3, '8089')):
+        replica = copy.deepcopy(guild)
+        replica['environment'].update(INSTANCE_ID=f'guild-{n}', PUBLIC_SOCKET_URL=f'ws://localhost:{port}')
+        replica['ports'] = [{'host_ip': '127.0.0.1', 'published': port, 'target': 8080}]
+        services[f'guild-{n}'] = replica
     return config
 
 
@@ -58,7 +66,8 @@ class ScalingTests(unittest.TestCase):
     def test_managed_services_cannot_be_unknown_or_unregistered(self):
         config = compliant()
         gateway = config['services']['gateway']['environment']
-        gateway['DISCOVERY_MANAGED_SERVICES'] += ',guild,unknown'
+        gateway['DISCOVERY_MANAGED_SERVICES'] += ',unknown'
+        config['services']['guild']['environment'].pop('SERVICE_DISCOVERY_URL')
         failures = audit(config)
         self.assertIn('gateway: unknown discovery-managed service unknown', failures)
         self.assertIn('guild: managed routing requires service registration', failures)
@@ -131,11 +140,26 @@ class ScalingTests(unittest.TestCase):
                      'monster-raid-3: must publish exactly one socket port'):
             self.assertIn(text, failures)
 
-    def test_tamagotchi_and_notification_each_need_two_replicas(self):
-        for name in ('tamagotchi', 'notification'):
+    def test_tamagotchi_notification_and_registry_each_need_two_replicas(self):
+        for name in ('tamagotchi', 'notification', 'package-registry'):
             config = compliant()
             config['services'][name]['deploy'] = {'replicas': 1}
             self.assertIn(f'{name}: runs 1 instance(s); Lab 3 needs at least 2', audit(config))
+
+    def test_guild_runs_socket_replicas_on_their_own_ports(self):
+        config = compliant()
+        services = config['services']
+        del services['guild-2']
+        del services['guild-3']
+        self.assertIn('guild: runs 1 instance(s); Lab 3 needs at least 2', audit(config))
+        config = compliant()
+        services = config['services']
+        services['guild-2']['ports'] = [{'host_ip': '127.0.0.1', 'published': '8086', 'target': 8080}]
+        services['guild-2']['environment']['PUBLIC_SOCKET_URL'] = 'ws://localhost:8086'
+        services['guild-3']['environment']['PUBLIC_SOCKET_URL'] = 'ws://localhost:8087'
+        failures = audit(config)
+        self.assertIn('socket replicas publish the same host port', failures)
+        self.assertIn('guild-3: PUBLIC_SOCKET_URL does not match its published port', failures)
 
     def test_other_services_may_register_only_with_service_discovery(self):
         config = compliant()

@@ -89,7 +89,7 @@ services:
       # that have not registered keep their UPSTREAMS_JSON origin.
       SERVICE_DISCOVERY_URL: https://service-discovery:8443
       # Managed services with no healthy instance return 503; they never use static DNS.
-      DISCOVERY_MANAGED_SERVICES: ${DISCOVERY_MANAGED_SERVICES:-user-management,battle,map,monster-raid,tamagotchi,notification}
+      DISCOVERY_MANAGED_SERVICES: ${DISCOVERY_MANAGED_SERVICES:-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
@@ -201,10 +201,14 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
-  guild:
+  # One definition for every Guild replica. Each replica publishes its own chat socket port and
+  # registers that origin, so the Gateway's chat negotiation spreads members across replicas;
+  # messages reach members on other replicas through PostgreSQL notifications, and one leader
+  # at a time publishes the outbox.
+  guild: &guild
     image: ${GUILD_IMAGE:?Set a published Guild image tag}
     pull_policy: always
-    environment:
+    environment: &guild-env
       DATABASE_URL: postgres://guilds:${GUILDS_DB_PASSWORD:?Run setup}@postgres:5432/guilds?sslmode=disable
       KAFKA_BROKERS: kafka:9092
       KAFKA_USERNAME: guilds
@@ -221,11 +225,15 @@ services:
       # The chat socket accepts only the single-use tickets the Gateway issues under the
       # same setting, never an access token.
       SOCKET_TICKETS_ENABLED: ${SOCKET_TICKETS_ENABLED:-true}
+      SERVICE_DISCOVERY_URL: https://service-discovery:8443
+      INSTANCE_ID: guild
+      PUBLIC_SOCKET_URL: ws://localhost:8087
     volumes:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/guild.pem:/run/tls/guild.pem:ro
       - ./.secrets/tls/guild-key.pem:/run/tls/guild-key.pem:ro
+    # Only the negotiated chat socket and the probes are direct.
     ports: [127.0.0.1:8087:8080]
     depends_on:
       user-management: {condition: service_healthy}
@@ -235,6 +243,20 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
+  guild-2:
+    <<: *guild
+    environment:
+      <<: *guild-env
+      INSTANCE_ID: guild-2
+      PUBLIC_SOCKET_URL: ws://localhost:8088
+    ports: [127.0.0.1:8088:8080]
+  guild-3:
+    <<: *guild
+    environment:
+      <<: *guild-env
+      INSTANCE_ID: guild-3
+      PUBLIC_SOCKET_URL: ws://localhost:8089
+    ports: [127.0.0.1:8089:8080]
   package-registry:
     image: ${PACKAGE_REGISTRY_IMAGE:?Set a published Package Registry image tag}
     pull_policy: always
@@ -255,11 +277,17 @@ services:
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
+      # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.
+      SERVICE_DISCOVERY_URL: https://service-discovery:8443
     volumes:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/package-registry.pem:/run/tls/package-registry.pem:ro
       - ./.secrets/tls/package-registry-key.pem:/run/tls/package-registry-key.pem:ro
+    # Requests are instance-agnostic, every replica shares the enrollment consumer group, and
+    # one replica at a time holds the MongoDB lease that dispatches raids.
+    deploy:
+      replicas: 3
     depends_on:
       mongo: {condition: service_healthy}
       kafka: {condition: service_healthy}
