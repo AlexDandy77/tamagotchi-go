@@ -35,6 +35,78 @@ class RoutingChecks(unittest.TestCase):
         output.assert_called_once_with('ps', '-q', 'monster-raid', 'monster-raid-2', 'monster-raid-3')
 
 
+class FakeChat:
+    """A chat socket stand-in: authenticates offered tickets once, then relays one message."""
+    used = set()
+    stored = []
+
+    def __init__(self, url):
+        self.url, self.frames = url, []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def send(self, frame):
+        if frame['type'] == 'authenticate':
+            if frame['accessToken'] in FakeChat.used:
+                self.frames += [{'type': 'error', 'code': 'UNAUTHENTICATED'}, {'close': 1008}]
+            else:
+                FakeChat.used.add(frame['accessToken'])
+                self.frames.append({'type': 'authenticated'})
+        else:
+            message = {'content': frame['content'], 'sequence': 1}
+            FakeChat.stored.append(message)
+            self.frames.append({'type': 'message.ack', 'message': message})
+
+    def receive(self):
+        if not self.frames and FakeChat.stored:
+            return {'type': 'message.created', 'message': FakeChat.stored[-1]}
+        return self.frames.pop(0)
+
+
+class GuildSocketChecks(unittest.TestCase):
+    def offers(self, *replicas):
+        ports = {'guild': 8087, 'guild-2': 8088, 'guild-3': 8089}
+        return [(f'guild/{name}', {'url': f'ws://localhost:{ports[name]}/v1/guilds/g/chat', 'ticket': f'ticket-{i}'})
+                for i, name in enumerate(replicas)]
+
+    def setUp(self):
+        FakeChat.used, FakeChat.stored = set(), []
+
+    def test_negotiates_every_replica_and_relays_a_message_between_two(self):
+        offers = self.offers('guild', 'guild-2', 'guild-3', 'guild', 'guild', 'guild-2')
+        with patch.object(smoke, 'negotiate', side_effect=offers), patch.object(smoke, 'LiveSocket', FakeChat):
+            offered, pair = smoke.guild_sockets('alice-token', 'bob-token', True)
+        self.assertEqual(offered, ['guild/guild', 'guild/guild-2', 'guild/guild-3'])
+        self.assertEqual(pair, ('guild/guild', 'guild/guild-2'))
+
+    def test_missing_replica_port_fails(self):
+        with patch.object(smoke, 'negotiate', side_effect=self.offers('guild', 'guild-2', 'guild')), patch.object(smoke, 'LiveSocket', FakeChat):
+            with self.assertRaisesRegex(AssertionError, 'socket ports'):
+                smoke.guild_sockets('alice-token', 'bob-token', True)
+
+    def test_members_on_one_replica_do_not_prove_cross_replica_delivery(self):
+        offers = self.offers('guild', 'guild-2', 'guild-3', 'guild', 'guild', 'guild', 'guild')
+        with patch.object(smoke, 'negotiate', side_effect=offers), patch.object(smoke, 'LiveSocket', FakeChat):
+            with self.assertRaisesRegex(AssertionError, 'same Guild replica'):
+                smoke.guild_sockets('alice-token', 'bob-token', True)
+
+    def test_guild_containers_and_empty_chat_pool(self):
+        with patch.object(smoke, 'output', return_value='id-1\nid-2\nid-3') as output:
+            self.assertEqual(smoke.containers('guild'), ['id-1', 'id-2', 'id-3'])
+        output.assert_called_once_with('ps', '-q', 'guild', 'guild-2', 'guild-3')
+        with patch.object(smoke, 'containers', return_value=['guild-id']), patch.object(smoke.lab, 'run') as run, \
+                patch.object(smoke, 'wait'), patch.object(smoke, 'pool', return_value={'source': 'service-discovery', 'instances': []}), \
+                patch.object(smoke, 'call', side_effect=[(503, {}), (503, {}), (200, {})]) as read:
+            with self.assertRaisesRegex(AssertionError, 'socket pool'):
+                smoke.all_replicas_down('not-printed', 'guild')
+        self.assertEqual(read.call_args.args[0], smoke.NEGOTIATIONS['guild'])
+        self.assertEqual(run.call_args.args[0], ['docker', 'start', 'guild-id'])
+
+
 class DisruptiveChecks(unittest.TestCase):
     def test_full_outage_checks_empty_pool_and_readiness_then_restores_exact_containers(self):
         ids = ['original-1', 'original-2', 'original-3']

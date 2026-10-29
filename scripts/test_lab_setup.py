@@ -103,5 +103,27 @@ class DemoAdminTests(unittest.TestCase):
                 self.assertEqual((root / '.env').read_text(), original)
 
 
+class ManagedServicesTests(unittest.TestCase):
+    CURRENT = 'user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification'
+
+    def run_setup(self, root, value):
+        (root / '.env.example').write_text('DISCOVERY_MANAGED_SERVICES=' + self.CURRENT + '\n')
+        (root / '.env').write_text('SEED_PASSWORD=private-value\nDISCOVERY_MANAGED_SERVICES=' + value + '\n')
+        with patch.object(lab, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+            lab.managed_services()
+        return (root / '.env').read_text()
+
+    def test_moves_the_previous_default_to_every_service(self):
+        with tempfile.TemporaryDirectory() as directory:
+            after = self.run_setup(Path(directory), lab.PREVIOUS_MANAGED_DEFAULTS[0])
+        self.assertEqual(after, 'SEED_PASSWORD=private-value\nDISCOVERY_MANAGED_SERVICES=' + self.CURRENT + '\n')
+
+    def test_keeps_an_explicit_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for value in ('map,monster-raid', ''):
+                after = self.run_setup(Path(directory), value)
+                self.assertIn('DISCOVERY_MANAGED_SERVICES=' + value + '\n', after)
+
+
 if __name__ == "__main__":
     unittest.main()

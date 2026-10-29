@@ -15,9 +15,9 @@ from check_lab2 import SERVICE_DISCOVERY_URL, service_failures, tickets_enabled
 from lab import SERVICES
 
 # Scaled services and the fewest instances each must run.
-SCALED = {'user-management': 2, 'battle': 2, 'map': 2, 'monster-raid': 2, 'tamagotchi': 2, 'notification': 2}
+SCALED = {'user-management': 2, 'battle': 2, 'guild': 2, 'package-registry': 2, 'map': 2, 'monster-raid': 2, 'tamagotchi': 2, 'notification': 2}
 # Services whose replicas each publish a socket port registered as their socket origin.
-SOCKET_SERVICES = ('monster-raid',)
+SOCKET_SERVICES = ('monster-raid', 'guild')
 DISCOVERY_SETTINGS = ('SERVICE_TLS_CERT_FILE', 'SERVICE_TLS_KEY_FILE', 'SERVICE_TLS_CA_FILE',
                       'TASK_TIMEOUT_SECONDS', 'MAX_CONCURRENT_TASKS')
 

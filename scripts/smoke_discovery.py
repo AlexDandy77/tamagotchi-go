@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Check all adopted services' registration and replica routing using safe reads.
 
-Destructive checks are opt-in: --disruptive stops one Map replica and pauses one Raid
-replica; --all-replicas-down [SERVICE] checks a complete managed pool outage; and
---restart-discovery checks that heartbeats rebuild the registry. Never prints credentials.
+Also negotiates raid and guild chat sockets on every replica and sends a guild chat message
+between members connected to different Guild replicas. Destructive checks are opt-in:
+--disruptive stops one Map replica and pauses one Raid replica; --all-replicas-down [SERVICE]
+checks a complete managed pool outage; and --restart-discovery checks that heartbeats rebuild
+the registry. Never prints credentials.
 """
 import argparse
 import collections
@@ -12,6 +14,7 @@ import datetime
 import json
 import subprocess
 import time
+import uuid
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -23,7 +26,7 @@ MAP = GATEWAY + '/services/map'
 RAIDS = GATEWAY + '/services/monster-raid'
 NIGHT_OWLS = '22222222-2222-4222-8222-222222222222'
 PRACTICE = '44444444-4444-4444-8444-444444444444'
-REPLICAS = {name: 3 for name in ('map', 'monster-raid', 'tamagotchi', 'notification', 'user-management', 'battle')}
+REPLICAS = {name: 3 for name in ('map', 'monster-raid', 'tamagotchi', 'notification', 'user-management', 'battle', 'guild', 'package-registry')}
 SAFE_READS = {
     'map': '/v1/map/nearby',
     'monster-raid': '/v1/raids?guildId=' + NIGHT_OWLS,
@@ -31,8 +34,17 @@ SAFE_READS = {
     'notification': '/v1/notifications?limit=20',
     'user-management': '/v1/users/me',
     'battle': '/v1/battles?limit=20',
+    'guild': '/v1/guilds?limit=20',
+    'package-registry': '/v1/packages?limit=20',
 }
 SOCKET_PORTS = {8084, 8085, 8086}
+GUILD_SOCKET_PORTS = {8087, 8088, 8089}
+# Socket services run one named Compose service per replica, each with its own port.
+NAMED_REPLICAS = {name: [name, name + '-2', name + '-3'] for name in ('monster-raid', 'guild')}
+NEGOTIATIONS = {
+    'monster-raid': f'{GATEWAY}/v1/realtime/raids/{PRACTICE}/connection',
+    'guild': f'{GATEWAY}/v1/realtime/guilds/{NIGHT_OWLS}/connection',
+}
 PAUSED = 'monster-raid-3'
 
 
@@ -112,8 +124,8 @@ def verify_spread(token, service, requests=30):
     return served
 
 
-def negotiate(token):
-    req = urllib.request.Request(f'{GATEWAY}/v1/realtime/raids/{PRACTICE}/connection', headers={'Authorization': 'Bearer ' + token})
+def negotiate(token, service='monster-raid'):
+    req = urllib.request.Request(NEGOTIATIONS[service], headers={'Authorization': 'Bearer ' + token})
     with urllib.request.urlopen(req, timeout=15) as response:
         return response.headers['X-Socket-Instance'], json.loads(response.read())
 
@@ -140,6 +152,57 @@ def sockets(token, tickets):
         assert (replay.get('code'), replay.get('closed')) == ('UNAUTHENTICATED', 1008), \
             f'A ticket replayed on another replica answered {replay.get("type")} {replay.get("code")}'
     return sorted(offers)
+
+
+def chat_authenticate(live, credential):
+    live.send({'type': 'authenticate', 'accessToken': credential})
+    frame = live.receive()
+    if frame.get('type') == 'error':
+        frame['closed'] = live.receive().get('close')
+    return frame
+
+
+def chat_until(live, kind, attempts=10):
+    for _ in range(attempts):
+        frame = live.receive()
+        if frame.get('type') == kind:
+            return frame
+    raise AssertionError(f'No {kind} frame arrived')
+
+
+def guild_sockets(alice, bob, tickets):
+    """Chat negotiation covers every Guild replica, a ticket works once across replicas, and a
+    message reaches a member connected to another replica."""
+    offers = dict(negotiate(alice, 'guild') for _ in range(REPLICAS['guild']))
+    ports = {urlsplit(offer['url']).port for offer in offers.values()}
+    assert ports == GUILD_SOCKET_PORTS, f'Guild negotiation handed out the socket ports {sorted(ports)}'
+    for replica, offer in offers.items():
+        with LiveSocket(offer['url']) as live:
+            first = chat_authenticate(live, offer['ticket'] if tickets else alice)
+        assert first.get('type') == 'authenticated', f'{replica} answered {first.get("type")} {first.get("code")}'
+    if tickets:
+        (_, used), (_, other) = list(offers.items())[:2]
+        with LiveSocket(other['url']) as live:
+            replay = chat_authenticate(live, used['ticket'])
+        assert (replay.get('code'), replay.get('closed')) == ('UNAUTHENTICATED', 1008), \
+            f'A chat ticket replayed on another replica answered {replay.get("type")} {replay.get("code")}'
+    # Negotiation rotates replicas; keep asking until Bob is offered a different one than Alice.
+    sender_replica, sender = negotiate(alice, 'guild')
+    for _ in range(REPLICAS['guild']):
+        receiver_replica, receiver = negotiate(bob, 'guild')
+        if receiver_replica != sender_replica:
+            break
+    assert receiver_replica != sender_replica, 'Alice and Bob were offered the same Guild replica'
+    content = f'smoke {uuid.uuid4()}'
+    with LiveSocket(sender['url']) as alice_live, LiveSocket(receiver['url']) as bob_live:
+        for live, offer, token in ((alice_live, sender, alice), (bob_live, receiver, bob)):
+            frame = chat_authenticate(live, offer['ticket'] if tickets else token)
+            assert frame.get('type') == 'authenticated', f'Chat authentication answered {frame.get("type")} {frame.get("code")}'
+        alice_live.send({'type': 'message.send', 'requestId': str(uuid.uuid4()), 'content': content})
+        ack = chat_until(alice_live, 'message.ack')
+        created = chat_until(bob_live, 'message.created')
+    assert created['message'] == ack['message'], 'The message Bob received differs from the one Alice stored'
+    return sorted(offers), (sender_replica, receiver_replica)
 
 
 def stop_one_map_replica(token):
@@ -180,7 +243,7 @@ def pause_one_raid_replica(token, since):
 
 
 def containers(service):
-    labels = [service] if service != 'monster-raid' else ['monster-raid', 'monster-raid-2', 'monster-raid-3']
+    labels = NAMED_REPLICAS.get(service, [service])
     ids = output('ps', '-q', *labels).split()
     assert len(ids) == REPLICAS[service], f'{service}: expected {REPLICAS[service]} running containers, found {len(ids)}'
     return ids
@@ -197,8 +260,8 @@ def all_replicas_down(token, service):
         assert status == 503, f'{service}: empty pool answered {status}, expected 503'
         ready, _ = call(GATEWAY + '/readyz', token)
         assert ready == 503, f'Gateway readiness stayed {ready} with no {service} instances'
-        if service == 'monster-raid':
-            negotiation, _ = call(f'{GATEWAY}/v1/realtime/raids/{PRACTICE}/connection', token)
+        if service in NEGOTIATIONS:
+            negotiation, _ = call(NEGOTIATIONS[service], token)
             assert negotiation == 503, 'Managed empty socket pool still negotiated a connection'
     finally:
         lab.run(['docker', 'start', *ids], stdout=subprocess.DEVNULL)
@@ -221,18 +284,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--disruptive', action='store_true', help='stop one Map replica and pause one Raid replica')
     parser.add_argument('--all-replicas-down', nargs='?', const='all', action='append', choices=['all', *REPLICAS], default=[],
-                        help='stop/recover an entire managed pool; omitted service means all six, one at a time')
+                        help='stop/recover an entire managed pool; omitted service means all of them, one at a time')
     parser.add_argument('--restart-discovery', action='store_true', help='restart the registry and verify heartbeat rebuilding')
     args = parser.parse_args()
     values = lab.environment()
     since = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-    token = request(USERS, 'POST', '/v1/auth/login', {'email': 'alice@demo.invalid', 'password': values['SEED_PASSWORD']})['accessToken']
+    login = lambda name: request(USERS, 'POST', '/v1/auth/login', {'email': name + '@demo.invalid', 'password': values['SEED_PASSWORD']})['accessToken']
+    token, bob = login('alice'), login('bob')
     for service, count in REPLICAS.items():
         wait(f'{count} {service} replicas registering', lambda: registered(service, count), 60)
     assert discovery_status()['instances']['available'] >= sum(REPLICAS.values()) + 1, 'Some adopted replicas are not available'
     for service in REPLICAS:
         print(service, 'requests served by', dict(sorted(verify_spread(token, service).items())))
-    print('Raid sockets negotiated on', sockets(token, values.get('SOCKET_TICKETS_ENABLED', 'true').lower() == 'true'))
+    tickets = values.get('SOCKET_TICKETS_ENABLED', 'true').lower() == 'true'
+    print('Raid sockets negotiated on', sockets(token, tickets))
+    offered, (sender, receiver) = guild_sockets(token, bob, tickets)
+    print('Guild chat sockets negotiated on', offered, f'and a message from {sender} reached {receiver}')
     if args.disruptive:
         print('With one Map replica stopped, served by', dict(sorted(stop_one_map_replica(token).items())))
         pause_one_raid_replica(token, since)

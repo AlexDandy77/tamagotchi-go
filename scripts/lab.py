@@ -144,6 +144,20 @@ def tls_bundle(directory):
             readable = public or member.name.removesuffix('-key.pem') in NON_ROOT_SERVICES
             write_private(tls_dir / member.name, archive.extractfile(member).read(), 0o444 if readable else 0o600)
 
+# Defaults that earlier setups wrote to .env, before every service adopted discovery routing.
+PREVIOUS_MANAGED_DEFAULTS = ('user-management,battle,map,monster-raid,tamagotchi,notification',)
+
+def managed_services():
+    """Move a previously shipped default to the current list; an explicit selection is kept."""
+    path = ROOT / '.env'
+    data = path.read_text()
+    match = re.search(r'^DISCOVERY_MANAGED_SERVICES=(.*)$', data, re.M)
+    if not match or match[1].strip() not in PREVIOUS_MANAGED_DEFAULTS:
+        return
+    current = re.search(r'^DISCOVERY_MANAGED_SERVICES=(.*)$', (ROOT / '.env.example').read_text(), re.M)[1]
+    path.write_text(data.replace(match[0], 'DISCOVERY_MANAGED_SERVICES=' + current))
+    print('Updated DISCOVERY_MANAGED_SERVICES from the previous default to', current)
+
 def demo_admin():
     """Fill only the local demo default; explicit admins always win."""
     path = ROOT / '.env'
@@ -162,6 +176,7 @@ def demo_admin():
 
 def setup():
     env_file()
+    managed_services()
     demo_admin()
     directory = ROOT / '.secrets'
     directory.mkdir(mode=0o700, exist_ok=True)
