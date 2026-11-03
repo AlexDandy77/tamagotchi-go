@@ -145,6 +145,8 @@ services:
       SERVICE_DISCOVERY_URL: https://service-discovery:8443
       # Source of GET /v1/logs.
       LOKI_URL: http://loki:3100
+      # Admins of the admin routes: the same local demo admins as Package Registry.
+      BROKER_ADMIN_USER_IDS: ${REGISTRY_ADMIN_USER_IDS:-}
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       INSTANCE_ID: message-broker-1
