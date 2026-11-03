@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVICES = (
     'user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification',
 )
-# Every published image startup refreshes: the services, Gateway and Service Discovery.
-IMAGES = (*SERVICES, 'gateway', 'service-discovery')
+# Every published image startup refreshes: the services, Gateway, Service Discovery and the Message Broker.
+IMAGES = (*SERVICES, 'gateway', 'service-discovery', 'message-broker')
 # Topic -> Kafka principal allowed to produce it.
 TOPICS = {
     'user.package-registered.v1': 'users',
@@ -56,12 +56,12 @@ SECRET_KEYS = (
     'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD',
     'KAFKA_BROKER_PASSWORD', 'KAFKA_ADMIN_PASSWORD', 'KAFKA_USERS_PASSWORD', 'KAFKA_BATTLES_PASSWORD',
     'KAFKA_GUILDS_PASSWORD', 'KAFKA_REGISTRY_PASSWORD', 'KAFKA_LOCATIONS_PASSWORD', 'KAFKA_RAIDS_PASSWORD',
-    'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD',
+    'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD', 'GRAFANA_ADMIN_PASSWORD',
 )
 # Prepare every service certificate; owners mount them when enabling Gateway transport.
-TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery')
+TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery', 'message-broker')
 # These images run as an unprivileged user that must read its bind-mounted key.
-NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery')
+NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery', 'message-broker')
 # Already required by Compose; provides the openssl CLI so the host needs no OpenSSL.
 TOOLS_IMAGE = 'postgres:17.9'
 TLS_SCRIPT = r'''set -eu

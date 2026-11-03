@@ -16,6 +16,7 @@ OWNERS = {
     "Monster Raid": "monster-raid",
     "Guild": "guild",
     "Package Registry": "package-registry",
+    "Message Broker": "message-broker",
 }
 
 
@@ -76,11 +77,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--service-dir", type=Path)
+    # Lab 4: the Message Broker authorizes service-to-service calls with the same catalog.
+    parser.add_argument("--broker-dir", type=Path)
     args = parser.parse_args()
     data = catalog()
     paths = [ROOT / "contracts/gateway-routes.json"]
     if args.service_dir:
         paths.append(args.service_dir / "gateway/routes.json")
+    if args.broker_dir:
+        paths.append(args.broker_dir / "broker/routes.json")
     for path in paths:
         if args.check:
             if not path.exists() or path.read_text() != data:

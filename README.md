@@ -85,7 +85,7 @@ The manual **Published runtime validation** workflow starts only public images, 
 
 ## Communication contract
 
-Contract version **1.4.0**. All eight services implement their portions.
+Contract version **1.5.0**. All eight services implement their portions.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
@@ -301,6 +301,19 @@ Path parameters and listed bodies are required. `cursor?` and `limit?` are optio
 | `GET /v1/raid-schedules/{scheduleId}` | admin | — | `200` `Schedule` | One schedule |
 | `PUT /v1/raid-schedules/{scheduleId}/status` | admin | `ScheduleStatus` | `200` `Schedule` | Activate, deactivate or cancel |
 | `GET /internal/v1/raid-schedules/{scheduleId}/versions/{scheduleVersion}` | internal | — | `200` `Schedule` | Pinned schedule version |
+
+#### Message Broker
+
+Admin routes of the [Message Broker](contracts/message-broker.md), reached through Gateway as `/services/message-broker/...`. Its event and request APIs are gRPC ([`contracts/proto/broker.proto`](contracts/proto/broker.proto)).
+
+| Method and path | Caller | Body / query | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET /v1/topics` | admin | — | `200` | Topics with producers, consumer groups and counters (grade 7) |
+| `GET /v1/topics/{topic}/messages` | admin | `fromOffset?`, `limit?` | `200` | Stored messages of one topic |
+| `GET /v1/dlq` | admin | — | `200` | Dead letter channels with counts (grade 9) |
+| `GET /v1/dlq/{topic}` | admin | `cursor?`, `limit?` | `200` | Dead-lettered messages with group, attempts and reason |
+| `GET /v1/queues` | admin | — | `200` | Subscriber queues with instances, scores and breakers |
+| `GET /v1/logs` | admin | `service?`, `instanceId?`, `level?`, `since?`, `until?`, `contains?`, `limit?` | `200` NDJSON | Download the system's logs from Loki (grade 4) |
 
 ### Kafka event contract
 

@@ -47,7 +47,9 @@ class SetupTests(unittest.TestCase):
     def test_service_discovery_gets_a_readable_certificate_and_its_image_refreshes(self):
         self.assertIn("service-discovery", lab.TLS_SERVICES)
         self.assertIn("service-discovery", lab.NON_ROOT_SERVICES)
-        self.assertEqual(lab.IMAGES, (*lab.SERVICES, "gateway", "service-discovery"))
+        self.assertEqual(lab.IMAGES, (*lab.SERVICES, "gateway", "service-discovery", "message-broker"))
+        self.assertIn("message-broker", lab.TLS_SERVICES)
+        self.assertIn("message-broker", lab.NON_ROOT_SERVICES)
         # It has no database, so setup neither migrates nor seeds it.
         self.assertNotIn("service-discovery", lab.SERVICES)
 

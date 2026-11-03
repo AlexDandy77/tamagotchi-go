@@ -697,5 +697,47 @@
     "pattern": "/v1/raids/[^/]+/attacks",
     "audience": "player",
     "callers": []
+  },
+  {
+    "service": "message-broker",
+    "method": "GET",
+    "pattern": "/v1/topics",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "message-broker",
+    "method": "GET",
+    "pattern": "/v1/topics/[^/]+/messages",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "message-broker",
+    "method": "GET",
+    "pattern": "/v1/dlq",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "message-broker",
+    "method": "GET",
+    "pattern": "/v1/dlq/[^/]+",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "message-broker",
+    "method": "GET",
+    "pattern": "/v1/queues",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "message-broker",
+    "method": "GET",
+    "pattern": "/v1/logs",
+    "audience": "admin",
+    "callers": []
   }
 ]

@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: Tamagotchi Go communication contract
-  version: 1.4.0
+  version: 1.5.0
   description: Business API contract. Paths are relative to the owning service. Gateway transport and
     staged migration are defined in gateway.md; endpoint bodies and ownership are unchanged.
 tags:
@@ -13,6 +13,7 @@ tags:
 - name: Monster Raid
 - name: Guild
 - name: Package Registry
+- name: Message Broker
 paths:
   /v1/auth/register:
     post:
@@ -4168,6 +4169,229 @@ paths:
         schema:
           $ref: '#/components/schemas/ID'
         description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+  /v1/topics:
+    get:
+      tags:
+      - Message Broker
+      summary: Broker topics with producers, groups and counters
+      operationId: GET_v1_topics
+      description: Broker topics with producers, groups and counters. Admin only, through Gateway; see contracts/message-broker.md.
+      x-audience: admin
+      responses:
+        '200':
+          description: Broker topics with producers, groups and counters
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /v1/topics/{topic}/messages:
+    parameters:
+    - name: topic
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[a-z][a-z.-]{0,127}$
+    get:
+      tags:
+      - Message Broker
+      summary: Stored messages of one topic from an offset
+      operationId: GET_v1_topics_topic_messages
+      description: Stored messages of one topic from an offset. Admin only, through Gateway; see contracts/message-broker.md.
+      x-audience: admin
+      responses:
+        '200':
+          description: Stored messages of one topic from an offset
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+      parameters:
+      - name: fromOffset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/dlq:
+    get:
+      tags:
+      - Message Broker
+      summary: Dead letter channels with counts
+      operationId: GET_v1_dlq
+      description: Dead letter channels with counts. Admin only, through Gateway; see contracts/message-broker.md.
+      x-audience: admin
+      responses:
+        '200':
+          description: Dead letter channels with counts
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /v1/dlq/{topic}:
+    parameters:
+    - name: topic
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[a-z][a-z.-]{0,127}$
+    get:
+      tags:
+      - Message Broker
+      summary: Dead-lettered messages of one topic
+      operationId: GET_v1_dlq_topic
+      description: Dead-lettered messages of one topic. Admin only, through Gateway; see contracts/message-broker.md.
+      x-audience: admin
+      responses:
+        '200':
+          description: Dead-lettered messages of one topic
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/queues:
+    get:
+      tags:
+      - Message Broker
+      summary: Subscriber queues with their instances, scores and breakers
+      operationId: GET_v1_queues
+      description: Subscriber queues with their instances, scores and breakers. Admin only, through Gateway; see contracts/message-broker.md.
+      x-audience: admin
+      responses:
+        '200':
+          description: Subscriber queues with their instances, scores and breakers
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /v1/logs:
+    get:
+      tags:
+      - Message Broker
+      summary: Download the system's logs as newline-delimited JSON
+      operationId: GET_v1_logs
+      description: Download the system's logs as newline-delimited JSON. Admin only, through Gateway; see contracts/message-broker.md.
+      x-audience: admin
+      responses:
+        '200':
+          description: Download the system's logs as newline-delimited JSON
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '422':
+          $ref: '#/components/responses/Error422'
+      parameters:
+      - name: service
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: instanceId
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: level
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [debug, info, warning, error]
+      - name: since
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: until
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: contains
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 200
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50000
+          default: 5000
 components:
   securitySchemes:
     userBearer:

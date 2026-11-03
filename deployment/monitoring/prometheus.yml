@@ -1,0 +1,16 @@
+# Lab 4: the Message Broker carries every routed request and event, so its /metrics
+# (Prometheus text format, on its internal HTTP listener) covers the whole system:
+# requests and reroutes per instance, breaker state, queue depth, instance load,
+# published, delivered, acknowledged and dead-lettered events per topic and group.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: message-broker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['message-broker:8080']
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
