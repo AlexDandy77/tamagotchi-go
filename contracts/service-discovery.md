@@ -12,14 +12,14 @@ Service Discovery takes the caller's service name from the certificate's DNS SAN
 
 | Step | Request | Rule |
 | --- | --- | --- |
-| Register | `PUT /v1/services/{service}/instances/{instanceId}` | Sent once the listeners are open. The caller's SAN must equal `{service}`. Body `{port, version, socketUrl?}`; `socketUrl` is the public WebSocket origin of a service with negotiated sockets. |
+| Register | `PUT /v1/services/{service}/instances/{instanceId}` | Sent once the listeners are open. The caller's SAN must equal `{service}`. Body `{port, version, socketUrl?, grpcPort?, topics?}`; `socketUrl` is the public WebSocket origin of a service with negotiated sockets; `grpcPort` and `topics` are described under [Message Broker registration](#message-broker-registration). |
 | Renew | The same request every `heartbeatSeconds` (5) | The lease lasts `leaseSeconds` (15). An unknown instance is registered again, so a Service Discovery restart heals within one heartbeat. |
 | Deregister | `DELETE /v1/services/{service}/instances/{instanceId}` | Sent on graceful shutdown before the listeners close. Repeating it is harmless. |
 | Expire | none | An instance without a renewal for one lease is removed and reported. |
 
 `instanceId` is lowercase letters, digits and hyphens, at most 63 characters, unique per service. It defaults to the container hostname; Compose sets `INSTANCE_ID` only where a readable name helps, such as `monster-raid-2`. The registration answer repeats the instance with `leaseSeconds` and `heartbeatSeconds`, so callers never hardcode them.
 
-`GET /v1/services` returns the available instances of every service and is allowed only for Gateway. Expired, unhealthy and ejected instances are left out. Gateway refreshes its pools every two seconds and keeps the last answer while Service Discovery is unreachable.
+`GET /v1/services` returns the available instances of every service and is allowed only for Gateway and the Message Broker. Expired, unhealthy and ejected instances are left out. Gateway refreshes its pools every two seconds and keeps the last answer while Service Discovery is unreachable.
 
 Gateway's `DISCOVERY_MANAGED_SERVICES` is a comma-separated subset of its `UPSTREAMS_JSON` names. It defaults to empty for standalone compatibility; configuring names requires `SERVICE_DISCOVERY_URL`. The common deployment lists every adopted service explicitly, so a restart never forgets which services use discovery. A managed service with no usable instances returns `503 DEPENDENCY_UNAVAILABLE`, including REST and socket negotiation; Gateway readiness returns `503 NOT_READY`. It never falls back to that service's static origin, even when the registry is empty or unreachable. Only services outside the managed list retain static fallback during migration. Cached signing keys remain usable; a managed User Management outage without usable keys returns `503 IDENTITY_UNAVAILABLE`.
 
@@ -108,6 +108,17 @@ The common deployment runs two or three instances of a service once it is instan
 4. Apply the logging rules.
 5. Make background work and sockets replica-safe as described under Replicas.
 6. Publish validated merges to `main` as `3.MINOR.PATCH` and `latest`, then scale the service and update its submodule pointer in one common integration PR.
+
+## Message Broker registration
+
+From Lab 4 the [Message Broker](message-broker.md) routes service-to-service requests and events, so it reads the same pools as Gateway and reports tripped breakers the same way. Changes to this contract:
+
+- **Who calls what.** `message-broker` is a known service. It registers itself like every other service, and it may call `GET /v1/services` and `POST .../eject`.
+- **`grpcPort`.** The port of the instance's mTLS gRPC listener that serves `Endpoint.Handle`. The broker prefers it over the HTTPS `port`; an instance without it is reached over HTTPS.
+- **`topics`.** A list of `{topic, group}` the instance consumes, for example `[{"topic":"pet.used.v1","group":"notification"}]`. Only consumers send it. Service Discovery checks only the shape; the broker decides whether that service may use that group.
+- **Pool entries.** `GET /v1/services` repeats `grpcPort` and `topics` for each instance and adds `loadPercent`, the `load.percent` from its latest successful status poll. The broker uses it for load-based routing.
+
+All three fields are optional, so current registrations keep working. A service must not send them before Service Discovery `4.0.0` accepts them, because unknown fields are still rejected with `400`.
 
 ## Guild and Package Registry replicas
 
