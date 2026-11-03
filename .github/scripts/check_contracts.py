@@ -173,6 +173,7 @@ def main():
         require(text.count("```") % 2 == 0, f"Unclosed {label} code fence")
     validate(yaml.safe_load((ROOT / "contracts/gateway.openapi.yaml").read_text()))
     validate(yaml.safe_load((ROOT / "contracts/service-discovery.openapi.yaml").read_text()))
+    validate(yaml.safe_load((ROOT / "contracts/message-broker.openapi.yaml").read_text()))
     run([sys.executable, str(ROOT / "scripts/sync_gateway_routes.py"), "--check"], check=True)
     print(f"Validated {len(catalog)} HTTP operations, {len(events['oneOf'])} event types and {len(realtime['oneOf'])} chat types.")
     print("README and field dictionary agreement, references, examples and nine invalid-payload checks passed.")

@@ -93,6 +93,7 @@ Contract version **1.4.0**. All eight services implement their portions.
 - [`contracts/field-dictionary.md`](contracts/field-dictionary.md): readable definitions of every request, response, event and frame type named in the tables below.
 - [`contracts/game-rules.md`](contracts/game-rules.md): the numbers and formulas behind the contract.
 - [`contracts/service-discovery.md`](contracts/service-discovery.md): instance registration, status endpoints, load balancing, circuit breakers, replicas and health alerts; Service Discovery's own routes are in [`contracts/service-discovery.openapi.yaml`](contracts/service-discovery.openapi.yaml).
+- [`contracts/message-broker.md`](contracts/message-broker.md) (Lab 4, proposed): our own broker that replaces Kafka and carries service-to-service requests over gRPC; its gRPC API is [`contracts/proto/broker.proto`](contracts/proto/broker.proto) and its HTTP routes are in [`contracts/message-broker.openapi.yaml`](contracts/message-broker.openapi.yaml).
 
 ### Rules
 
@@ -302,6 +303,8 @@ Path parameters and listed bodies are required. `cursor?` and `limit?` are optio
 | `GET /internal/v1/raid-schedules/{scheduleId}/versions/{scheduleVersion}` | internal | — | `200` `Schedule` | Pinned schedule version |
 
 ### Kafka event contract
+
+> **Lab 4:** these topics move unchanged to our own [Message Broker](contracts/message-broker.md), with the same names, envelopes, producers and consumer groups. Kafka stays until every service has migrated.
 
 Each event type has its own Kafka topic named after the type. The message key is `aggregateId`, so events about one request, pet, battle, raid or enrollment stay in order within a partition. Each consuming service reads with its own consumer group and commits offsets only after durable processing. Producers publish from their outbox with `acks=all` and the idempotent producer setting, reusing the same `eventId` on retry. Topics retain events for 7 days; messages that keep failing go to `<topic>.dlq`. Topic ACLs allow writes only from the listed producer.
 

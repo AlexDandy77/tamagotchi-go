@@ -51,10 +51,10 @@ paths:
   /v1/services:
     get:
       operationId: listServiceInstances
-      description: Available instances per service. Only Gateway may call it.
+      description: Available instances per service. Only Gateway and the Message Broker may call it.
       security:
         - serviceTLS: []
-      x-allowed-callers: [gateway]
+      x-allowed-callers: [gateway, message-broker]
       responses:
         '200':
           description: Expired, unhealthy and ejected instances are left out
@@ -127,12 +127,12 @@ paths:
     post:
       operationId: ejectInstance
       description: >-
-        Gateway reports a tripped circuit breaker. The instance stays out of every
-        pool until three consecutive healthy status polls, and at least one breaker
-        window has passed.
+        Gateway or the Message Broker reports a tripped circuit breaker. The
+        instance stays out of every pool until three consecutive healthy status
+        polls, and at least one breaker window has passed.
       security:
         - serviceTLS: []
-      x-allowed-callers: [gateway]
+      x-allowed-callers: [gateway, message-broker]
       requestBody:
         required: true
         content:
@@ -170,7 +170,7 @@ components:
   schemas:
     ServiceName:
       type: string
-      enum: [gateway, user-management, battle, guild, package-registry, tamagotchi, notification, map, monster-raid]
+      enum: [gateway, message-broker, user-management, battle, guild, package-registry, tamagotchi, notification, map, monster-raid]
     InstanceId:
       type: string
       pattern: '^[a-z0-9][a-z0-9-]{0,62}$'
@@ -182,6 +182,13 @@ components:
         port: {type: integer, minimum: 1, maximum: 65535, description: The instance's mTLS listener port}
         version: {type: string, minLength: 1, maxLength: 64}
         socketUrl: {type: string, pattern: '^wss?://[^/?#@]+$', description: Public WebSocket origin of this instance, without a path}
+        grpcPort: {type: integer, minimum: 1, maximum: 65535, description: The instance's mTLS gRPC listener serving Endpoint.Handle (broker.proto)}
+        topics:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          description: Event topics this instance consumes, with its consumer group (message-broker.md)
+          items: {$ref: '#/components/schemas/TopicInterest'}
     Instance:
       type: object
       additionalProperties: false
@@ -191,6 +198,11 @@ components:
         url: {type: string, pattern: '^https://', description: 'https://{peer IP}:{port}; verify the certificate against the service name'}
         socketUrl: {type: string, pattern: '^wss?://'}
         version: {type: string}
+        grpcPort: {type: integer, minimum: 1, maximum: 65535}
+        topics:
+          type: array
+          items: {$ref: '#/components/schemas/TopicInterest'}
+        loadPercent: {type: integer, minimum: 0, maximum: 100, description: load.percent from the latest successful status poll; absent before the first}
     RegisteredInstance:
       type: object
       additionalProperties: false
@@ -206,6 +218,17 @@ components:
         renewedAt: {type: string, format: date-time}
         leaseSeconds: {type: integer, minimum: 1}
         heartbeatSeconds: {type: integer, minimum: 1}
+        grpcPort: {type: integer, minimum: 1, maximum: 65535}
+        topics:
+          type: array
+          items: {$ref: '#/components/schemas/TopicInterest'}
+    TopicInterest:
+      type: object
+      additionalProperties: false
+      required: [topic, group]
+      properties:
+        topic: {type: string, pattern: '^[a-z][a-z-]*(\.[a-z][a-z-]*)*\.v[0-9]+$', description: 'e.g. pet.used.v1'}
+        group: {type: string, pattern: '^[a-z][a-z-]{0,62}$', description: 'Consumer group, e.g. notification'}
     Ejection:
       type: object
       additionalProperties: false

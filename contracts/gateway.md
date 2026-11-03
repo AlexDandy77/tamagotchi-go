@@ -2,6 +2,8 @@
 
 Adding Gateway keeps service bodies, statuses, idempotency and data ownership unchanged. The Gateway handles REST authentication and routing; Kafka remains direct.
 
+> **Lab 4 change (proposed in [message-broker.md](message-broker.md)).** Gateway sends client requests to the Message Broker's subscriber queue of the destination instead of choosing an instance itself. Service-to-service calls move from `https://gateway:8443` to the broker's gRPC `Router.Call`, so the `internal` routes are removed from Gateway. Authentication, header stripping, the identity assertion and WebSocket negotiation stay in Gateway. Owners must also accept the peer `message-broker` and its assertions. The rules below describe the current Lab 3 deployment until the migration is done.
+
 ## Routes
 
 Clients call `http://localhost:8080/services/{service}/{path}`. For example, `GET /services/user-management/v1/users/me` reaches `GET /v1/users/me`. Service names are the Compose names. Only methods and paths in [gateway-routes.json](gateway-routes.json) are allowed. Guild `/chat` is a direct WebSocket, never a REST proxy route.

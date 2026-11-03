@@ -1,0 +1,386 @@
+openapi: 3.1.0
+info:
+  title: Tamagotchi Go Message Broker
+  version: 1.0.0
+  description: >-
+    HTTP routes of the Message Broker. The gRPC API (EventBus, Router, Endpoint)
+    is contracts/proto/broker.proto; rules are in message-broker.md. Probe and
+    metrics routes are served on the internal HTTP listener; the subscriber
+    queues and admin routes use the mutual TLS listener. Admin routes are
+    reached through Gateway as admin routes of the service message-broker.
+servers:
+  - url: https://message-broker:8443
+  - url: http://message-broker:8080
+paths:
+  /healthz:
+    get:
+      operationId: brokerHealth
+      responses:
+        '200':
+          description: Process is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {const: ok}
+  /readyz:
+    get:
+      operationId: brokerReady
+      responses:
+        '200':
+          description: Listeners and storage are ready
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {const: ready}
+        '503': {$ref: '#/components/responses/Error'}
+  /status:
+    get:
+      operationId: brokerStatus
+      description: >-
+        The common Status (service-discovery.openapi.yaml) plus the subscriber
+        queues. Takes no task slot and never returns secrets.
+      responses:
+        '200':
+          description: Current broker status; reading it resets load.peakInFlight
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service, instanceId, version, status, uptimeSeconds, load, checks, circuits, queues]
+                properties:
+                  service: {const: message-broker}
+                  instanceId: {type: string}
+                  version: {type: string}
+                  status: {enum: [ok, degraded]}
+                  uptimeSeconds: {type: integer, minimum: 0}
+                  load: {type: object}
+                  checks:
+                    type: object
+                    additionalProperties: {enum: [ok, failed]}
+                  circuits:
+                    type: object
+                    description: Breaker state per service/instanceId
+                    additionalProperties: {enum: [closed, open, halfOpen]}
+                  queues:
+                    type: array
+                    items: {$ref: '#/components/schemas/Queue'}
+  /metrics:
+    get:
+      operationId: brokerMetrics
+      description: Prometheus text exposition format. Internal HTTP listener only.
+      responses:
+        '200':
+          description: Current metrics
+          content:
+            text/plain:
+              schema: {type: string}
+  /queues/{service}/{path}:
+    parameters:
+      - $ref: '#/components/parameters/Service'
+      - name: path
+        in: path
+        required: true
+        description: The owner path after the service name, with its query string
+        schema: {type: string}
+    get: &queue
+      operationId: queueGet
+      description: >-
+        Subscriber-based queue for Gateway-to-service traffic. Only the Gateway
+        certificate may call it. The request is forwarded to one instance of the
+        service with method, body and headers unchanged, and the owner's answer
+        is returned with X-Served-By.
+      security:
+        - serviceTLS: []
+      x-allowed-callers: [gateway]
+      responses:
+        default:
+          description: The owner's response, unchanged
+        '503': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
+    put:
+      <<: *queue
+      operationId: queuePut
+    post:
+      <<: *queue
+      operationId: queuePost
+    delete:
+      <<: *queue
+      operationId: queueDelete
+    patch:
+      <<: *queue
+      operationId: queuePatch
+  /v1/topics:
+    get:
+      operationId: listTopics
+      x-audience: admin
+      responses:
+        '200':
+          description: Every topic with producers, groups and counters
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Topic'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /v1/topics/{topic}/messages:
+    parameters:
+      - $ref: '#/components/parameters/Topic'
+    get:
+      operationId: readTopicMessages
+      x-audience: admin
+      parameters:
+        - name: fromOffset
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Stored messages in offset order
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, nextOffset]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/StoredMessage'}
+                  nextOffset: {type: integer, minimum: 1}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /v1/dlq:
+    get:
+      operationId: listDeadLetterChannels
+      x-audience: admin
+      responses:
+        '200':
+          description: One entry per dead letter channel
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [topic, count]
+                      properties:
+                        topic: {type: string, description: 'The channel, e.g. pet.used.v1.dlq'}
+                        count: {type: integer, minimum: 0}
+                        oldestAt: {type: string, format: date-time}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /v1/dlq/{topic}:
+    parameters:
+      - $ref: '#/components/parameters/Topic'
+    get:
+      operationId: listDeadLetters
+      x-audience: admin
+      parameters:
+        - name: cursor
+          in: query
+          schema: {type: string}
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Dead-lettered messages of the topic, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/DeadLetter'}
+                  nextCursor: {type: [string, 'null']}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /v1/queues:
+    get:
+      operationId: listQueues
+      x-audience: admin
+      responses:
+        '200':
+          description: Subscriber queues with their instances
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Queue'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /v1/logs:
+    get:
+      operationId: downloadLogs
+      x-audience: admin
+      description: >-
+        Log lines of every container, read from Loki, oldest first. Each line is
+        the service's own JSON log event. At most 7 days and 50000 lines per
+        request.
+      parameters:
+        - name: service
+          in: query
+          schema: {type: string}
+        - name: instanceId
+          in: query
+          schema: {type: string}
+        - name: level
+          in: query
+          description: Minimum level
+          schema: {enum: [debug, info, warning, error]}
+        - name: since
+          in: query
+          description: Default one hour before until
+          schema: {type: string, format: date-time}
+        - name: until
+          in: query
+          description: Default now
+          schema: {type: string, format: date-time}
+        - name: contains
+          in: query
+          description: Plain text the line must contain
+          schema: {type: string, maxLength: 200}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 50000, default: 5000}
+      responses:
+        '200':
+          description: Newline-delimited JSON, offered as a download (Content-Disposition attachment)
+          content:
+            application/x-ndjson:
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    serviceTLS:
+      type: mutualTLS
+      description: CA-signed service certificate; the DNS SAN names the caller.
+  parameters:
+    Service:
+      name: service
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[a-z][a-z-]{0,62}$'}
+    Topic:
+      name: topic
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[a-z][a-z.-]{0,127}$'}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+  schemas:
+    Topic:
+      type: object
+      additionalProperties: false
+      required: [name, producers, groups, messages, deadLettered]
+      properties:
+        name: {type: string}
+        producers:
+          type: array
+          items: {type: string}
+        groups:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [group, pending, inFlight]
+            properties:
+              group: {type: string}
+              pending: {type: integer, minimum: 0, description: Waiting for a fetch, including backoff}
+              inFlight: {type: integer, minimum: 0, description: Leased and not yet acked}
+        messages: {type: integer, minimum: 0}
+        deadLettered: {type: integer, minimum: 0}
+    StoredMessage:
+      type: object
+      additionalProperties: false
+      required: [offset, key, publishedAt, producer, value]
+      properties:
+        offset: {type: integer, minimum: 1}
+        key: {type: string}
+        publishedAt: {type: string, format: date-time}
+        producer: {type: string}
+        value: {description: The event envelope as published}
+    DeadLetter:
+      type: object
+      additionalProperties: false
+      required: [id, topic, offset, group, attempts, reason, deadLetteredAt, message]
+      properties:
+        id: {type: string}
+        topic: {type: string, description: The original topic}
+        offset: {type: integer, minimum: 1}
+        group: {type: string}
+        attempts: {type: integer, minimum: 1}
+        reason: {type: string}
+        permanent: {type: boolean}
+        deadLetteredAt: {type: string, format: date-time}
+        message: {$ref: '#/components/schemas/StoredMessage'}
+    Queue:
+      type: object
+      additionalProperties: false
+      required: [service, depth, inFlight, capacity, instances]
+      properties:
+        service: {type: string}
+        depth: {type: integer, minimum: 0}
+        inFlight: {type: integer, minimum: 0}
+        capacity: {type: integer, minimum: 1}
+        instances:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [instanceId, transport, score, circuit]
+            properties:
+              instanceId: {type: string}
+              transport: {enum: [grpc, https]}
+              loadPercent: {type: integer, minimum: 0, maximum: 100}
+              inFlight: {type: integer, minimum: 0}
+              score: {type: number, minimum: 0}
+              circuit: {enum: [closed, open, halfOpen]}
+  responses:
+    Error:
+      description: Common service error envelope
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message, requestId, details]
+                properties:
+                  code: {type: string}
+                  message: {type: string}
+                  requestId: {type: string, format: uuid}
+                  details: {type: array, items: {}}

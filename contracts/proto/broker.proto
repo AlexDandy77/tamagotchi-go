@@ -1,0 +1,143 @@
+// Message Broker gRPC contract (Lab 4). Rules: contracts/message-broker.md.
+//
+// Every RPC runs over mutual TLS with the shared CA. The caller is the single
+// DNS SAN of its certificate that names a known service, exactly as with
+// Gateway and Service Discovery. No message field can choose the caller.
+syntax = "proto3";
+
+package tamagotchi.broker.v1;
+
+option go_package = "github.com/arturtugui/pad-team-8-message-broker/gen/brokerv1;brokerv1";
+
+// ---------------------------------------------------------------------------
+// Event bus: topic-based, Kafka-like. Replaces Kafka; topic names and event
+// envelopes (contracts/events.schema.json) stay the same.
+// ---------------------------------------------------------------------------
+service EventBus {
+  // Store one event durably, then fan it out to every consumer group of the
+  // topic. Only the topic's producers may publish. Publishing the same
+  // eventId again returns the first offset with duplicate = true.
+  rpc Publish(PublishRequest) returns (PublishResponse);
+
+  // Long-poll for messages of the caller's group. Each returned message is
+  // leased to this caller: other replicas of the group do not see it until the
+  // lease ends. Only the group's own service may fetch for it.
+  rpc Fetch(FetchRequest) returns (FetchResponse);
+
+  // Processing finished durably; never deliver these to the group again.
+  rpc Ack(AckRequest) returns (AckResponse);
+
+  // Processing failed. Retried with backoff unless permanent is set or the
+  // attempts are used up; then the message moves to the dead letter channel.
+  rpc Nack(NackRequest) returns (NackResponse);
+
+  // Topics with their producers and consumer groups.
+  rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse);
+}
+
+message PublishRequest {
+  string topic = 1;                // e.g. "pet.used.v1"; must equal the envelope's type
+  string key = 2;                  // the envelope's aggregateId; orders delivery per key
+  bytes value = 3;                 // UTF-8 JSON event envelope, at most 256 KiB
+  map<string, string> headers = 4; // optional, e.g. correlation data; never secrets
+}
+
+message PublishResponse {
+  int64 offset = 1;    // position in the topic, starting at 1
+  bool duplicate = 2;  // the eventId was already stored; nothing was added
+}
+
+message FetchRequest {
+  string group = 1;            // consumer group, e.g. "notification"
+  repeated string topics = 2;  // topics this group consumes; at least one
+  int32 max_messages = 3;      // 1..100, default 10
+  int32 wait_ms = 4;           // long-poll wait when nothing is ready, 0..20000, default 10000
+  int32 lease_ms = 5;          // 1000..300000, default 30000
+}
+
+message Delivery {
+  string delivery_id = 1;  // opaque; pass it to Ack or Nack
+  string topic = 2;
+  int64 offset = 3;
+  string key = 4;
+  bytes value = 5;
+  map<string, string> headers = 6;
+  int32 attempt = 7;          // 1 on the first delivery to this group
+  string published_at = 8;    // RFC 3339 UTC
+}
+
+message FetchResponse {
+  repeated Delivery deliveries = 1;  // empty when the wait ran out
+}
+
+message AckRequest {
+  string group = 1;
+  repeated string delivery_ids = 2;
+}
+
+message AckResponse {
+  int32 acknowledged = 1;  // ids that were still pending; stale ids are ignored
+}
+
+message NackRequest {
+  string group = 1;
+  string delivery_id = 2;
+  string reason = 3;   // short text kept with the message, never secrets
+  bool permanent = 4;  // invalid message: dead-letter now, no retry
+}
+
+message NackResponse {
+  bool dead_lettered = 1;  // true when the message went to <topic>.dlq
+  int32 next_attempt_in_ms = 2;  // backoff before the next delivery, 0 when dead-lettered
+}
+
+message ListTopicsRequest {}
+
+message TopicInfo {
+  string name = 1;
+  repeated string producers = 2;
+  repeated string groups = 3;
+  int64 messages = 4;       // stored messages within retention
+  int64 dead_lettered = 5;  // messages of this topic in its .dlq
+}
+
+message ListTopicsResponse {
+  repeated TopicInfo topics = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Request routing: service-to-service calls (replaces https://gateway:8443).
+// One generic envelope carries an existing REST request, so every owner keeps
+// its current routes, validation, idempotency and error bodies.
+// ---------------------------------------------------------------------------
+
+// Called by services. The broker checks the caller against the route's
+// allowlist, chooses an instance of the destination by load, applies the
+// circuit breaker and reroutes to another instance when that is safe.
+service Router {
+  rpc Call(HttpRequest) returns (HttpResponse);
+}
+
+// Implemented by every service that serves routes to other services. Only the
+// broker (certificate SAN "message-broker") may call it. The service runs the
+// request through its existing HTTP handler, e.g. Fastify inject() or Go
+// http.Handler.ServeHTTP, and returns the result unchanged.
+service Endpoint {
+  rpc Handle(HttpRequest) returns (HttpResponse);
+}
+
+message HttpRequest {
+  // Router.Call: the destination service name, e.g. "user-management".
+  // Endpoint.Handle: the receiving service's own name.
+  string destination = 1;
+  string method = 2;                // GET, PUT, POST, DELETE, PATCH
+  string path = 3;                  // owner path with query, e.g. "/internal/v1/local-rewards/<id>"
+  map<string, string> headers = 4;  // lowercase names; Idempotency-Key, Content-Type, X-Gateway-Identity
+  bytes body = 5;                   // at most 64 KiB, the same limit as Gateway
+}
+
+message HttpResponse {
+  int32 status = 1;                 // HTTP status; errors use the common Error body
+  map<string, string> headers = 2;  // lowercase names, e.g. content-type, x-served-by
+  bytes body = 3;
+}
