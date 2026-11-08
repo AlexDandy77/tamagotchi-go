@@ -162,12 +162,13 @@ def broker_defaults():
     """Upgrade only previously shipped selections; preserve explicit custom lists."""
     path = ROOT / '.env'
     data = path.read_text()
-    defaults = {'BROKER_SERVICES': 'tamagotchi,notification,message-broker',
-                'BROKER_DESTINATIONS': 'tamagotchi,notification'}
+    defaults = {'BROKER_SERVICES': ('tamagotchi,notification,message-broker',
+                                    'user-management,battle,tamagotchi,notification,message-broker'),
+                'BROKER_DESTINATIONS': ('tamagotchi,notification', 'user-management,battle,tamagotchi,notification')}
     example = dict(re.findall(r'^([A-Z0-9_]+)=(.*)$', (ROOT / '.env.example').read_text(), re.M))
     for key, previous in defaults.items():
         match = re.search(r'^' + key + r'=(.*)$', data, re.M)
-        if match and match[1] == previous:
+        if match and match[1] in previous:
             data = data[:match.start()] + key + '=' + example[key] + data[match.end():]
     if data != path.read_text():
         path.write_text(data)

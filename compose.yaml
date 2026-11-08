@@ -93,7 +93,7 @@ services:
       # Lab 4: REST for BROKER_SERVICES goes through the Message Broker's subscriber queues.
       # An empty list routes every service through it and removes internal routes from Gateway.
       BROKER_URL: https://message-broker:8443
-      BROKER_SERVICES: ${BROKER_SERVICES-user-management,battle,tamagotchi,notification,message-broker}
+      BROKER_SERVICES: ${BROKER_SERVICES-user-management,battle,map,monster-raid,tamagotchi,notification,message-broker}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
@@ -173,7 +173,7 @@ services:
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
       # Only Registry remains on the legacy path until its owner publishes broker support.
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,map,monster-raid,tamagotchi,notification}
       REGISTRY_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/user-management.pem
@@ -214,7 +214,7 @@ services:
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
       # Only Registry remains on the legacy path until its owner publishes broker support.
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,map,monster-raid,tamagotchi,notification}
       REGISTRY_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/battle.pem
@@ -344,11 +344,14 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://locations:${LOCATIONS_DB_PASSWORD:?Run setup}@postgres:5432/locations?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: locations
-      KAFKA_PASSWORD: ${KAFKA_LOCATIONS_PASSWORD:?Run setup}
       DEPENDENCY_MODE: live
-      # Profiles and relationships come from User Management through the Gateway.
+      # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
+      # and Router.Call for BROKER_DESTINATIONS. Profiles and relationships come from User
+      # Management through the broker, or through the Gateway when it is not listed.
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,map,monster-raid,tamagotchi,notification}
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       SERVICE_TLS_CERT_FILE: /run/tls/map.pem
       SERVICE_TLS_KEY_FILE: /run/tls/map-key.pem
@@ -364,6 +367,7 @@ services:
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/map.pem:/run/tls/map.pem:ro
       - ./.secrets/tls/map-key.pem:/run/tls/map-key.pem:ro
     # Requests are instance-agnostic and one replica at a time relays events, so Map scales
@@ -372,7 +376,7 @@ services:
       replicas: 3
     depends_on:
       postgres: {condition: service_healthy}
-      kafka: {condition: service_healthy}
+      message-broker: {condition: service_healthy}
       user-management: {condition: service_healthy}
       # Started, not healthy: the Gateway's readiness waits for Map.
       gateway: {condition: service_started}
@@ -390,11 +394,13 @@ services:
     pull_policy: always
     environment: &monster-raid-env
       DATABASE_URL: postgres://raids:${RAIDS_DB_PASSWORD:?Run setup}@postgres:5432/raids?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: raids
-      KAFKA_PASSWORD: ${KAFKA_RAIDS_PASSWORD:?Run setup}
       DEPENDENCY_MODE: live
-      # All REST dependencies pass through Gateway.
+      # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
+      # and Router.Call for BROKER_DESTINATIONS; the other dependencies use their Gateway URL.
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,map,monster-raid,tamagotchi,notification}
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       REGISTRY_URL: https://gateway:8443/services/package-registry
@@ -416,13 +422,14 @@ services:
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/monster-raid.pem:/run/tls/monster-raid.pem:ro
       - ./.secrets/tls/monster-raid-key.pem:/run/tls/monster-raid-key.pem:ro
     # Only the negotiated live raid socket and the probes are direct.
     ports: [127.0.0.1:8084:8080]
     depends_on:
       postgres: {condition: service_healthy}
-      kafka: {condition: service_healthy}
+      message-broker: {condition: service_healthy}
       user-management: {condition: service_healthy}
       # Started, not healthy: the Gateway's readiness waits for Monster Raid.
       gateway: {condition: service_started}
@@ -470,7 +477,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,map,monster-raid,tamagotchi,notification}
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.
@@ -513,7 +520,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,map,monster-raid,tamagotchi,notification}
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.

@@ -18,7 +18,7 @@ BROKER = 'message-broker'
 GATEWAY_QUEUES = 'https://message-broker:8443'
 BROKER_GRPC = 'message-broker:50051'
 # Services already on the broker: events, Endpoint.Handle and Router.Call.
-MIGRATED = ('user-management', 'battle', 'tamagotchi', 'notification')
+MIGRATED = ('user-management', 'battle', 'map', 'monster-raid', 'tamagotchi', 'notification')
 MONITORING = ('prometheus', 'loki', 'alloy', 'grafana')
 TLS_FILES = ('SERVICE_TLS_CERT_FILE', 'SERVICE_TLS_KEY_FILE', 'SERVICE_TLS_CA_FILE')
 
