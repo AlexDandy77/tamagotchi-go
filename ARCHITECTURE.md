@@ -21,11 +21,10 @@ flowchart LR
   SD -->|optional alerts| TG[Telegram]
 ```
 
-This is the target flow for migrated owners. During migration, Gateway still routes
-unmigrated destinations directly and their events remain on Kafka. The default switches
-include User Management, Battle, Map, Monster Raid, Tamagotchi and Notification. Guild and
-Package Registry require their owners' compatible releases before the final switch.
-Kafka's Registry consumer cannot receive User Management events published only to the new broker.
+This is the flow for every owner. The default switches include all eight: User Management,
+Battle, Guild, Package Registry, Map, Monster Raid, Tamagotchi and Notification. Gateway would
+still route a destination removed from the switches directly. Kafka keeps running while
+Tamagotchi and Notification still carry its settings; Guild and Package Registry no longer use it.
 
 ## Responsibilities
 
