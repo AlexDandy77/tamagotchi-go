@@ -4332,7 +4332,7 @@ paths:
       - Message Broker
       summary: Download the system's logs as newline-delimited JSON
       operationId: GET_v1_logs
-      description: Download the system's logs as newline-delimited JSON. Admin only, through Gateway; see contracts/message-broker.md.
+      description: 'Admin download through Gateway: at most 10000 lines and 3 MiB within the task deadline. Partial pages carry X-Logs-Truncated and an inclusive X-Logs-Next-Since; deduplicate boundary lines. See contracts/message-broker.md.'
       x-audience: admin
       responses:
         '200':
@@ -4390,7 +4390,7 @@ paths:
         schema:
           type: integer
           minimum: 1
-          maximum: 50000
+          maximum: 10000
           default: 5000
 components:
   securitySchemes:

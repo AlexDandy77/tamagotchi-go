@@ -93,7 +93,7 @@ services:
       # Lab 4: REST for BROKER_SERVICES goes through the Message Broker's subscriber queues.
       # An empty list routes every service through it and removes internal routes from Gateway.
       BROKER_URL: https://message-broker:8443
-      BROKER_SERVICES: ${BROKER_SERVICES-tamagotchi,notification,message-broker}
+      BROKER_SERVICES: ${BROKER_SERVICES-user-management,battle,tamagotchi,notification,message-broker}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
@@ -168,10 +168,12 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://users:${USERS_DB_PASSWORD:?Run setup}@postgres:5432/users?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: users
-      KAFKA_PASSWORD: ${KAFKA_USERS_PASSWORD}
       DEPENDENCY_MODE: live
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      # Only Registry remains on the legacy path until its owner publishes broker support.
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,tamagotchi,notification}
       REGISTRY_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/user-management.pem
@@ -188,13 +190,14 @@ services:
       - ./.secrets/jwt.pem:/run/secrets/jwt.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/user-management.pem:/run/tls/user-management.pem:ro
       - ./.secrets/tls/user-management-key.pem:/run/tls/user-management-key.pem:ro
     deploy:
       replicas: 3
     depends_on:
       postgres: {condition: service_healthy}
-      kafka: {condition: service_healthy}
+      message-broker: {condition: service_healthy}
     healthcheck:
       test: [CMD, /service, healthcheck]
       interval: 5s
@@ -206,10 +209,12 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://battles:${BATTLES_DB_PASSWORD:?Run setup}@postgres:5432/battles?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: battles
-      KAFKA_PASSWORD: ${KAFKA_BATTLES_PASSWORD}
       DEPENDENCY_MODE: live
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      # Only Registry remains on the legacy path until its owner publishes broker support.
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,tamagotchi,notification}
       REGISTRY_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/battle.pem
@@ -224,6 +229,7 @@ services:
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/battle.pem:/run/tls/battle.pem:ro
       - ./.secrets/tls/battle-key.pem:/run/tls/battle-key.pem:ro
     deploy:
@@ -464,7 +470,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,tamagotchi,notification}
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.
@@ -507,7 +513,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,tamagotchi,notification}
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.

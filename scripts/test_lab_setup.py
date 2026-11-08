@@ -129,3 +129,22 @@ class ManagedServicesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class BrokerDefaultsTests(unittest.TestCase):
+    def test_upgrades_old_defaults_but_preserves_custom_and_final_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.env.example').write_text('BROKER_SERVICES=user-management,battle,tamagotchi,notification,message-broker\nBROKER_DESTINATIONS=user-management,battle,tamagotchi,notification\n')
+            for value in ['tamagotchi,notification,message-broker', 'battle', '']:
+                original = 'SEED_PASSWORD=private-value\nBROKER_SERVICES=' + value + '\n'
+                (root / '.env').write_text(original)
+                with patch.object(lab, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                    lab.broker_defaults()
+                    once = (root / '.env').read_text()
+                    lab.broker_defaults()
+                self.assertEqual((root / '.env').read_text(), once)
+                self.assertIn('SEED_PASSWORD=private-value', once)
+                if value == 'tamagotchi,notification,message-broker':
+                    self.assertIn('BROKER_SERVICES=user-management,battle,', once)
+                else:
+                    self.assertEqual(once, original)

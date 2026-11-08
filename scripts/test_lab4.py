@@ -28,13 +28,13 @@ def compliant():
         },
         'gateway': {'environment': {
             'BROKER_URL': 'https://message-broker:8443',
-            'BROKER_SERVICES': 'tamagotchi,notification,message-broker',
+            'BROKER_SERVICES': 'user-management,battle,tamagotchi,notification,message-broker',
             'UPSTREAMS_JSON': json.dumps({'message-broker': 'https://message-broker:8443'}),
         }},
         'alloy': {'volumes': [volume('/var/run/docker.sock')]},
         'prometheus': {}, 'loki': {}, 'grafana': {},
     }
-    for name in ('tamagotchi', 'notification'):
+    for name in ('user-management', 'battle', 'tamagotchi', 'notification'):
         services[name] = {
             'environment': {'BROKER_URL': 'message-broker:50051', 'BROKER_CERT_FILE': '/run/tls/message-broker.pem',
                             'GATEWAY_ONLY': 'true', 'GRPC_PORT': '50051'},

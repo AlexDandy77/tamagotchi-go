@@ -81,7 +81,7 @@ def main():
     parser.add_argument("--broker-dir", type=Path)
     args = parser.parse_args()
     data = catalog()
-    paths = [ROOT / "contracts/gateway-routes.json"]
+    paths = [ROOT / "contracts/gateway-routes.json", ROOT / "contracts/broker-routes.json"]
     if args.service_dir:
         paths.append(args.service_dir / "gateway/routes.json")
     if args.broker_dir:

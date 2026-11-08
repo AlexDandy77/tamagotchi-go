@@ -70,7 +70,7 @@ A consumer replica calls `EventBus.Fetch(group, topics)` in a loop, processes ea
 - **Leases.** A fetched delivery is leased to that replica for `lease_ms` (default 30 s). The other replicas of the group don't see it until the lease ends. A crashed replica's deliveries therefore come back after the lease.
 - **At least once.** A delivery can arrive twice: after a lease expiry, or after a crash between processing and `Ack`. Consumers keep their inbox and processed-events tables and ack only after durable processing, as they did with Kafka offsets.
 - **Order per key.** Within a group, the deliveries of one `key` arrive in publish order. The next delivery of a key is held until the previous one is acked or dead-lettered. This is the guarantee Kafka's partitions gave.
-- **Long poll.** `Fetch` waits up to `wait_ms` (default 10 s) when nothing is ready, so idle consumers don't hammer the broker.
+- **Long poll.** Consumers set `wait_ms: 10000` for a 10-second long poll. Zero or omitted means an immediate poll. Cancelled calls stop before leasing another delivery.
 - **New groups.** Groups in the table above exist from the broker's first start and receive every event since. A group first announced later through Service Discovery starts at the current end of the topic.
 
 ### Retries and the dead letter channel
@@ -114,7 +114,7 @@ Services call `Router.Call(destination, method, path, headers, body)` instead of
 - an `internal` route whose OpenAPI `x-allowed-callers` lists the caller;
 - a `public` route.
 
-Any other route returns `403 SERVICE_FORBIDDEN`, and a service can never act as a player. The broker reads these rules from `contracts/broker-routes.json`. `scripts/sync_gateway_routes.py` will generate that file from `openapi.yaml` the way it generates `gateway-routes.json`; it is added with the broker integration.
+Any other route returns `403 SERVICE_FORBIDDEN`, and a service can never act as a player. The broker reads these rules from `contracts/broker-routes.json`, generated from `openapi.yaml` by `scripts/sync_gateway_routes.py`. The same command synchronizes the Gateway catalog and the broker's copy.
 
 Every **service that serves internal routes** implements `Endpoint.Handle` on its own gRPC listener (`GRPC_PORT`, 50051):
 
@@ -123,6 +123,8 @@ Every **service that serves internal routes** implements `Endpoint.Handle` on it
 - It registers the port as `grpcPort` in Service Discovery.
 
 The broker uses gRPC for an instance with a `grpcPort`, and HTTPS on its registered `port` otherwise. That way owners can migrate one at a time; the log field `transport` shows which was used.
+
+Header maps contain one value per name: repeated headers such as multiple `Set-Cookie` values are unsupported. Authentication uses JSON tokens rather than cookies. Both transports strip hop-by-hop headers.
 
 `Router.Call` always answers with an `HttpResponse`: errors are HTTP statuses with the common `Error` body, so callers keep their current error handling. gRPC statuses are used only when no `HttpResponse` can be built: `UNAUTHENTICATED` (no client certificate) and `INVALID_ARGUMENT` (malformed envelope).
 
@@ -159,7 +161,7 @@ The broker handles every request and RPC on **its own new thread**, named `req-<
 
 ## Admin and observability routes
 
-Routes are in [message-broker.openapi.yaml](message-broker.openapi.yaml). Admin routes reach the broker through Gateway as `admin` routes of the service `message-broker`, and the broker verifies Gateway's assertion with the `admin` role.
+Routes are in [message-broker.openapi.yaml](message-broker.openapi.yaml). Admin routes reach the broker through Gateway as `admin` routes of the service `message-broker`, and the broker verifies Gateway's player assertion. An `admin` role or a player ID listed in `BROKER_ADMIN_USER_IDS` grants access; Compose uses the same configured demo admins as Package Registry.
 
 | Route | Purpose |
 | --- | --- |
@@ -178,6 +180,8 @@ Routes are in [message-broker.openapi.yaml](message-broker.openapi.yaml). Admin 
 - published, delivered, acked and dead-lettered events per topic and group;
 - pending deliveries per group.
 
+**Log download budget.** `GET /v1/logs` returns at most 10,000 lines and 3 MiB within the task deadline, leaving Gateway response headroom. A partial page includes `X-Logs-Truncated: true` and, when at least one line fits, `X-Logs-Next-Since`. Reuse that timestamp as inclusive `since`; boundary lines can repeat, so callers deduplicate overlap. Very dense single-timestamp ranges may require narrower filters. No continuation header means no line fit; narrow the query.
+
 **Logs.** Every container writes JSON logs to stdout as today. Grafana Alloy ships them to Loki, and `GET /v1/logs` reads Loki. Services need no logging change for this. Prometheus scrapes the broker, and Grafana shows both.
 
 ## Broker settings
@@ -193,6 +197,7 @@ Routes are in [message-broker.openapi.yaml](message-broker.openapi.yaml). Admin 
 | `MAX_DELIVERY_ATTEMPTS` | `5` | Attempts before dead-lettering |
 | `DEFAULT_LEASE_SECONDS` | `30` | Lease when `Fetch` sets none |
 | `RETENTION_HOURS` | `168` | Event and dead letter retention |
+| `BROKER_ADMIN_USER_IDS` | empty | Comma-separated player UUIDs authorized to inspect admin routes |
 | `LOKI_URL` | empty | Log source for `GET /v1/logs`; the route answers `503 DEPENDENCY_UNAVAILABLE` when empty |
 
 ## What each owner must change
@@ -203,4 +208,4 @@ Routes are in [message-broker.openapi.yaml](message-broker.openapi.yaml). Admin 
 4. **Calling.** Send service-to-service requests with `Router.Call` instead of `https://gateway:8443/services/...`. Keep the 2-second timeout and the per-destination breaker.
 5. **Releasing.** Publish validated merges to `main` as `4.MINOR.PATCH` and `latest`, then update the submodule pointer in the common Lab 4 integration PR.
 
-Copy-paste clients for Go and TypeScript, and a step-by-step guide, are in the broker repository under `clients/` and `MIGRATION.md`.
+Generate language-specific gRPC stubs from `contracts/proto/broker.proto` inside each owner repository; no private broker source access is needed. The broker repository's `MIGRATION.md` describes the steps. During migration, `BROKER_DESTINATIONS` explicitly lists broker-ready outgoing dependencies; unlisted dependencies retain the documented Gateway path. A broker failure never falls back to Gateway.

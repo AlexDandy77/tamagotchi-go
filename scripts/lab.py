@@ -158,6 +158,22 @@ def managed_services():
     path.write_text(data.replace(match[0], 'DISCOVERY_MANAGED_SERVICES=' + current))
     print('Updated DISCOVERY_MANAGED_SERVICES from the previous default to', current)
 
+def broker_defaults():
+    """Upgrade only previously shipped selections; preserve explicit custom lists."""
+    path = ROOT / '.env'
+    data = path.read_text()
+    defaults = {'BROKER_SERVICES': 'tamagotchi,notification,message-broker',
+                'BROKER_DESTINATIONS': 'tamagotchi,notification'}
+    example = dict(re.findall(r'^([A-Z0-9_]+)=(.*)$', (ROOT / '.env.example').read_text(), re.M))
+    for key, previous in defaults.items():
+        match = re.search(r'^' + key + r'=(.*)$', data, re.M)
+        if match and match[1] == previous:
+            data = data[:match.start()] + key + '=' + example[key] + data[match.end():]
+    if data != path.read_text():
+        path.write_text(data)
+        print('Updated the previous broker migration defaults; custom selections preserved.')
+
+
 def demo_admin():
     """Fill only the local demo default; explicit admins always win."""
     path = ROOT / '.env'
@@ -177,6 +193,7 @@ def demo_admin():
 def setup():
     env_file()
     managed_services()
+    broker_defaults()
     demo_admin()
     directory = ROOT / '.secrets'
     directory.mkdir(mode=0o700, exist_ok=True)

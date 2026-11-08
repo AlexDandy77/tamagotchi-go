@@ -51,7 +51,7 @@ message FetchRequest {
   string group = 1;            // consumer group, e.g. "notification"
   repeated string topics = 2;  // topics this group consumes; at least one
   int32 max_messages = 3;      // 1..100, default 10
-  int32 wait_ms = 4;           // long-poll wait when nothing is ready, 0..20000, default 10000
+  int32 wait_ms = 4;           // long-poll wait when nothing is ready, 0..20000; 0 or omitted returns immediately
   int32 lease_ms = 5;          // 1000..300000, default 30000
 }
 

@@ -1,293 +1,106 @@
 # Deployment architecture
 
-## Running environment
-
-One `compose.yaml` runs the existing project: a Python API Gateway, Python Service Discovery, four Go services, four TypeScript services, PostgreSQL, MongoDB and Kafka. User Management, Battle, Map, Monster Raid, Tamagotchi and Notification run three replicas each. API processes run their own workers. No new database or worker container is needed for Gateway. The existing Compose project name is retained so upgrades use the same volumes.
+One Compose deployment runs the eight business services, Gateway, Service Discovery,
+Message Broker, PostgreSQL, MongoDB and monitoring. Business services have three replicas.
+Each service owns its data and runs its workers inside its API process.
 
 ```mermaid
 flowchart LR
-  P[Player / Postman] -->|REST :8080| GW[API Gateway]
-  GW -->|mTLS + signed identity| U[User Management x3 / Go] & B[Battle x3 / Go] & MP[Map x3 / Go] & MR[Monster Raid x3 / Go]
-  GW -->|mTLS + signed identity| G[Guild x3 / TypeScript] & R[Registry x3 / TypeScript] & T[Tamagotchi x3 / TypeScript] & N[Notification x3 / TypeScript]
-  U & B & MP & MR & G & R & T & N -->|REST dependencies| GW
-  GW <-->|pools / ejections| SD[Service Discovery / Python]
-  U & B & MP & MR & G & R & T & N -.->|register, heartbeat / status polls| SD
-  SD -->|alerts| TG[Telegram]
-  P -->|Negotiated direct WebSocket :8087-8089| G
-  P -->|Negotiated direct WebSocket :8084-8086| MR
-  U --> Users[(PostgreSQL users)]
-  B --> Battles[(PostgreSQL battles)]
-  MP --> Locations[(PostgreSQL locations)]
-  MR --> Raids[(PostgreSQL raids)]
-  G --> Guilds[(PostgreSQL guilds)]
-  R --> Registry[(MongoDB registry)]
-  T --> Pets[(PostgreSQL tamagotchi)]
-  N --> Notifications[(PostgreSQL notification)]
-  U & B & MP & MR & G & R & T -->|Events / outbox| K[Kafka KRaft]
-  K -->|Enrollment| R & T
-  K -->|Notifications| N
+  P[Player / Postman] -->|REST :8080| GW[Gateway / Python]
+  GW -->|destination queues / mTLS| MB[Message Broker / Python]
+  MB <-->|gRPC requests| S[Business service replicas / Go and TypeScript]
+  S -->|publish / fetch / ack| MB
+  S -.->|register / heartbeat| SD[Service Discovery / Python]
+  MB <-->|pools, load, topic interests, ejections| SD
+  GW -.->|socket negotiation / migration pools| SD
+  S --> DB[(Service-owned PostgreSQL or MongoDB)]
+  MB --> Q[(Durable SQLite broker volume)]
+  MB -->|metrics| PR[Prometheus]
+  C[Container stdout] --> A[Alloy] --> L[Loki]
+  PR & L --> G[Grafana]
+  SD -->|optional alerts| TG[Telegram]
 ```
 
-The diagram shows the required deployment. Gateway routing is configured for every service, but the four TypeScript images still need compatible implementations; see Integration checks below. There are no direct service-to-service REST shortcuts.
+This is the target flow for migrated owners. During migration, Gateway still routes
+unmigrated destinations directly and their events remain on Kafka. The default switches
+include User Management, Battle, Tamagotchi and Notification. Guild, Package Registry,
+Map and Monster Raid require their owners' compatible releases before the final switch.
+Kafka's Registry consumer cannot receive User Management events published only to the new broker.
 
-| Container | Responsibility | Storage |
+## Responsibilities
+
+| Component | Responsibility | Storage |
 | --- | --- | --- |
-| Gateway | REST routing, round-robin balancing, circuit breakers, JWT verification, signed identities, deadlines and WebSocket negotiation | None |
-| Service Discovery | Instance registry, health polling and alerts | None; rebuilt from heartbeats |
-| User Management | Accounts, relationships, enrollments, wallets and rewards | PostgreSQL `users` |
-| Battle | Challenges, turns, deadlines, outcomes and settlement | PostgreSQL `battles` |
-| Map, three replicas | Locations and nearby encounters | PostgreSQL `locations` |
-| Monster Raid: `monster-raid`, `-2`, `-3` | Raids, participants, attacks and rewards | PostgreSQL `raids` |
+| Gateway | Client authentication, public route catalog, signed player identity, deadlines and socket negotiation | None |
+| Service Discovery | Registration, health/load polling, topic interests, instance pools and ejection recovery | In memory; rebuilt from heartbeats |
+| Message Broker | Destination queues, gRPC routing, load-based selection, breakers, safe rerouting, durable events, retries and dead letters | SQLite WAL in `broker-data` |
+| User Management | Accounts, relationships, enrollments, wallets, holds and rewards | PostgreSQL `users` |
+| Battle | Challenges, turns, frozen combat inputs, deadlines and settlement progress | PostgreSQL `battles` |
+| Map | Locations and nearby encounters | PostgreSQL `locations` |
+| Monster Raid | Raids, participants, attacks and rewards | PostgreSQL `raids` |
 | Guild | Membership, invitations, roles and chat | PostgreSQL `guilds` |
-| Package Registry | Packages, configurations, rules, monsters and schedules | MongoDB `registry` |
-| Tamagotchi, three replicas | Pets, care, XP, reservations and ownership | PostgreSQL `tamagotchi` |
-| Notification, three replicas | Devices and notifications | PostgreSQL `notification` |
-| PostgreSQL | Separate databases and credentials for each owner | `postgres-data` |
-| MongoDB | Single-node replica set for Registry transactions | `mongo-data`, `mongo-config` |
-| Kafka | Events with service SASL credentials and topic ACLs | `kafka-data` |
-
-## Networking
-
-Gateway exposes REST on `localhost:8080`. Containers use `https://gateway:8443/services/{destination}` with their own certificates. Gateway forwards requests over mTLS with signed caller identities and never forwards Authorization. Service handlers still check ownership and permissions.
-
-Use one base URL per REST destination, for both `/v1` and `/internal/v1` routes. Compose uses `REGISTRY_URL`, `TAMAGOTCHI_URL`, `USER_MANAGEMENT_URL`, `GUILD_URL` and `MONSTER_RAID_URL`. Derive JWKS from the User Management base plus `/.well-known/jwks.json`; Gateway derives it from its User Management upstream. Other service owners must adopt these names and key discovery before using the updated Compose.
-
-Gateway separately bounds client and authenticated-service traffic, 64 requests each by default. Nested service calls retain capacity when client slots are full. Socket ticket issuance is enabled, and Guild's chat socket and Monster Raid's live raid socket both require the tickets. See [the handoff](contracts/socket-tickets.md).
-
-Only the Guild and Monster Raid replicas publish additional ports, for direct sockets negotiated through Gateway: Guild 8087, 8088 and 8089 and Monster Raid 8084, 8085 and 8086. Each of these replicas registers its own socket URL. Their socket listeners must reject direct business REST. PostgreSQL, MongoDB, Kafka, Service Discovery and internal mTLS ports stay private. PostgreSQL permits 250 connections by default (`POSTGRES_MAX_CONNECTIONS`) for bounded replica pools and dedicated worker-leader connections.
-
-Gateway and every business service set `SERVICE_DISCOVERY_URL=https://service-discovery:8443` and call it directly for registration, heartbeats and pool reads. Gateway reads its routes from it, so this control plane cannot pass through Gateway; `check_lab2.py` allows exactly this URL and no other direct REST.
-
-Setup creates development certificates in ignored `.secrets/tls`. Each service receives its own key, the CA and Gateway's public certificate; replicas share their service's certificate. Replace expired bundles together and restart all services. Adding a service, as Service Discovery was added, makes `setup` replace the whole bundle; run `down` and `up` afterwards so every container mounts the new files. Compose fits the single-PC presentation; the databases and broker are single-node development infrastructure.
-
-## Ownership and durability
-
-Only the owning service writes its database. Provisioning creates missing databases/roles without deleting data; migrations belong to each service. Seeds populate empty databases and preserve existing records. Named volumes survive container recreation.
-
-Business changes and outbox events commit together. Kafka outages retain pending rows; publication retries with stable event IDs. Consumers deduplicate repeats. Battle persists deadlines and reservation/settlement progress, and retries remote work outside transactions using stable activity IDs.
-
-## Integration checks
-
-The lab is not complete until all published images pass the shared deployment tests. Configuration flags do not implement missing authentication or request limits.
-
-| Area | Current finding / remaining work |
-| --- | --- |
-| Gateway | Python implementation, JWT verification, header stripping, signed identities, task limits and both socket negotiations have automated tests. |
-| User Management | Published image supports the batch public-profile dependency used by Map and keeps strict Gateway authentication enabled. |
-| Battle, Map, Monster Raid | Gateway transport and request limits implemented; complete live workflows still depend on compatible TypeScript destinations. |
-| Guild, Package Registry | Published `latest` images support Gateway transport; the live workflow verifies package configuration, enrollment projection, guild membership and raid dispatch. |
-| Tamagotchi, Notification | Published `latest` images support Gateway identity, limits and the single URL settings. The live workflow verifies Registry-backed starter/care rules, User Management rewards, enrollment checks, pet reservations and settlements. Notification logs pushes by default (`FCM_MODE=mock`) and sends them through Firebase with `FCM_MODE=live` and a local key. |
-| Shared runtime | All REST URLs now use Gateway; readiness checks every destination. `up` pulls latest before migrations and stops if an image is unavailable. |
-| Scaling | Service Discovery and three replicas of every business service run in Compose; Gateway balances and ejects them. Guild chat reaches members on other replicas through PostgreSQL notifications; Package Registry dispatches raids from one lease holder. |
-
-Run `scripts/check_lab2.py` and `scripts/check_lab3.py` for configuration checks, `scripts/smoke_gateway.py` for authentication and Battle-to-User-Management routing, `scripts/smoke_discovery.py` for registration, round robin and per-replica sockets, then the service smoke scripts and `scripts/smoke_live.py` for real workflows. `smoke_discovery.py --disruptive` stops and pauses replicas to show them leave and rejoin, and `scripts/load_discovery.py` raises a load alert. Full-team success cannot be claimed from the isolated service tests.
-
-Do not create fake production pets, forward bearer tokens or bypass Gateway to hide integration failures. Notification's Firebase delivery is a logged mock unless `FCM_MODE` is `dry-run` or `live` and the service-account key is in `.secrets/fcm/`. Fresh accounts start with zero currency; Alice/Bob use local `SEED_PASSWORD`. Existing records are preserved.
-
-## Extending the deployment
-
-1. Add the owning database/role/password entry to `deployment/databases.json` or MongoDB provisioning. Add secret placeholders and generation keys to `.env.example`/`scripts/lab.py`.
-2. Add the public image, private database credentials and healthcheck to the existing `compose.yaml`. Add its certificate to setup and mount only the required keys.
-3. Follow [Gateway transport contract](contracts/gateway.md), update the route catalog from OpenAPI, and configure Kafka topics/ACLs for its events.
-4. Run `setup`, `provision`, migrations and seeds on the existing volumes. Publish merged service commits with versioned and latest tags, then update Gateway routing and submodule pointers through a common PR.
-
-## Scaling with Service Discovery
-
-Lab 3 scales the deployment horizontally. Compose runs Service Discovery and three replicas each of User Management, Battle, Guild, Package Registry, Map, Monster Raid, Tamagotchi and Notification. The rules are in the [Service Discovery contract](contracts/service-discovery.md).
-
-```mermaid
-flowchart TB
-  P[Player / Postman] -->|REST :8080| GW[API Gateway: round-robin and circuit breakers]
-  P -->|negotiated socket :8084 / :8085 / :8086| MR
-  P -->|negotiated chat socket :8087 / :8088 / :8089| GD
-  GW <-->|pools every 2 s / eject tripped instances| SD[Service Discovery]
-  GW -->|mTLS to the next available instance| MP & MR & GD & A[User Management / Battle / Package Registry / Tamagotchi / Notification: three replicas each]
-  subgraph MP[Map x3]
-    M1[map] ~~~ M2[map] ~~~ M3[map]
-  end
-  subgraph MR[Monster Raid x3]
-    R1[monster-raid] ~~~ R2[monster-raid-2] ~~~ R3[monster-raid-3]
-  end
-  subgraph GD[Guild x3]
-    G1[guild] ~~~ G2[guild-2] ~~~ G3[guild-3]
-  end
-  MP & MR & GD & A <-.->|register and heartbeat / status polls, every 5 s| SD
-  SD -->|alerts| TG["Telegram (developers' chat)"]
-  MP & MR & GD & A --> DB[(Separate owner databases: one leader runs workers and relays)]
-```
-
-| Component | Responsibility |
-| --- | --- |
-| Service Discovery | Registry of live instances with 15-second leases. It polls every instance's `/status`, drops unhealthy and quarantined instances from the pools, and logs alerts and sends them to Telegram. It keeps no database; heartbeats rebuild the registry after a restart. |
-| API Gateway | Reads the pools, sends each REST request to the next available instance and reports `X-Served-By`. A per-instance breaker (3 failures within 3.5 × the task timeout) ejects an instance. `GET`/`HEAD` may move to the next instance; mutations are never retried. Socket negotiation rotates through the registered socket URLs. |
-| Services | Register on startup, renew every 5 seconds and deregister on shutdown. They serve `/status` with their task load, and break their own dependency calls, which still go through Gateway, per destination. PostgreSQL owners run background workers and ordered outbox relays under one session-held advisory-lock leader. Package Registry uses its own MongoDB lease or atomic claim; no service writes into another owner's database. |
-
-A request reaches an instance like this:
-
-1. An instance opens its listeners and registers. Service Discovery records the mTLS peer address under the certificate's service name.
-2. Gateway's next pool refresh adds the instance. Requests rotate through every available instance, and each replica's certificate is verified against the service name.
-3. A stopped instance stops renewing and leaves the pools within one lease. An instance that keeps failing trips Gateway's breaker and is ejected at once; it returns only after three healthy status polls.
-4. Load at or above 80% of an instance's task slots, an unhealthy instance, an ejection or an expired lease raises an alert. Its recovery is reported too.
-
-While Service Discovery is unreachable, Gateway keeps the last pools it read. `DISCOVERY_MANAGED_SERVICES` lists every business service, so an adopted service with no healthy replicas returns `503` instead of using static Compose routing. Gateway also selects User Management replicas for JWKS refresh; all User Management replicas share the same signing key and session database.
-
-## Future full-system architecture
-
-The following agreed design is the team's target architecture. The running deployment is described above; remaining integrations are listed under Integration checks.
-
-
-### System overview
-
-![Shared backend architecture](images/architecture.png)
-
-Client apps reach every service through a single **API Gateway**, and each service owns its database and credentials: MongoDB for Package Registry, PostgreSQL for the other seven services. Services never share a database. Neither of these is drawn as a separate box per service in the diagram above but both apply to all eight backend services. Gateway balances each service's requests across its running instances in round-robin order, using the instance pools from **Service Discovery**, which also checks every instance's health and alerts the developers through Telegram (see [Scaling with Service Discovery](#scaling-with-service-discovery)). Direct sockets are used for Guild chat and Monster Raid live updates. For Guild chat, client apps hold a direct WebSocket connection to Guild Service for real-time messages, shown as the green line bypassing the gateway. Firebase Cloud Messaging is also reached directly by client apps for push delivery, independent of the gateway.
-
-Black arrows show logical HTTP dependencies between services; Gateway carries their REST traffic. Orange arrows are events flowing through Kafka.
-
-### Service dependencies
-
-The diagram shows logical owner-to-owner dependencies. Their REST calls pass through Gateway as shown above. Gateway verifies player JWTs using User Management's public keys; services verify the forwarded identity and enforce permissions. Authentication discovery is omitted from the diagram for readability.
-
-- **Monster Raid → Package Registry** — raid configuration and lifecycle, plus reward rule lookups.
-- **Tamagotchi → Package Registry** — starter pet definitions, care and growth rules.
-- **Battle → Package Registry** — package combat rules, plus reward rule lookups.
-- **Battle → Tamagotchi** — pet properties, XP and capture at battle settlement.
-- **Monster Raid → Tamagotchi** — primary pet properties and XP for participating members.
-- **Tamagotchi → User Management** — enrollment checks and local reward settlement.
-- **User Management → Tamagotchi** — starter-pet provisioning recovery, a fallback if the enrollment event was missed.
-- **Monster Raid → User Management** — currency reward settlement.
-- **Battle → User Management** — currency and boost settlement.
-- **Map → User Management** — friends/enemies lookups, used to decide what an encounter should trigger, and usernames for map entries.
-- **Guild → User Management** — identity and relationship lookups for membership and invite eligibility.
-- **Monster Raid → Guild** — membership and permission checks before a member can join a raid.
-
-### Event flow
-
-The event flow is represented with orange arrows above. Anything that doesn't have to happen before a response is sent travels as an event through Kafka instead of a direct call.
-
-User Management publishes `user.package-registered.v1` on enrollment; Package Registry and Tamagotchi consume it independently: Registry updates its enrollment projection, while Tamagotchi provisions the starter pet. Six services — User Management, Map, Battle, Tamagotchi, Guild and Monster Raid — publish their own domain events (friend requests, encounters, battle results, pet use/capture, guild invites, raid results) onto one Kafka topic per event type, consumed by Notification; Notification turns every one of those into a push message and hands it to Firebase Cloud Messaging, which delivers it straight to the client app.
-
-### Example: finishing a battle
-
-The player's request is answered as soon as the result is stored; settlement with the data owners and the notification happen afterwards.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant C as Client app
-    participant GW as Gateway
-    participant B as Battle
-    participant UM as User Management
-    participant T as Tamagotchi
-    participant K as Kafka
-    participant N as Notification
-    C->>GW: POST /services/battle/v1/battles/:id/actions (JWT, Idempotency-Key)
-    GW->>B: validated signed identity + action
-    B->>B: validate turn, apply damage, detect winner, persist result
-    B-->>GW: 200 Battle (status: settling)
-    GW-->>C: 200 Battle
-    B->>GW: PUT /services/user-management/internal/v1/battle-settlements/:id
-    GW->>UM: verified Battle identity + settlement
-    UM-->>GW: WalletResult (stake moved, boost consumed)
-    GW-->>B: WalletResult
-    B->>GW: PUT /services/tamagotchi/internal/v1/pet-battle-settlements/:id
-    GW->>T: verified Battle identity + settlement
-    T-->>GW: PetResult (XP applied, loser's primary transferred)
-    GW-->>B: PetResult
-    B->>B: mark finished and write battle.finished.v1 to the outbox
-    B->>K: publish battle.finished.v1 (key: battleId)
-    K->>N: consume (group: notification)
-    N-->>C: push to both players via Firebase
-```
-
-### Decisions to confirm
-
-The brief leaves some boundaries open. These are our choices; they can change after discussion with the professor.
-
-| Question | Our choice |
-| --- | --- |
-| The brief tells Guild to use "Registry" for identity and relationships, but User Management owns those. | Guild asks User Management. |
-| Both User Management and Package Registry record user-package enrollments. | User Management is authoritative; Registry keeps a read-only projection fed by events. |
-| Who creates battle challenges and matches? | Battle owns challenges, acceptance and match creation. |
-| Local currency rules differ per package. | User Management stores balances per user and package; Registry stores the rules. |
-| Losing a battle transfers the loser's primary pet. | Tamagotchi transfers the existing record; the winner keeps its primary and gains a secondary; the loser must pick a new primary. |
-| Proximity threshold is written as "6(?)" meters. | 6 meters, locations fresh for 120 seconds. |
-
-## Services
-
-Each service is the only writer of its data. Other services ask the owner through its API; a reference to a user, pet, package or guild points at the existing record and never creates a copy.
-
-### 1. User Management
-
-- **Owns:** accounts, credentials and roles; friend requests, friendships and enemy marks; which packages a user is enrolled in; global and local currency balances; battle boosts and their holds.
-- **Does:** issues JWTs, answers "who is this user", "are they friends", "can they afford this stake"; applies currency results reported by Battle and Monster Raid.
-- **Not here:** pets (Tamagotchi), guild membership (Guild), package definitions (Package Registry).
-
-### 2. Battle
-
-- **Owns:** challenges, accepted matches, chosen pets and boosts, frozen combat inputs, turn and HP state, the outcome and settlement progress.
-- **Does:** computes damage from levels, type advantage, boosts and package care bonuses; decides winner rewards and the primary/secondary XP split; asks User Management and Tamagotchi to apply them.
-- **Not here:** currency balances or persistent pet records (never edited directly); cooperative fights (Monster Raid).
-
-### 3. Tamagotchi
-
-- **Owns:** every pet: identity, origin package, owner, combat type, level, XP, sprites and package-specific care statistics; primary and secondary assignments; pet reservations for battles and raids.
-- **Does:** creates the starter pet on enrollment, validates care actions against the package's pinned rules, applies XP and ownership transfers after battles and raids.
-- **Not here:** a battle's temporary HP (Battle); the definition of a statistic (Package Registry).
-
-### 4. Notification
-
-- **Owns:** push device registrations and notification records.
-- **Does:** consumes events (friend request, encounter, battle request or result, pet used or captured, guild invitation, raid start or result), decides who receives what, and delivers it through Firebase.
-- **Not here:** guild chat (Guild); any game decision.
-
-### 5. Map
-
-- **Owns:** each user's latest location and timestamp; encounter state.
-- **Does:** ignores stale updates, lets players read or clear their own location, keeps friends and enemies visible, detects strangers within 6 meters and publishes an encounter event that may lead to a friend request or a battle.
-- **Not here:** challenges (Battle) and alerts (Notification).
-
-### 6. Monster Raid
-
-- **Owns:** active raid instances: monster HP, participants, damage per participant, timer and status.
-- **Does:** starts raids from Registry schedules, checks guild eligibility and reserves primary pets, processes clicker-style attacks with a one-second cooldown, and requests rewards from User Management and Tamagotchi on victory.
-- **Not here:** monster and schedule definitions (Package Registry); membership (Guild).
-
-### 7. Guild
-
-- **Owns:** guilds, invitations, members and roles (leader, officer, member); chat messages with a per-guild sequence.
-- **Does:** enforces membership and permission rules, runs the guild chat over WebSockets, and tells Monster Raid who is eligible.
-- **Not here:** friendships and enemies (User Management); the raid itself (Monster Raid).
-
-### 8. Package Registry
-
-- **Owns:** packages and their moderators; immutable package configurations (starter pets, statistics, care actions, combat bonus thresholds); global combat rules; monster definitions; raid schedules.
-- **Does:** lets admins register packages and configure monsters and raids, lets moderators publish package rules, keeps a projection of enrollments, and tells Monster Raid when a raid starts or is cancelled.
-- **Not here:** a pet's current statistic values (Tamagotchi); live raid state (Monster Raid).
-
-## Future technologies and communication patterns
-
-The team works in **Go and TypeScript**. Each person implements both of their services in one language.
-
-| Service | Owner | Language and framework | Storage | Communication |
-| --- | --- | --- | --- | --- |
-| User Management | Alexei | Go, `net/http` | PostgreSQL `users` | HTTP/JSON; publishes enrollment and friend events |
-| Battle | Alexei | Go, `net/http` | PostgreSQL `battles` | HTTP/JSON with client polling of battle state; publishes battle events |
-| Tamagotchi | Artur | TypeScript, Fastify | PostgreSQL `pets` (JSONB for package statistics) | HTTP/JSON; consumes enrollment events; publishes pet events |
-| Notification | Artur | TypeScript, Fastify | PostgreSQL `notifications` | HTTP/JSON for devices; consumes Kafka events; Firebase push |
-| Map | Alexandru | Go, `net/http` | PostgreSQL `locations` | HTTP/JSON; publishes encounter events |
-| Monster Raid | Alexandru | Go, `net/http` | PostgreSQL `raids` | HTTP/JSON and a live raid WebSocket negotiated by Gateway; publishes raid events |
-| Guild | Nicolae | TypeScript, Fastify | PostgreSQL `guilds` | HTTP/JSON; WebSocket chat; publishes invitation events |
-| Package Registry | Nicolae | TypeScript, Fastify | MongoDB `registry` (versioned configuration documents) | HTTP/JSON; consumes enrollment events |
-
-**Why two languages, and these two.** Go's standard library gives small, fast binaries with built-in concurrency, which fits the request-heavy, timer-driven services (settlement, combat, location updates, raid attacks). TypeScript with Fastify gives schema-validated routes, JSON-native handling of package-specific statistics and easy WebSocket support, which fits pets, notifications, chat and configuration. One language per person avoids context switching. The cost is keeping validation and serialization equivalent in both stacks; the language-neutral contract below is the shared reference.
-
-**PostgreSQL for seven services.** Balances, ownership, holds and combat state need local transactions; PostgreSQL gives them, and JSONB stores each package's differently named statistics without a shared schema. Separate databases make ownership explicit at the cost of cross-service consistency work, handled with the outbox and settlement flows below. For the lab, one PostgreSQL server can host the seven relational databases with separate credentials.
-
-**MongoDB for Package Registry.** Store each immutable configuration version as a document containing starter pets, statistics and care actions. Keep packages, enrollments, monsters and schedules in separate collections, with unique indexes for identity and version pairs. Publish configurations and advance their current-version pointer atomically; persist enrollment projections and processed-event inbox entries in one transaction before committing Kafka offsets. Run MongoDB as a replica set to support these transactions. See the [Registry storage design](services/package-registry/README.md#storage-design).
-
-**HTTP/JSON for requests.** Synchronous calls handle decisions the caller must know immediately, such as reserving pets or checking eligibility. JSON is inspectable from both languages and from any client app. Calls time out after two seconds and unfinished work stays visible for retry. Clients poll battle and raid resources; guild chat uses WebSockets because it needs continuous delivery, and therefore reconnect and history replay.
-
-**Kafka for events.** Events are an append-only log: a consumer that was down (Notification, Registry) catches up from its last offset, and a new projection can replay history. Partitioning by `aggregateId` keeps events for one battle, raid or request in order. The cost is a heavier broker to run and no per-message routing; the lab uses a single-node Kafka in Docker and one topic per event type.
-
-**Firebase Cloud Messaging** is the push provider required by the brief. A push carries only `eventId`, `type` and `targetId`; the client fetches the authoritative state after opening it. Firebase needs a project, a service-account key kept out of Git, and a client that produces device tokens. Notification deletes devices whose tokens Firebase rejects, retries outages, and puts Firebase behind its own circuit breaker (`fcm`); a failed push never loses the stored notification.
+| Package Registry | Packages, configurations, combat rules and raid schedules | MongoDB `registry` |
+| Tamagotchi | Pets, care, XP, reservations and ownership | PostgreSQL `tamagotchi` |
+| Notification | Devices and notification delivery | PostgreSQL `notification` |
+| Kafka | Events for owners still migrating | `kafka-data` |
+| Prometheus, Loki, Alloy, Grafana | Metrics, container logs and dashboards | Named monitoring volumes |
+
+## Networking and trust
+
+Players use `http://localhost:8080/services/{service}/{path}`. Gateway verifies tokens,
+removes bearer credentials and signs a short-lived identity bound to method, URI and body.
+It sends migrated requests to `https://message-broker:8443/queues/{service}/{path}`.
+The broker forwards the identity to the owner, which checks permissions.
+
+Services call `message-broker:50051` using mutual TLS and `Router.Call`. The broker derives
+the caller from its certificate and checks the shared route allowlist. It signs a service
+identity and calls the destination's `Endpoint.Handle` on its registered gRPC port. The
+adapter uses the existing HTTP handler, keeping validation and idempotency unchanged.
+Only the broker certificate can call an owner's gRPC endpoint. A broker-issued identity
+cannot act as a player. HTTPS remains a temporary fallback for owners without `grpcPort`.
+
+`BROKER_SERVICES` selects Gateway destinations and `BROKER_DESTINATIONS` selects outgoing
+calls. Unlisted dependencies use their explicitly configured legacy Gateway URL; a failed
+broker call never falls back. Empty lists mean all destinations. Once every owner migrates,
+Gateway removes internal routes and rejects service callers. Do not enable that state early.
+
+Registration, heartbeats and pool reads go directly over mTLS to
+`https://service-discovery:8443`. They are control-plane traffic, not business requests.
+JWKS reads also use the broker when User Management is selected.
+
+Business services publish no host REST or gRPC ports. Guild ports 8087–8089 and Monster Raid
+8084–8086 are reserved for negotiated WebSockets with single-use tickets. Grafana and
+Prometheus bind only to localhost, on ports 3000 and 9090. Databases and broker stay private.
+
+## Durability and failover
+
+A business change and its outbox event commit together. One PostgreSQL advisory-lock leader
+per Go service runs workers and publishes with stable event IDs. Broker acknowledgment
+means the event is on disk. Retry with the same ID after an outage; duplicates are success.
+Consumers commit their inbox/domain change before Ack. Failed leases and Nack retry with
+backoff; poison or exhausted messages enter the dead letter channel.
+
+The broker uses reported load plus local in-flight work to select replicas. Per-instance
+breakers open after three transport/timeout/5xx failures in the configured window. Caller
+errors do not count. Failover retries reads and idempotent writes within one deadline;
+post-dispatch failures never prove an unkeyed mutation was unprocessed.
+
+Owner data, broker queues and monitoring persist in named volumes. Database provisioning
+creates missing databases/roles; owner migrations update schemas separately. Seeds preserve
+existing data. `down` retains volumes. Compose restart policies restart crashed processes;
+Discovery tracks availability and the broker routes around failed instances.
+
+## Extending and releasing
+
+Each owner adds gRPC transport, broker trust and its event client, registers `grpcPort` and
+any consumer interests, and publishes a validated merged `4.x.y` image. Producers name topics,
+not consumers. User Management and Battle produce events but subscribe to none.
+
+Add the owner to migration switches after its image supports broker identity. Verify its
+workflow, outage recovery and events before removing its Kafka settings. Remove Kafka only
+when all producers and consumers migrate. Update CPR submodule pointers to actual merged
+commits after service PRs merge; feature commits are not releases.
+
+The single-PC deployment uses Compose, one PostgreSQL, MongoDB, and one broker with a
+persistent volume. Broker-process replication, Kubernetes and autoscaling are future work;
+this lab's service high availability is rerouting between business-service replicas.
