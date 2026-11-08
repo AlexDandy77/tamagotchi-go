@@ -134,8 +134,9 @@ class BrokerDefaultsTests(unittest.TestCase):
     def test_upgrades_old_defaults_but_preserves_custom_and_final_mode(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / '.env.example').write_text('BROKER_SERVICES=user-management,battle,map,monster-raid,tamagotchi,notification,message-broker\nBROKER_DESTINATIONS=user-management,battle,map,monster-raid,tamagotchi,notification\n')
-            previous = ('tamagotchi,notification,message-broker', 'user-management,battle,tamagotchi,notification,message-broker')
+            (root / '.env.example').write_text('BROKER_SERVICES=user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification,message-broker\nBROKER_DESTINATIONS=user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification\n')
+            previous = ('tamagotchi,notification,message-broker', 'user-management,battle,tamagotchi,notification,message-broker',
+                        'user-management,battle,map,monster-raid,tamagotchi,notification,message-broker')
             for value in [*previous, 'battle', '']:
                 original = 'SEED_PASSWORD=private-value\nBROKER_SERVICES=' + value + '\n'
                 (root / '.env').write_text(original)
@@ -146,6 +147,6 @@ class BrokerDefaultsTests(unittest.TestCase):
                 self.assertEqual((root / '.env').read_text(), once)
                 self.assertIn('SEED_PASSWORD=private-value', once)
                 if value in previous:
-                    self.assertIn('BROKER_SERVICES=user-management,battle,map,monster-raid,', once)
+                    self.assertIn('BROKER_SERVICES=user-management,battle,guild,package-registry,map,monster-raid,', once)
                 else:
                     self.assertEqual(once, original)

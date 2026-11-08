@@ -163,8 +163,10 @@ def broker_defaults():
     path = ROOT / '.env'
     data = path.read_text()
     defaults = {'BROKER_SERVICES': ('tamagotchi,notification,message-broker',
-                                    'user-management,battle,tamagotchi,notification,message-broker'),
-                'BROKER_DESTINATIONS': ('tamagotchi,notification', 'user-management,battle,tamagotchi,notification')}
+                                    'user-management,battle,tamagotchi,notification,message-broker',
+                                    'user-management,battle,map,monster-raid,tamagotchi,notification,message-broker'),
+                'BROKER_DESTINATIONS': ('tamagotchi,notification', 'user-management,battle,tamagotchi,notification',
+                                        'user-management,battle,map,monster-raid,tamagotchi,notification')}
     example = dict(re.findall(r'^([A-Z0-9_]+)=(.*)$', (ROOT / '.env.example').read_text(), re.M))
     for key, previous in defaults.items():
         match = re.search(r'^' + key + r'=(.*)$', data, re.M)
