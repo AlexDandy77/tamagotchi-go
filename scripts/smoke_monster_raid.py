@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Exercise paired Monster Raid through the Gateway with real User Management tokens, Guild membership and Package Registry schedules, negotiate and open its live socket, call its mutual TLS API as Package Registry through the Gateway, check that it refuses direct REST, and read its Kafka start event, without printing credentials."""
+"""Exercise paired Monster Raid through the Gateway with real User Management tokens, Guild membership and Package Registry schedules, negotiate and open its live socket, call its mutual TLS API as Package Registry through the Gateway, check that it refuses direct REST, and read its start event from the Message Broker, without printing credentials.
+
+The event is read through Gateway's admin route of the broker, so Alice must be a demo admin
+(REGISTRY_ADMIN_USER_IDS, which setup fills and the broker shares)."""
 import json
 import subprocess
 import time
+import urllib.parse
 import uuid
 import lab
 from smoke import LiveSocket, request, USERS
@@ -14,8 +18,8 @@ PETS = 'http://127.0.0.1:8080/services/tamagotchi'
 NIGHT_OWLS = '22222222-2222-4222-8222-222222222222'
 PRACTICE = '44444444-4444-4444-8444-444444444444'  # the raid of the schedule Package Registry seeds
 FIXTURE = 'a6c9ad3a-3890-5750-adae-a8b0a30af066'  # the won raid whose reward User Management's seed pays
+BROKER = GATEWAY + '/services/message-broker'
 TOPIC = 'raid.started.v1'
-ADMIN = '/run/secrets/kafka-admin.properties'
 # Runs inside the Package Registry container, the only caller the internal routes allow, and
 # calls a mutual TLS port, Monster Raid's own or the Gateway's, with Registry's certificate.
 INTERNAL_CALL = r'''
@@ -54,16 +58,17 @@ def primary_pet(token):
         time.sleep(0.5)
     raise AssertionError('Tamagotchi never provisioned a primary pet')
 
-def kafka(tool, *args):
-    return output('kafka', '/opt/kafka/bin/' + tool, '--bootstrap-server', 'kafka:9092', *args)
-
-def start_events():
-    count = int(kafka('kafka-get-offsets.sh', '--command-config', ADMIN, '--topic', TOPIC).rsplit(':', 1)[1])
-    if count == 0:
-        return []
-    messages = kafka('kafka-console-consumer.sh', '--consumer.config', ADMIN, '--topic', TOPIC, '--from-beginning',
-                     '--max-messages', str(count), '--timeout-ms', '10000')
-    return [json.loads(line) for line in messages.splitlines() if line.startswith('{')]
+def start_events(token):
+    """Every raid start the broker stores, read page by page as a demo admin."""
+    events, start = [], 1
+    while True:
+        query = urllib.parse.urlencode({'fromOffset': start})
+        page = request(BROKER, 'GET', f'/v1/topics/{TOPIC}/messages?{query}', token=token)
+        if not page['items']:
+            return events
+        assert all(m['producer'] == 'monster-raid' for m in page['items']), 'The broker accepted a raid start from another service'
+        events += [m['value'] if isinstance(m['value'], dict) else json.loads(m['value']) for m in page['items']]
+        start = page['nextOffset']
 
 def open_live(url, credential):
     """Opens the live raid socket with credential in its first frame and returns the first frame
@@ -136,11 +141,11 @@ def main():
     assert missing['status'] == 422 and missing['body']['error']['details'][0]['field'] == 'scheduleVersion', \
         f'Unknown schedule answered {missing["status"]}'
 
-    # The seed queued the practice raid's start, which the relay published to Kafka.
-    event = next((e for e in reversed(start_events()) if e['aggregateId'] == PRACTICE), None)
-    assert event, 'No start event of the practice raid reached Kafka'
+    # The seed queued the practice raid's start, which the relay published to the broker.
+    event = next((e for e in reversed(start_events(sessions['alice']['accessToken'])) if e['aggregateId'] == PRACTICE), None)
+    assert event, 'No start event of the practice raid reached the Message Broker'
     assert event['producer'] == 'monster-raid' and set(event['data']['recipientIds']) == {alice, bob}
-    print('Paired Monster Raid reads, joins and attacks through the Gateway, its live socket opened as negotiated, its Package Registry mutual TLS API through the Gateway, its refusal of direct REST and its Kafka start event passed.')
+    print('Paired Monster Raid reads, joins and attacks through the Gateway, its live socket opened as negotiated, its Package Registry mutual TLS API through the Gateway, its refusal of direct REST and its start event on the Message Broker passed.')
 
 if __name__ == '__main__':
     main()
