@@ -87,8 +87,8 @@ The manual **Published runtime validation** workflow starts only public images, 
 
 Gateway authenticates players and sends migrated destinations to the Message Broker. The broker routes requests, balances by load, retries safe calls, and delivers durable topic events. See [ARCHITECTURE.md](ARCHITECTURE.md) and [the broker contract](contracts/message-broker.md).
 
-- Broker-ready owners in this deployment: User Management, Battle, Tamagotchi and Notification. Publish their merged `4.x.y` images before starting this configuration. Open PR commits are not release images.
-- `BROKER_SERVICES` selects Gateway destinations; `BROKER_DESTINATIONS` selects outgoing service calls. Both default to the migrated owners. Package Registry, Map, Monster Raid and Guild still need their owners' migration; Kafka remains for them. Registry's Kafka enrollment consumer will not receive new broker events until migrated.
+- Broker-ready owners in this deployment: User Management, Battle, Map, Monster Raid, Tamagotchi and Notification. Publish their merged `4.x.y` images before starting this configuration. Open PR commits are not release images.
+- `BROKER_SERVICES` selects Gateway destinations; `BROKER_DESTINATIONS` selects outgoing service calls. Both default to the migrated owners. Package Registry and Guild still need their owners' migration; Kafka remains for them, and Monster Raid calls them through Gateway until then. Registry's Kafka enrollment consumer will not receive new broker events until migrated.
 - Empty lists select the final all-broker mode. Enable that only after every owner migrates; Gateway then rejects service callers and removes internal routes.
 - Grafana: `http://localhost:3000`; Prometheus: `http://localhost:9090`. Alloy ships container logs to Loki. The broker's admin collection lists topics, queues, dead letters and downloads logs through Gateway.
 - After startup: `python3 scripts/check_lab4.py`, then `python3 scripts/demo_lab4.py`. These complement service Postman collections; they do not certify unmigrated owners.
