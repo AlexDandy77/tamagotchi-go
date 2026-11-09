@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Exercise live Map with real User Management tokens and relationships and read its Kafka encounter event, without printing credentials."""
+"""Exercise live Map with real User Management tokens and relationships and read its encounter event from the Message Broker, without printing credentials.
+
+The event is read through Gateway's admin route of the broker, so Alice must be a demo admin
+(REGISTRY_ADMIN_USER_IDS, which setup fills and the broker shares)."""
 import datetime
 import json
 import subprocess
+import urllib.parse
 import time
 import uuid
 import lab
 from smoke import request, USERS
 
 MAP = 'http://127.0.0.1:8080/services/map'
+BROKER = 'http://127.0.0.1:8080/services/message-broker'
 TOPIC = 'map.encountered.v1'
-ADMIN = '/run/secrets/kafka-admin.properties'
 HERE = {'latitude': 47.0617, 'longitude': 28.8683}
 NEAR = {'latitude': 47.061727, 'longitude': 28.8683}  # about 3 m north
 FAR = {'latitude': 47.0717, 'longitude': 28.8683}  # about 1.1 km north
@@ -28,8 +32,16 @@ def report(position, token):
 def output(*args):
     return lab.compose('exec', '-T', *args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode().strip()
 
-def kafka(tool, *args):
-    return output('kafka', '/opt/kafka/bin/' + tool, '--bootstrap-server', 'kafka:9092', *args)
+def stored(token, start):
+    """Return the topic's messages from offset start, and the offset after the last one."""
+    messages = []
+    while True:
+        query = urllib.parse.urlencode({'fromOffset': start})
+        page = request(BROKER, 'GET', f'/v1/topics/{TOPIC}/messages?{query}', token=token)
+        if not page['items']:
+            return messages, start
+        messages += page['items']
+        start = page['nextOffset']
 
 def wait_for_empty_outbox():
     for _ in range(40):
@@ -57,19 +69,18 @@ def main():
         report(FAR, b)
         report(HERE, a)
         wait_for_empty_outbox()
-        offset = kafka('kafka-get-offsets.sh', '--command-config', ADMIN, '--topic', TOPIC).rsplit(':', 1)[1]
+        _, offset = stored(a, 1)
         report(NEAR, b)
         entry = on_map(a, bob)
         assert entry and entry['relationship'] == 'unknown' and entry['distanceMeters'] <= 6 and not entry['stale']
         wait_for_empty_outbox()
-        # The relay deletes an outbox row only after Kafka acknowledges it. Players left near the
-        # same spot, for example by smoke_live.py, meet Bob too, so read every new event.
-        end = kafka('kafka-get-offsets.sh', '--command-config', ADMIN, '--topic', TOPIC).rsplit(':', 1)[1]
-        messages = kafka('kafka-console-consumer.sh', '--consumer.config', ADMIN, '--topic', TOPIC, '--partition', '0',
-                         '--offset', offset, '--max-messages', str(int(end) - int(offset)), '--timeout-ms', '10000')
-        events = [json.loads(line) for line in messages.splitlines() if line]
+        # The relay deletes an outbox row only after the broker has stored the event. Players left
+        # near the same spot, for example by smoke_live.py, meet Bob too, so read every new event.
+        messages, _ = stored(a, offset)
+        assert all(m['producer'] == 'map' for m in messages), 'The broker accepted an encounter event from another service'
+        events = [m['value'] if isinstance(m['value'], dict) else json.loads(m['value']) for m in messages]
         event = next((e for e in events if set(e['data']['userIds']) == {alice, bob}), None)
-        assert event, 'No Alice and Bob encounter event reached Kafka'
+        assert event, 'No Alice and Bob encounter event reached the Message Broker'
         assert event['type'] == TOPIC and event['producer'] == 'map'
         assert event['data']['distanceMeters'] <= 6
     finally:
@@ -78,7 +89,7 @@ def main():
         request(USERS, 'PUT', f"/v1/friend-requests/{friend['id']}/decision", {'decision': 'accept'}, b, key())
     entry = on_map(a, bob)
     assert entry and entry['relationship'] == 'friend'
-    print('Live Map reports, User Management relationships and the Kafka encounter event passed.')
+    print('Live Map reports, User Management relationships and the encounter event on the Message Broker passed.')
 
 if __name__ == '__main__':
     main()

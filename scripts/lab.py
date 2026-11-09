@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVICES = (
     'user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification',
 )
-# Every published image startup refreshes: the services, Gateway and Service Discovery.
-IMAGES = (*SERVICES, 'gateway', 'service-discovery')
+# Every published image startup refreshes: the services, Gateway, Service Discovery and the Message Broker.
+IMAGES = (*SERVICES, 'gateway', 'service-discovery', 'message-broker')
 # Topic -> Kafka principal allowed to produce it.
 TOPICS = {
     'user.package-registered.v1': 'users',
@@ -56,12 +56,12 @@ SECRET_KEYS = (
     'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD',
     'KAFKA_BROKER_PASSWORD', 'KAFKA_ADMIN_PASSWORD', 'KAFKA_USERS_PASSWORD', 'KAFKA_BATTLES_PASSWORD',
     'KAFKA_GUILDS_PASSWORD', 'KAFKA_REGISTRY_PASSWORD', 'KAFKA_LOCATIONS_PASSWORD', 'KAFKA_RAIDS_PASSWORD',
-    'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD',
+    'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD', 'GRAFANA_ADMIN_PASSWORD',
 )
 # Prepare every service certificate; owners mount them when enabling Gateway transport.
-TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery')
+TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery', 'message-broker')
 # These images run as an unprivileged user that must read its bind-mounted key.
-NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery')
+NON_ROOT_SERVICES = ('guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery', 'message-broker')
 # Already required by Compose; provides the openssl CLI so the host needs no OpenSSL.
 TOOLS_IMAGE = 'postgres:17.9'
 TLS_SCRIPT = r'''set -eu
@@ -158,6 +158,25 @@ def managed_services():
     path.write_text(data.replace(match[0], 'DISCOVERY_MANAGED_SERVICES=' + current))
     print('Updated DISCOVERY_MANAGED_SERVICES from the previous default to', current)
 
+def broker_defaults():
+    """Upgrade only previously shipped selections; preserve explicit custom lists."""
+    path = ROOT / '.env'
+    data = path.read_text()
+    defaults = {'BROKER_SERVICES': ('tamagotchi,notification,message-broker',
+                                    'user-management,battle,tamagotchi,notification,message-broker',
+                                    'user-management,battle,map,monster-raid,tamagotchi,notification,message-broker'),
+                'BROKER_DESTINATIONS': ('tamagotchi,notification', 'user-management,battle,tamagotchi,notification',
+                                        'user-management,battle,map,monster-raid,tamagotchi,notification')}
+    example = dict(re.findall(r'^([A-Z0-9_]+)=(.*)$', (ROOT / '.env.example').read_text(), re.M))
+    for key, previous in defaults.items():
+        match = re.search(r'^' + key + r'=(.*)$', data, re.M)
+        if match and match[1] in previous:
+            data = data[:match.start()] + key + '=' + example[key] + data[match.end():]
+    if data != path.read_text():
+        path.write_text(data)
+        print('Updated the previous broker migration defaults; custom selections preserved.')
+
+
 def demo_admin():
     """Fill only the local demo default; explicit admins always win."""
     path = ROOT / '.env'
@@ -177,6 +196,7 @@ def demo_admin():
 def setup():
     env_file()
     managed_services()
+    broker_defaults()
     demo_admin()
     directory = ROOT / '.secrets'
     directory.mkdir(mode=0o700, exist_ok=True)

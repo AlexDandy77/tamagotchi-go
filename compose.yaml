@@ -73,7 +73,7 @@ services:
     pull_policy: always
     environment:
       # All REST destinations must implement the shared Gateway identity contract.
-      UPSTREAMS_JSON: '{"user-management":"https://user-management:8443","battle":"https://battle:8443","map":"https://map:8443","monster-raid":"https://monster-raid:8443","guild":"https://guild:8443","package-registry":"https://package-registry:8443","tamagotchi":"https://tamagotchi:8443","notification":"https://notification:8443"}'
+      UPSTREAMS_JSON: '{"user-management":"https://user-management:8443","battle":"https://battle:8443","map":"https://map:8443","monster-raid":"https://monster-raid:8443","guild":"https://guild:8443","package-registry":"https://package-registry:8443","tamagotchi":"https://tamagotchi:8443","notification":"https://notification:8443","message-broker":"https://message-broker:8443"}'
       SERVICE_TLS_CERT_FILE: /run/tls/gateway.pem
       SERVICE_TLS_KEY_FILE: /run/tls/gateway-key.pem
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
@@ -90,6 +90,10 @@ services:
       SERVICE_DISCOVERY_URL: https://service-discovery:8443
       # Managed services with no healthy instance return 503; they never use static DNS.
       DISCOVERY_MANAGED_SERVICES: ${DISCOVERY_MANAGED_SERVICES:-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
+      # Lab 4: REST for BROKER_SERVICES goes through the Message Broker's subscriber queues.
+      # An empty list routes every service through it and removes internal routes from Gateway.
+      BROKER_URL: https://message-broker:8443
+      BROKER_SERVICES: ${BROKER_SERVICES-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification,message-broker}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
@@ -128,15 +132,47 @@ services:
       timeout: 7s
       retries: 30
     restart: unless-stopped
+  message-broker:
+    image: ${MESSAGE_BROKER_IMAGE:?Set a published Message Broker image}
+    pull_policy: always
+    environment:
+      SERVICE_TLS_CERT_FILE: /run/tls/message-broker.pem
+      SERVICE_TLS_KEY_FILE: /run/tls/message-broker-key.pem
+      SERVICE_TLS_CA_FILE: /run/tls/ca.pem
+      # Verifies X-Gateway-Identity on the admin routes (topics, dead letters, queues, logs).
+      GATEWAY_CERT_FILE: /run/tls/gateway.pem
+      # Pools for routing, its own registration and breaker ejections.
+      SERVICE_DISCOVERY_URL: https://service-discovery:8443
+      # Source of GET /v1/logs.
+      LOKI_URL: http://loki:3100
+      # Admins of the admin routes: the same local demo admins as Package Registry.
+      BROKER_ADMIN_USER_IDS: ${REGISTRY_ADMIN_USER_IDS:-}
+      TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
+      MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
+      INSTANCE_ID: message-broker-1
+    volumes:
+      # Durable queues: every event and delivery state survives a restart.
+      - broker-data:/data
+      - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
+      - ./.secrets/tls/message-broker-key.pem:/run/tls/message-broker-key.pem:ro
+    healthcheck:
+      test: [CMD, python, -m, broker, healthcheck]
+      interval: 5s
+      timeout: 7s
+      retries: 30
+    restart: unless-stopped
   user-management:
     image: ${USER_MANAGEMENT_IMAGE:?Set a published User Management image tag}
     pull_policy: always
     environment:
       DATABASE_URL: postgres://users:${USERS_DB_PASSWORD:?Run setup}@postgres:5432/users?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: users
-      KAFKA_PASSWORD: ${KAFKA_USERS_PASSWORD}
       DEPENDENCY_MODE: live
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
       REGISTRY_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/user-management.pem
@@ -153,13 +189,14 @@ services:
       - ./.secrets/jwt.pem:/run/secrets/jwt.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/user-management.pem:/run/tls/user-management.pem:ro
       - ./.secrets/tls/user-management-key.pem:/run/tls/user-management-key.pem:ro
     deploy:
       replicas: 3
     depends_on:
       postgres: {condition: service_healthy}
-      kafka: {condition: service_healthy}
+      message-broker: {condition: service_healthy}
     healthcheck:
       test: [CMD, /service, healthcheck]
       interval: 5s
@@ -171,10 +208,11 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://battles:${BATTLES_DB_PASSWORD:?Run setup}@postgres:5432/battles?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: battles
-      KAFKA_PASSWORD: ${KAFKA_BATTLES_PASSWORD}
       DEPENDENCY_MODE: live
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
       REGISTRY_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/battle.pem
@@ -189,6 +227,7 @@ services:
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/battle.pem:/run/tls/battle.pem:ro
       - ./.secrets/tls/battle-key.pem:/run/tls/battle-key.pem:ro
     deploy:
@@ -210,10 +249,14 @@ services:
     pull_policy: always
     environment: &guild-env
       DATABASE_URL: postgres://guilds:${GUILDS_DB_PASSWORD:?Run setup}@postgres:5432/guilds?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: guilds
-      KAFKA_PASSWORD: ${KAFKA_GUILDS_PASSWORD}
       DEPENDENCY_MODE: live
+      # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
+      # and Router.Call for BROKER_DESTINATIONS. Relationships and signing keys come from User
+      # Management through the broker, or through the Gateway when it is not listed.
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       SERVICE_TLS_CERT_FILE: /run/tls/guild.pem
       SERVICE_TLS_KEY_FILE: /run/tls/guild-key.pem
@@ -231,11 +274,13 @@ services:
     volumes:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/guild.pem:/run/tls/guild.pem:ro
       - ./.secrets/tls/guild-key.pem:/run/tls/guild-key.pem:ro
     # Only the negotiated chat socket and the probes are direct.
     ports: [127.0.0.1:8087:8080]
     depends_on:
+      message-broker: {condition: service_healthy}
       user-management: {condition: service_healthy}
     healthcheck:
       test: [CMD, node, dist/main.js, healthcheck]
@@ -262,11 +307,14 @@ services:
     pull_policy: always
     environment:
       MONGODB_URL: mongodb://registry:${REGISTRY_DB_PASSWORD:?Run setup}@mongo:27017/registry?replicaSet=rs0&authSource=registry
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: registry
-      KAFKA_PASSWORD: ${KAFKA_REGISTRY_PASSWORD}
       DEPENDENCY_MODE: live
-      # Monster Raid accepts raid commands only through the Gateway.
+      # Lab 4: enrollments from the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
+      # and Router.Call for BROKER_DESTINATIONS. Raid commands and signing keys go through the
+      # broker, or through the Gateway when their owner is not listed.
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
       MONSTER_RAID_URL: https://gateway:8443/services/monster-raid
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       REGISTRY_ADMIN_USER_IDS: ${REGISTRY_ADMIN_USER_IDS:-}
@@ -282,15 +330,16 @@ services:
     volumes:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/package-registry.pem:/run/tls/package-registry.pem:ro
       - ./.secrets/tls/package-registry-key.pem:/run/tls/package-registry-key.pem:ro
-    # Requests are instance-agnostic, every replica shares the enrollment consumer group, and
-    # one replica at a time holds the MongoDB lease that dispatches raids.
+    # Requests are instance-agnostic, every replica fetches for the enrollment consumer group,
+    # and one replica at a time holds the MongoDB lease that dispatches raids.
     deploy:
       replicas: 3
     depends_on:
       mongo: {condition: service_healthy}
-      kafka: {condition: service_healthy}
+      message-broker: {condition: service_healthy}
       user-management: {condition: service_healthy}
     healthcheck:
       test: [CMD, node, dist/main.js, healthcheck]
@@ -303,11 +352,14 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://locations:${LOCATIONS_DB_PASSWORD:?Run setup}@postgres:5432/locations?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: locations
-      KAFKA_PASSWORD: ${KAFKA_LOCATIONS_PASSWORD:?Run setup}
       DEPENDENCY_MODE: live
-      # Profiles and relationships come from User Management through the Gateway.
+      # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
+      # and Router.Call for BROKER_DESTINATIONS. Profiles and relationships come from User
+      # Management through the broker, or through the Gateway when it is not listed.
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       SERVICE_TLS_CERT_FILE: /run/tls/map.pem
       SERVICE_TLS_KEY_FILE: /run/tls/map-key.pem
@@ -323,6 +375,7 @@ services:
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/map.pem:/run/tls/map.pem:ro
       - ./.secrets/tls/map-key.pem:/run/tls/map-key.pem:ro
     # Requests are instance-agnostic and one replica at a time relays events, so Map scales
@@ -331,7 +384,7 @@ services:
       replicas: 3
     depends_on:
       postgres: {condition: service_healthy}
-      kafka: {condition: service_healthy}
+      message-broker: {condition: service_healthy}
       user-management: {condition: service_healthy}
       # Started, not healthy: the Gateway's readiness waits for Map.
       gateway: {condition: service_started}
@@ -349,11 +402,13 @@ services:
     pull_policy: always
     environment: &monster-raid-env
       DATABASE_URL: postgres://raids:${RAIDS_DB_PASSWORD:?Run setup}@postgres:5432/raids?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: raids
-      KAFKA_PASSWORD: ${KAFKA_RAIDS_PASSWORD:?Run setup}
       DEPENDENCY_MODE: live
-      # All REST dependencies pass through Gateway.
+      # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
+      # and Router.Call for BROKER_DESTINATIONS; the other dependencies use their Gateway URL.
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       REGISTRY_URL: https://gateway:8443/services/package-registry
@@ -375,13 +430,14 @@ services:
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/monster-raid.pem:/run/tls/monster-raid.pem:ro
       - ./.secrets/tls/monster-raid-key.pem:/run/tls/monster-raid-key.pem:ro
     # Only the negotiated live raid socket and the probes are direct.
     ports: [127.0.0.1:8084:8080]
     depends_on:
       postgres: {condition: service_healthy}
-      kafka: {condition: service_healthy}
+      message-broker: {condition: service_healthy}
       user-management: {condition: service_healthy}
       # Started, not healthy: the Gateway's readiness waits for Monster Raid.
       gateway: {condition: service_started}
@@ -424,6 +480,12 @@ services:
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       GATEWAY_ONLY: 'true'
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
+      # Lab 4: events through the Message Broker (Kafka stays until every producer moved),
+      # Endpoint.Handle for the broker on GRPC_PORT, and Router.Call for BROKER_DESTINATIONS.
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.
@@ -431,6 +493,7 @@ services:
     volumes:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/tamagotchi.pem:/run/tls/tamagotchi.pem:ro
       - ./.secrets/tls/tamagotchi-key.pem:/run/tls/tamagotchi-key.pem:ro
     # Idempotency and care results live in Postgres and one replica at a time relays the outbox,
@@ -460,6 +523,12 @@ services:
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       GATEWAY_ONLY: 'true'
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
+      # Lab 4: events through the Message Broker (Kafka stays until every producer moved),
+      # Endpoint.Handle for the broker on GRPC_PORT, and Router.Call for BROKER_DESTINATIONS.
+      BROKER_URL: message-broker:50051
+      BROKER_CERT_FILE: /run/tls/message-broker.pem
+      GRPC_PORT: 50051
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.
@@ -467,6 +536,7 @@ services:
     volumes:
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
+      - ./.secrets/tls/message-broker.pem:/run/tls/message-broker.pem:ro
       - ./.secrets/tls/notification.pem:/run/tls/notification.pem:ro
       - ./.secrets/tls/notification-key.pem:/run/tls/notification-key.pem:ro
       - ./.secrets/fcm:/run/secrets/fcm:ro
@@ -478,8 +548,53 @@ services:
       postgres: {condition: service_healthy}
       kafka: {condition: service_healthy}
     restart: unless-stopped
+  # Lab 4 monitoring: Prometheus scrapes the broker's metrics, Grafana Alloy ships every
+  # container's stdout to Loki, and Grafana shows both (http://localhost:3000).
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.retention.time=2d]
+    volumes:
+      - ./deployment/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports: [127.0.0.1:9090:9090]
+    restart: unless-stopped
+  loki:
+    image: grafana/loki:3.7.8
+    command: [-config.file=/etc/loki/loki.yaml]
+    volumes:
+      - ./deployment/monitoring/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+  alloy:
+    image: grafana/alloy:v1.20.1
+    command: [run, /etc/alloy/config.alloy, --storage.path=/var/lib/alloy/data]
+    volumes:
+      - ./deployment/monitoring/config.alloy:/etc/alloy/config.alloy:ro
+      # Read-only: Alloy lists containers and reads their logs; it never changes them.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:12.4.12
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run setup}
+      # The lab dashboard is readable without a login; changes need the admin login.
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/lab4.json
+    volumes:
+      - ./deployment/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deployment/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: [127.0.0.1:3000:3000]
+    depends_on: [prometheus, loki]
+    restart: unless-stopped
 volumes:
   postgres-data:
   kafka-data:
   mongo-data:
   mongo-config:
+  broker-data:
+  prometheus-data:
+  loki-data:
+  grafana-data:

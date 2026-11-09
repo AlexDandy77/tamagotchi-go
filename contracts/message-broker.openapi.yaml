@@ -241,8 +241,9 @@ paths:
       x-audience: admin
       description: >-
         Log lines of every container, read from Loki, oldest first. Each line is
-        the service's own JSON log event. At most 7 days and 50000 lines per
-        request.
+        the service's own JSON log event. At most 7 days and 10000 lines per
+        request, capped at 3 MiB within the task deadline. Truncated pages include
+        an inclusive continuation timestamp; deduplicate repeated boundary lines.
       parameters:
         - name: service
           in: query
@@ -268,10 +269,17 @@ paths:
           schema: {type: string, maxLength: 200}
         - name: limit
           in: query
-          schema: {type: integer, minimum: 1, maximum: 50000, default: 5000}
+          schema: {type: integer, minimum: 1, maximum: 10000, default: 5000}
       responses:
         '200':
           description: Newline-delimited JSON, offered as a download (Content-Disposition attachment)
+          headers:
+            X-Logs-Truncated:
+              description: Present and true when the page is incomplete
+              schema: {type: boolean}
+            X-Logs-Next-Since:
+              description: Inclusive since for the next page; deduplicate boundary lines
+              schema: {type: string, format: date-time}
           content:
             application/x-ndjson:
               schema: {type: string}

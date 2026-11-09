@@ -47,7 +47,9 @@ class SetupTests(unittest.TestCase):
     def test_service_discovery_gets_a_readable_certificate_and_its_image_refreshes(self):
         self.assertIn("service-discovery", lab.TLS_SERVICES)
         self.assertIn("service-discovery", lab.NON_ROOT_SERVICES)
-        self.assertEqual(lab.IMAGES, (*lab.SERVICES, "gateway", "service-discovery"))
+        self.assertEqual(lab.IMAGES, (*lab.SERVICES, "gateway", "service-discovery", "message-broker"))
+        self.assertIn("message-broker", lab.TLS_SERVICES)
+        self.assertIn("message-broker", lab.NON_ROOT_SERVICES)
         # It has no database, so setup neither migrates nor seeds it.
         self.assertNotIn("service-discovery", lab.SERVICES)
 
@@ -127,3 +129,24 @@ class ManagedServicesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class BrokerDefaultsTests(unittest.TestCase):
+    def test_upgrades_old_defaults_but_preserves_custom_and_final_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.env.example').write_text('BROKER_SERVICES=user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification,message-broker\nBROKER_DESTINATIONS=user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification\n')
+            previous = ('tamagotchi,notification,message-broker', 'user-management,battle,tamagotchi,notification,message-broker',
+                        'user-management,battle,map,monster-raid,tamagotchi,notification,message-broker')
+            for value in [*previous, 'battle', '']:
+                original = 'SEED_PASSWORD=private-value\nBROKER_SERVICES=' + value + '\n'
+                (root / '.env').write_text(original)
+                with patch.object(lab, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                    lab.broker_defaults()
+                    once = (root / '.env').read_text()
+                    lab.broker_defaults()
+                self.assertEqual((root / '.env').read_text(), once)
+                self.assertIn('SEED_PASSWORD=private-value', once)
+                if value in previous:
+                    self.assertIn('BROKER_SERVICES=user-management,battle,guild,package-registry,map,monster-raid,', once)
+                else:
+                    self.assertEqual(once, original)

@@ -59,7 +59,7 @@ python3 scripts/smoke_live.py
 
 `setup` generates missing credentials and certificates. `up` checks and pulls every service repository's `latest` image before changing containers, then provisions databases/topics, migrates, seeds and starts the deployment. The Battle and Tamagotchi collections obtain a second starter through enrollment in another configured active package; Tamagotchi uses it to exercise changing the primary pet. Battle also selects an owned primary if capture cleared it, and each player needs at least 10 available global coins earned through raids. Combat changes pet ownership; seeding does not reset it. Failed pulls stop startup; stale cached images are not a fallback. Direct `docker compose up` also checks image updates. `down` retains all data.
 
-All client REST URLs are `http://localhost:8080/services/{service}/{original-path}`. Services call `https://gateway:8443/services/{destination}` with their certificates. Gateway verifies tokens, removes Authorization and sends a signed identity; each destination checks permissions. Only Gateway exposes REST. Guild ports 8087 to 8089 and Monster Raid ports 8084 to 8086, one per replica, are reserved for negotiated direct WebSockets; their implementations must reject direct business REST. Databases and Kafka remain direct. Registration, heartbeats and Gateway's pool reads go directly to `https://service-discovery:8443`: Gateway reads its routes from Service Discovery, so this control plane cannot pass through it.
+All client REST URLs are `http://localhost:8080/services/{service}/{original-path}`. Migrated services call `message-broker:50051` over gRPC with their certificates. Unmigrated destinations retain the explicit Gateway path during the transition. Gateway verifies tokens, removes Authorization and sends a signed identity; each destination checks permissions. Only Gateway exposes REST. Guild ports 8087 to 8089 and Monster Raid ports 8084 to 8086, one per replica, are reserved for negotiated direct WebSockets; their implementations must reject direct business REST. Databases and Kafka remain direct. Registration, heartbeats and Gateway's pool reads go directly to `https://service-discovery:8443`: Gateway reads its routes from Service Discovery, so this control plane cannot pass through it.
 
 Import [one Postman environment](postman/local.postman_environment.json), set `seedPassword` locally, and import the collections you need:
 
@@ -73,7 +73,7 @@ Gateway has independent client/service task budgets. [Socket tickets](contracts/
 
 The Tamagotchi Postman collection covers player routes only. Internal routes require service mTLS and are not included in that collection; the optional [Postman mTLS port override](compose.postman.internal.yaml) can still be used for separate manual checks. These ports all reach Gateway and select different caller certificates.
 
-Lab 3 runs Service Discovery and three replicas of every business service: User Management, Battle, Guild, Package Registry, Map, Monster Raid, Tamagotchi and Notification. User Management, Battle, Guild and Package Registry require their Lab 3 releases before using this deployment. Gateway selects replicas in round-robin order and returns `X-Served-By`. `DISCOVERY_MANAGED_SERVICES` lists all eight owners: an empty healthy pool returns `503`, without static DNS fallback.
+Lab 3 runs Service Discovery and three replicas of every business service: User Management, Battle, Guild, Package Registry, Map, Monster Raid, Tamagotchi and Notification. User Management, Battle, Guild and Package Registry require their Lab 3 releases before using this deployment. The broker selects migrated service replicas by load, applies circuit breakers and returns `X-Served-By`; Gateway retains round-robin routing for unmigrated destinations. `DISCOVERY_MANAGED_SERVICES` lists all eight owners: an empty healthy pool returns `503`, without static DNS fallback.
 
 Discovery polls `/status` and reports critical load, unhealthy/ejected instances, expired leases and recovery. Configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` only in local `.env` for real developer messages; otherwise alerts are log-only. See the [Telegram setup](https://github.com/AlexDandy77/pad-team-8-service-discovery#telegram-alerts). Existing setups need `setup` to add the Discovery certificate, then recreate all containers so they share the new CA; database volumes remain intact.
 
@@ -83,9 +83,19 @@ The manual **Published runtime validation** workflow starts only public images, 
 
 `check_lab2.py` checks Compose routing, task-limit settings and image policy without private source access. Passing it does not prove service implementations work: run the smoke checks against compatible releases. See [remaining owner work](ARCHITECTURE.md#integration-checks). Local setup fills an empty `REGISTRY_ADMIN_USER_IDS` with seeded Alice's ID and preserves explicit settings. Each destination has one base URL: `REGISTRY_URL`, `TAMAGOTCHI_URL`, `USER_MANAGEMENT_URL`, `GUILD_URL` or `MONSTER_RAID_URL`. Services append public or internal endpoint paths; authentication keys come from the User Management base plus `/.well-known/jwks.json`. Owners must update their configuration readers to these names; Compose no longer supplies the old aliases. There is no bearer-forwarding or direct REST fallback.
 
+## Broker migration
+
+Gateway authenticates players and sends migrated destinations to the Message Broker. The broker routes requests, balances by load, retries safe calls, and delivers durable topic events. See [ARCHITECTURE.md](ARCHITECTURE.md) and [the broker contract](contracts/message-broker.md).
+
+- Broker-ready owners in this deployment: all eight, User Management, Battle, Guild, Package Registry, Map, Monster Raid, Tamagotchi and Notification. Publish their merged `4.x.y` images before starting this configuration. Open PR commits are not release images.
+- `BROKER_SERVICES` selects Gateway destinations; `BROKER_DESTINATIONS` selects outgoing service calls. Both default to every owner. Guild publishes `guild.invited.v1` and Package Registry consumes `user.package-registered.v1` through the broker, so neither uses Kafka any more. Kafka keeps running while Tamagotchi and Notification still carry its settings; remove it once their owners confirm they no longer read it.
+- Empty lists select the final all-broker mode. Enable that only after every owner migrates; Gateway then rejects service callers and removes internal routes.
+- Grafana: `http://localhost:3000`; Prometheus: `http://localhost:9090`. Alloy ships container logs to Loki. The broker's admin collection lists topics, queues, dead letters and downloads logs through Gateway.
+- After startup: `python3 scripts/check_lab4.py`, then `python3 scripts/demo_lab4.py`. These complement service Postman collections; they do not certify unmigrated owners.
+
 ## Communication contract
 
-Contract version **1.4.0**. All eight services implement their portions.
+Contract version **1.5.0**. All eight services implement their portions.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
@@ -93,7 +103,7 @@ Contract version **1.4.0**. All eight services implement their portions.
 - [`contracts/field-dictionary.md`](contracts/field-dictionary.md): readable definitions of every request, response, event and frame type named in the tables below.
 - [`contracts/game-rules.md`](contracts/game-rules.md): the numbers and formulas behind the contract.
 - [`contracts/service-discovery.md`](contracts/service-discovery.md): instance registration, status endpoints, load balancing, circuit breakers, replicas and health alerts; Service Discovery's own routes are in [`contracts/service-discovery.openapi.yaml`](contracts/service-discovery.openapi.yaml).
-- [`contracts/message-broker.md`](contracts/message-broker.md) (Lab 4, proposed): our own broker that replaces Kafka and carries service-to-service requests over gRPC; its gRPC API is [`contracts/proto/broker.proto`](contracts/proto/broker.proto) and its HTTP routes are in [`contracts/message-broker.openapi.yaml`](contracts/message-broker.openapi.yaml).
+- [`contracts/message-broker.md`](contracts/message-broker.md) (Lab 4): our own broker that replaces Kafka and carries service-to-service requests over gRPC; its gRPC API is [`contracts/proto/broker.proto`](contracts/proto/broker.proto) and its HTTP routes are in [`contracts/message-broker.openapi.yaml`](contracts/message-broker.openapi.yaml).
 
 ### Rules
 
@@ -302,6 +312,19 @@ Path parameters and listed bodies are required. `cursor?` and `limit?` are optio
 | `PUT /v1/raid-schedules/{scheduleId}/status` | admin | `ScheduleStatus` | `200` `Schedule` | Activate, deactivate or cancel |
 | `GET /internal/v1/raid-schedules/{scheduleId}/versions/{scheduleVersion}` | internal | — | `200` `Schedule` | Pinned schedule version |
 
+#### Message Broker
+
+Admin routes of the [Message Broker](contracts/message-broker.md), reached through Gateway as `/services/message-broker/...`. Its event and request APIs are gRPC ([`contracts/proto/broker.proto`](contracts/proto/broker.proto)).
+
+| Method and path | Caller | Body / query | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET /v1/topics` | admin | — | `200` | Topics with producers, consumer groups and counters (grade 7) |
+| `GET /v1/topics/{topic}/messages` | admin | `fromOffset?`, `limit?` | `200` | Stored messages of one topic |
+| `GET /v1/dlq` | admin | — | `200` | Dead letter channels with counts (grade 9) |
+| `GET /v1/dlq/{topic}` | admin | `cursor?`, `limit?` | `200` | Dead-lettered messages with group, attempts and reason |
+| `GET /v1/queues` | admin | — | `200` | Subscriber queues with instances, scores and breakers |
+| `GET /v1/logs` | admin | `service?`, `instanceId?`, `level?`, `since?`, `until?`, `contains?`, `limit?` | `200` NDJSON | Download the system's logs from Loki (grade 4) |
+
 ### Kafka event contract
 
 > **Lab 4:** these topics move unchanged to our own [Message Broker](contracts/message-broker.md), with the same names, envelopes, producers and consumer groups. Kafka stays until every service has migrated.
@@ -387,7 +410,7 @@ Gateway and Service Discovery require two approvals. User Management, Battle, Gu
 
 - **Rebase and merge** focused PRs to keep a linear history.
 - **Squash and merge** PRs with many commits or fix-up commits; use a Conventional Commit title.
-- Service workflows publish validated merges to `main` as `MAJOR.MINOR.PATCH` and `latest`, and create the matching immutable Git tag. The major version is the lab: `2` for Lab 2 releases, `3` from Lab 3. Image tags identify successive releases of this project. There is no separate integration or release branch.
+- Service workflows publish validated merges to `main` as `MAJOR.MINOR.PATCH` and `latest`, and create the matching immutable Git tag. The major version is the lab: `2` for Lab 2 releases, `3` from Lab 3, and `4` for broker-ready releases. Image tags identify successive releases of this project. There is no separate integration or release branch.
 
 ### Branch naming
 

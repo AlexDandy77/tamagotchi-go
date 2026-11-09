@@ -1,0 +1,236 @@
+{
+  "info": {
+    "_postman_id": "e6e920d7-e05d-42a6-b233-7f5a574e9947",
+    "name": "10. Tamagotchi Go \u2014 Message Broker",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Run after setup and broker-ready releases. Alice must be a configured REGISTRY_ADMIN_USER_IDS/BROKER_ADMIN_USER_IDS demo admin. Uses the single Local environment. Queue durability, failover and thread behavior are exercised by scripts/demo_lab4.py."
+  },
+  "item": [
+    {
+      "name": "Login alice",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{users}}/v1/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\":\"alice@demo.invalid\",\"password\":\"{{seedPassword}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){const s=pm.response.json();pm.environment.set(\"aliceToken\",s.accessToken);pm.environment.set(\"aliceId\",s.user.id);pm.environment.set(\"aliceRefresh\",s.refreshToken);}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject anonymous topics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{broker}}/v1/topics"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List topics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/topics"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){pm.test(\"Enrollment topic exists\",()=>pm.expect(pm.response.json().items.map(t=>t.name)).to.include(\"user.package-registered.v1\"));}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read enrollment events",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/topics/user.package-registered.v1/messages?limit=10"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){pm.test(\"Bounded event page\",()=>pm.expect(pm.response.json().items.length).to.be.at.most(10));}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List subscriber queues",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/queues"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){pm.test(\"Queue page\",()=>pm.expect(pm.response.json().items).to.be.an(\"array\"));}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List dead letter channels",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/dlq"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){pm.test(\"Dead letter channels\",()=>pm.expect(pm.response.json().items).to.be.an(\"array\"));}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read enrollment dead letters",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/dlq/user.package-registered.v1?limit=10"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Download user logs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/logs?service=user-management&limit=100"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){pm.test(\"NDJSON download\",()=>pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/x-ndjson\"));pm.test(\"Within response cap\",()=>pm.expect(pm.response.text().length).to.be.at.most(3*1024*1024));}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject excessive log limit",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/logs?limit=10001"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

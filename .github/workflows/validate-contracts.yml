@@ -38,3 +38,5 @@ jobs:
         run: python scripts/check_lab2.py --env-file .env.example
       - name: Check Service Discovery and replica configuration
         run: python scripts/check_lab3.py --env-file .env.example
+      - name: Check Message Broker and monitoring configuration
+        run: python scripts/check_lab4.py --env-file .env.example
