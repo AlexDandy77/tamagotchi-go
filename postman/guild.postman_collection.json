@@ -218,7 +218,7 @@
      "script": {
       "type": "text/javascript",
       "exec": [
-       "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+       "pm.test(\"Internal route refused: 401, or 404 once final mode removed it\", () => pm.expect(pm.response.code).to.be.oneOf([401, 404]));"
       ]
      }
     }
