@@ -136,10 +136,11 @@ class BrokerDefaultsTests(unittest.TestCase):
     def test_upgrades_old_defaults_but_preserves_custom_and_final_mode(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / '.env.example').write_text('BROKER_SERVICES=user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification,message-broker\nBROKER_DESTINATIONS=user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification\n')
+            (root / '.env.example').write_text('BROKER_SERVICES=\nBROKER_DESTINATIONS=\n')
             previous = ('tamagotchi,notification,message-broker', 'user-management,battle,tamagotchi,notification,message-broker',
-                        'user-management,battle,map,monster-raid,tamagotchi,notification,message-broker')
-            for value in [*previous, 'battle', '']:
+                        'user-management,battle,map,monster-raid,tamagotchi,notification,message-broker',
+                        'user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification,message-broker')
+            for value in [*previous, 'battle', 'user-management,battle', '']:
                 original = 'SEED_PASSWORD=private-value\nBROKER_SERVICES=' + value + '\n'
                 (root / '.env').write_text(original)
                 with patch.object(lab, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
@@ -149,6 +150,12 @@ class BrokerDefaultsTests(unittest.TestCase):
                 self.assertEqual((root / '.env').read_text(), once)
                 self.assertIn('SEED_PASSWORD=private-value', once)
                 if value in previous:
-                    self.assertIn('BROKER_SERVICES=user-management,battle,guild,package-registry,map,monster-raid,', once)
+                    self.assertEqual(once, 'SEED_PASSWORD=private-value\nBROKER_SERVICES=\n')
                 else:
                     self.assertEqual(once, original)
+            for value, expected in (('user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification', ''),
+                                    ('monster-raid', 'monster-raid')):
+                (root / '.env').write_text('BROKER_DESTINATIONS=' + value + '\n')
+                with patch.object(lab, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                    lab.broker_defaults()
+                self.assertEqual((root / '.env').read_text(), 'BROKER_DESTINATIONS=' + expected + '\n')
