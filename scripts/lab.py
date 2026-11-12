@@ -237,7 +237,8 @@ def main():
         for service in SERVICES:
             compose('run', '--rm', '--no-deps', '--pull', 'never', service, 'migrate')
             compose('run', '--rm', '--no-deps', '--pull', 'never', service, 'seed')
-        compose('up', '-d', '--wait', '--pull', 'never')
+        # --remove-orphans drops containers of services Compose no longer defines, such as Kafka.
+        compose('up', '-d', '--wait', '--pull', 'never', '--remove-orphans')
     elif command == 'provision':
         provision()
     elif command in ('migrate', 'seed'):
