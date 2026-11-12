@@ -45,6 +45,9 @@ def main():
     assert profile["id"] == alice["user"]["id"]
     request(users, "GET", "/v1/users/me", expected=401)
     request(users, "GET", "/v1/users/me", token="invalid", expected=401)
+    # Players never reach internal routes: 401 while Gateway still serves them to service
+    # callers, 404 once the final Lab 4 mode has removed them.
+    removed = request(args.base, "GET", "/status").get("internalRoutesRemoved", 0)
     request(
         users,
         "GET",
@@ -53,7 +56,7 @@ def main():
         + "&otherUserId="
         + bob["user"]["id"],
         token=token,
-        expected=401,
+        expected=404 if removed else 401,
     )
     request(users, "GET", "/v1/wallet", token=token)
     request(battles, "GET", "/v1/battles", token=token)
