@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Exercise live Lab 1 APIs without printing credentials or tokens."""
+"""Exercise live Lab 1 APIs without printing credentials or tokens.
+
+Battles stop before acceptance: a finished battle moves the stake and the loser's primary pet
+to the winner, which would change the seeded players. smoke_live.py plays a full battle with
+fresh accounts.
+"""
 import base64
 import hashlib
 import json
 import os
 import socket
 import struct
-import time
 import urllib.error
 import urllib.request
 import uuid
@@ -15,6 +19,7 @@ from lab import environment
 
 USERS = 'http://127.0.0.1:8080/services/user-management'
 BATTLE = 'http://127.0.0.1:8080/services/battle'
+PETS = 'http://127.0.0.1:8080/services/tamagotchi'
 
 def request(base, method, path, body=None, token=None, key=None, expected=200, extra=None):
     headers = {'Content-Type': 'application/json', **(extra or {})}
@@ -130,30 +135,23 @@ def main():
     friend = request(USERS, 'POST', '/v1/friend-requests', {'recipientId': bob['user']['id']}, a, str(uuid.uuid4()), 201)
     request(USERS, 'PUT', '/v1/friend-requests/'+friend['id']+'/decision', {'decision': 'accept'}, b, str(uuid.uuid4()))
     assert request(USERS, 'GET', '/v1/relationships', token=a)['items']
-    def loadout(user):
-        return {'primaryPetId': str(uuid.uuid5(uuid.UUID(user), 'primary')), 'secondaryPetId': str(uuid.uuid5(uuid.UUID(user), 'secondary')), 'boostIds': []}
-    challenge = request(BATTLE, 'POST', '/v1/battles', {'opponentId': bob['user']['id'], **loadout(alice['user']['id'])}, a, str(uuid.uuid4()), 201)
+    pets = request(PETS, 'GET', '/v1/pets', token=a)
+    challenge_body = {'opponentId': bob['user']['id'], 'primaryPetId': pets['primaryPetId'],
+                      'secondaryPetId': pets['secondaryPetIds'][0], 'boostIds': []}
+    key = str(uuid.uuid4())
+    challenge = request(BATTLE, 'POST', '/v1/battles', challenge_body, a, key, 201)
     path = '/v1/battles/'+challenge['id']
-    request(BATTLE, 'POST', path+'/accept', loadout(bob['user']['id']), b, str(uuid.uuid4()), 202)
-    for _ in range(30):
-        state = request(BATTLE, 'GET', path, token=a)
-        if state['status'] == 'active':
-            break
-        time.sleep(.2)
-    assert state['status'] == 'active'
-    request(BATTLE, 'POST', path+'/actions', {'action': 'attack', 'expectedTurn': 1}, b, str(uuid.uuid4()), 403)
-    state = request(BATTLE, 'POST', path+'/actions', {'action': 'attack', 'expectedTurn': 1}, a, str(uuid.uuid4()))
-    assert state['turn'] == 2
-    request(BATTLE, 'POST', path+'/actions', {'action': 'forfeit', 'expectedTurn': 2}, b, str(uuid.uuid4()))
-    for _ in range(30):
-        state = request(BATTLE, 'GET', path, token=a)
-        if state['status'] == 'finished':
-            break
-        time.sleep(.2)
-    assert state['status'] == 'finished' and state['winnerId'] == alice['user']['id']
+    try:
+        assert request(BATTLE, 'POST', '/v1/battles', challenge_body, a, key, 201)['id'] == challenge['id']
+        assert request(BATTLE, 'GET', path, token=b)['status'] == 'pending'
+        request(BATTLE, 'POST', path+'/accept', {k: challenge_body[k] for k in ('primaryPetId', 'secondaryPetId', 'boostIds')}, a, str(uuid.uuid4()), 403)
+        for token in (a, b):
+            request(BATTLE, 'POST', path+'/actions', {'action': 'attack', 'expectedTurn': 1}, token, str(uuid.uuid4()), 409)
+    finally:
+        request(BATTLE, 'DELETE', path, token=a, key=str(uuid.uuid4()), expected=204)
+    assert request(BATTLE, 'GET', path, token=a)['status'] == 'cancelled'
     after = request(USERS, 'GET', '/v1/wallet', token=a)
-    assert after['globalBalance'] == before['globalBalance'] + 10
-    assert after['globalAvailable'] == after['globalBalance']
+    assert (after['globalBalance'], after['globalAvailable']) == (before['globalBalance'], before['globalAvailable'])
     print('Live authentication, friendship, battle, authorization and idempotency checks passed.')
 
 if __name__ == '__main__':
