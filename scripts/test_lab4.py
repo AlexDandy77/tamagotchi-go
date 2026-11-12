@@ -81,6 +81,15 @@ class Lab4AuditTests(unittest.TestCase):
                      'tamagotchi: BROKER_URL', 'GATEWAY_ONLY', 'GRPC_PORT', 'notification: BROKER_CERT_FILE'):
             self.assertTrue(any(text in f for f in failures), text)
 
+    def test_kafka_leftovers(self):
+        config = compliant()
+        config['services']['kafka'] = {'environment': {'KAFKA_NODE_ID': '1'}}
+        config['services']['tamagotchi']['environment']['KAFKA_BROKERS'] = 'kafka:9092'
+        failures = audit(config, ROOT)
+        self.assertIn('kafka: events go through the Message Broker; remove the Kafka service', failures)
+        self.assertIn('tamagotchi: remove the KAFKA_* settings; events go through the Message Broker', failures)
+        self.assertFalse(any(f.startswith('kafka: remove the KAFKA_') for f in failures))
+
     def test_monitoring_gaps(self):
         config = compliant()
         del config['services']['grafana']

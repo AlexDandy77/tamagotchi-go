@@ -83,6 +83,13 @@ def audit(config, root=ROOT):
         if not str(service_env.get('GRPC_PORT', '')).isdigit():
             failures.append(f'{name}: GRPC_PORT must be set for Endpoint.Handle')
 
+    # Every event goes through the broker, so nothing runs or reaches Kafka any more.
+    if 'kafka' in services:
+        failures.append('kafka: events go through the Message Broker; remove the Kafka service')
+    for name, service in sorted(services.items()):
+        if name != 'kafka' and any(key.startswith('KAFKA_') for key in service.get('environment', {})):
+            failures.append(f'{name}: remove the KAFKA_* settings; events go through the Message Broker')
+
     for name in MONITORING:
         if name not in services:
             failures.append(f'{name}: monitoring service missing')
