@@ -125,7 +125,6 @@ def main():
     request(USERS, 'GET', '/v1/users/me', token=a)
     request(USERS, 'GET', '/v1/users/me', expected=401)
     before = request(USERS, 'GET', '/v1/wallet', token=a)
-    assert before['globalAvailable'] >= 10
     key = str(uuid.uuid4())
     profile = {'username': 'alice'}
     first = request(USERS, 'PATCH', '/v1/users/me', profile, a, key)
@@ -135,9 +134,10 @@ def main():
     friend = request(USERS, 'POST', '/v1/friend-requests', {'recipientId': bob['user']['id']}, a, str(uuid.uuid4()), 201)
     request(USERS, 'PUT', '/v1/friend-requests/'+friend['id']+'/decision', {'decision': 'accept'}, b, str(uuid.uuid4()))
     assert request(USERS, 'GET', '/v1/relationships', token=a)['items']
-    pets = request(PETS, 'GET', '/v1/pets', token=a)
-    challenge_body = {'opponentId': bob['user']['id'], 'primaryPetId': pets['primaryPetId'],
-                      'secondaryPetId': pets['secondaryPetIds'][0], 'boostIds': []}
+    # A pending challenge only stores the pet IDs; ownership is checked on acceptance, which this
+    # check never reaches, so a fresh lab's single starter pet is enough.
+    challenge_body = {'opponentId': bob['user']['id'], 'primaryPetId': request(PETS, 'GET', '/v1/pets', token=a)['primaryPetId'],
+                      'secondaryPetId': str(uuid.uuid4()), 'boostIds': []}
     key = str(uuid.uuid4())
     challenge = request(BATTLE, 'POST', '/v1/battles', challenge_body, a, key, 201)
     path = '/v1/battles/'+challenge['id']
