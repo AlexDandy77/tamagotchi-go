@@ -56,9 +56,9 @@ services:
       # Managed services with no healthy instance return 503; they never use static DNS.
       DISCOVERY_MANAGED_SERVICES: ${DISCOVERY_MANAGED_SERVICES:-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
       # Lab 4: REST for BROKER_SERVICES goes through the Message Broker's subscriber queues.
-      # An empty list routes every service through it and removes internal routes from Gateway.
+      # An empty list (the default) routes every service through it and removes internal routes from Gateway.
       BROKER_URL: https://message-broker:8443
-      BROKER_SERVICES: ${BROKER_SERVICES-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification,message-broker}
+      BROKER_SERVICES: ${BROKER_SERVICES-}
     volumes:
       - ./.secrets/tls/ca.pem:/run/tls/ca.pem:ro
       - ./.secrets/tls/gateway.pem:/run/tls/gateway.pem:ro
@@ -137,7 +137,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-}
       REGISTRY_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/user-management.pem
@@ -177,7 +177,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-}
       REGISTRY_URL: https://gateway:8443/services/package-registry
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       SERVICE_TLS_CERT_FILE: /run/tls/battle.pem
@@ -221,7 +221,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-}
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       SERVICE_TLS_CERT_FILE: /run/tls/guild.pem
       SERVICE_TLS_KEY_FILE: /run/tls/guild-key.pem
@@ -279,7 +279,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-}
       MONSTER_RAID_URL: https://gateway:8443/services/monster-raid
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       REGISTRY_ADMIN_USER_IDS: ${REGISTRY_ADMIN_USER_IDS:-}
@@ -324,7 +324,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-}
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       SERVICE_TLS_CERT_FILE: /run/tls/map.pem
       SERVICE_TLS_KEY_FILE: /run/tls/map-key.pem
@@ -373,7 +373,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-}
       USER_MANAGEMENT_URL: https://gateway:8443/services/user-management
       TAMAGOTCHI_URL: https://gateway:8443/services/tamagotchi
       REGISTRY_URL: https://gateway:8443/services/package-registry
@@ -447,7 +447,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-}
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.
@@ -487,7 +487,7 @@ services:
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
       GRPC_PORT: 50051
-      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-user-management,battle,guild,package-registry,map,monster-raid,tamagotchi,notification}
+      BROKER_DESTINATIONS: ${BROKER_DESTINATIONS-}
       TASK_TIMEOUT_SECONDS: ${SERVICE_TASK_TIMEOUT_SECONDS:-5}
       MAX_CONCURRENT_TASKS: ${SERVICE_MAX_CONCURRENT_TASKS:-64}
       # Each replica registers itself; INSTANCE_ID defaults to the container's hostname.

@@ -59,8 +59,8 @@ cannot act as a player. HTTPS remains a temporary fallback for owners without `g
 
 `BROKER_SERVICES` selects Gateway destinations and `BROKER_DESTINATIONS` selects outgoing
 calls. Unlisted dependencies use their explicitly configured legacy Gateway URL; a failed
-broker call never falls back. Empty lists mean all destinations. Once every owner migrates,
-Gateway removes internal routes and rejects service callers. Do not enable that state early.
+broker call never falls back. Empty lists mean all destinations. Every owner has migrated, so
+both lists default to empty: Gateway removes internal routes and rejects service callers.
 
 Registration, heartbeats and pool reads go directly over mTLS to
 `https://service-discovery:8443`. They are control-plane traffic, not business requests.

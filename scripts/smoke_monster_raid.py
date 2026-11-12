@@ -123,10 +123,11 @@ def main():
         exercise(sessions, raid, version)
     finally:
         if scheduled:
-            cancelled = internal('DELETE', '/services/monster-raid/internal/v1/raids/' + raid, None, host='gateway')
-    if scheduled:
-        assert cancelled['status'] == 204, f'Package Registry could not cancel the scheduled raid: {cancelled["status"]}'
-    print('Paired Monster Raid reads, joins and attacks through the Gateway, its live socket opened as negotiated, its Package Registry mutual TLS API through the Gateway, its refusal of direct REST and its start event on the Message Broker passed.')
+            # Cancelling the schedule makes Package Registry cancel the raid at Monster Raid, through
+            # the Message Broker or, before the final mode, through Gateway's internal route.
+            current = request(REGISTRY, 'GET', '/v1/raid-schedules/' + raid, token=a)
+            request(REGISTRY, 'PUT', f'/v1/raid-schedules/{raid}/status', {'expectedVersion': current['version'], 'status': 'cancelled'}, a, key(), 200)
+    print('Paired Monster Raid reads, joins and attacks through the Gateway, its live socket opened as negotiated, its Package Registry mutual TLS API through the Gateway (or its removal in final mode), its refusal of direct REST and its start event on the Message Broker passed.')
 
 def exercise(sessions, raid, version):
     """Joins, attacks, opens the live socket, checks the internal API and reads the start event
@@ -173,15 +174,23 @@ def exercise(sessions, raid, version):
     assert direct['status'] == 401 and direct['body']['error']['code'] == 'GATEWAY_REQUIRED', f'Direct start answered {direct["status"]}'
 
     # Internal routes need a service certificate, which the Gateway checks before it forwards
-    # Package Registry's signed identity.
-    request(RAIDS, 'PUT', '/internal/v1/raids/' + raid, start, key=key(), expected=401)
-    replay = internal('PUT', '/services/monster-raid/internal/v1/raids/' + raid, start, host='gateway')
-    assert replay['status'] == 200 and replay['body']['id'] == raid, f'Start replay answered {replay["status"]}'
-    # An unknown schedule makes Monster Raid ask Package Registry over mutual TLS, which does not know it.
-    unknown = str(uuid.uuid4())
-    missing = internal('PUT', '/services/monster-raid/internal/v1/raids/' + unknown, {'scheduleId': unknown, 'scheduleVersion': 1}, host='gateway')
-    assert missing['status'] == 422 and missing['body']['error']['details'][0]['field'] == 'scheduleVersion', \
-        f'Unknown schedule answered {missing["status"]}'
+    # Package Registry's signed identity: 401 while Gateway still serves them to service callers,
+    # 404 once the final Lab 4 mode has removed them.
+    removed = request(GATEWAY, 'GET', '/status').get('internalRoutesRemoved', 0)
+    request(RAIDS, 'PUT', '/internal/v1/raids/' + raid, start, key=key(), expected=404 if removed else 401)
+    if removed:
+        # Even Package Registry's certificate finds no internal route on Gateway; its raid commands
+        # use the Message Broker's Router.Call instead, which smoke_live.py exercises.
+        gone = internal('PUT', '/services/monster-raid/internal/v1/raids/' + raid, start, host='gateway')
+        assert gone['status'] == 404, f'Gateway internal route answered {gone["status"]} in final mode'
+    else:
+        replay = internal('PUT', '/services/monster-raid/internal/v1/raids/' + raid, start, host='gateway')
+        assert replay['status'] == 200 and replay['body']['id'] == raid, f'Start replay answered {replay["status"]}'
+        # An unknown schedule makes Monster Raid ask Package Registry over mutual TLS, which does not know it.
+        unknown = str(uuid.uuid4())
+        missing = internal('PUT', '/services/monster-raid/internal/v1/raids/' + unknown, {'scheduleId': unknown, 'scheduleVersion': 1}, host='gateway')
+        assert missing['status'] == 422 and missing['body']['error']['details'][0]['field'] == 'scheduleVersion', \
+            f'Unknown schedule answered {missing["status"]}'
 
     # Monster Raid's relay published the raid's start to the broker.
     event = next((e for e in reversed(start_events(a)) if e['aggregateId'] == raid), None)

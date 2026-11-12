@@ -97,6 +97,9 @@ def inside(script, env=None):
     image = config()['services']['message-broker']['image']
     command = ['docker', 'run', '--rm', '-i', '--network', f"{config()['name']}_default",
                '-v', f"{ROOT / '.secrets' / 'tls'}:/run/tls:ro", '--entrypoint', 'python']
+    # setup keeps .secrets/tls private (0700) to the host user; the image's own user cannot enter it.
+    if hasattr(os, 'getuid'):
+        command += ['--user', f'{os.getuid()}:{os.getgid()}']
     for key, value in (env or {}).items():
         command += ['-e', f'{key}={value}']
     result = subprocess.run(command + [image, '-'], input=script, text=True, capture_output=True)

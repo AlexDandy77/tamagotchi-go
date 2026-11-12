@@ -42,6 +42,8 @@ class Role:
 def timestamp(value):
     if not isinstance(value, str):
         raise ValueError('Timestamp must be a string')
+    # Docker reports nanoseconds; fromisoformat before Python 3.11 accepts at most microseconds.
+    value = re.sub(r'(\.\d{6})\d+', r'\1', value)
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
     assert parsed.tzinfo is not None, 'Leadership proof needs timezone-aware timestamps'
     return parsed.astimezone(timezone.utc)

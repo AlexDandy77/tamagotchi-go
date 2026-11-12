@@ -47,6 +47,12 @@ class LeaderLogTests(unittest.TestCase):
         logs += '\n' + line('service started', time='2026-10-28T10:03:00Z')
         self.assertFalse(leader.current_role(logs, 'battle', A).leader)
 
+    def test_reads_docker_nanosecond_timestamps(self):
+        self.assertEqual(leader.timestamp('2026-11-12T11:40:08.404498186+00:00'),
+                         datetime(2026, 11, 12, 11, 40, 8, 404498, tzinfo=timezone.utc))
+        self.assertEqual(leader.timestamp('2026-11-12T11:40:08.404498186Z'),
+                         datetime(2026, 11, 12, 11, 40, 8, 404498, tzinfo=timezone.utc))
+
     def test_missing_startup_and_invalid_timestamps_cannot_claim_success(self):
         with self.assertRaisesRegex(AssertionError, 'startup'):
             leader.current_role(line('worker leader acquired'), 'battle', A)

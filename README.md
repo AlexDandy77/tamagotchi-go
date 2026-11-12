@@ -88,8 +88,8 @@ The manual **Published runtime validation** workflow starts only public images, 
 Gateway authenticates players and sends migrated destinations to the Message Broker. The broker routes requests, balances by load, retries safe calls, and delivers durable topic events. See [ARCHITECTURE.md](ARCHITECTURE.md) and [the broker contract](contracts/message-broker.md).
 
 - Broker-ready owners in this deployment: all eight, User Management, Battle, Guild, Package Registry, Map, Monster Raid, Tamagotchi and Notification. Publish their merged `4.x.y` images before starting this configuration. Open PR commits are not release images.
-- `BROKER_SERVICES` selects Gateway destinations; `BROKER_DESTINATIONS` selects outgoing service calls. Both default to every owner. Every producer and consumer uses the broker's event bus, so the deployment no longer runs Kafka; `check_lab4.py` fails if a Kafka service or a `KAFKA_*` setting returns.
-- Empty lists select the final all-broker mode. Enable that only after every owner migrates; Gateway then rejects service callers and removes internal routes.
+- `BROKER_SERVICES` selects Gateway destinations; `BROKER_DESTINATIONS` selects outgoing service calls. Both default to empty, which means every owner. Every producer and consumer uses the broker's event bus, so the deployment no longer runs Kafka; `check_lab4.py` fails if a Kafka service or a `KAFKA_*` setting returns.
+- Empty lists select the final all-broker mode, the default now that every owner has migrated: Gateway rejects service callers and removes internal routes. `python3 scripts/lab.py setup` upgrades `.env` files that still hold the previous full lists; custom lists are kept.
 - Grafana: `http://localhost:3000`; Prometheus: `http://localhost:9090`. Alloy ships container logs to Loki. The broker's admin collection lists topics, queues, dead letters and downloads logs through Gateway.
 - After startup: `python3 scripts/check_lab4.py`, then `python3 scripts/demo_lab4.py`. These complement service Postman collections; they do not certify unmigrated owners.
 
