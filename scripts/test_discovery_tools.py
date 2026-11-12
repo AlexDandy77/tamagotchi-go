@@ -13,10 +13,36 @@ class RoutingChecks(unittest.TestCase):
         for service in smoke.REPLICAS:
             instances = [f'{service}-{i}' for i in range(3)]
             replies = [(200, {'X-Served-By': service + '/' + name}) for name in instances]
-            with patch.object(smoke, 'pool', return_value={'instances': instances}), patch.object(smoke, 'call', side_effect=replies) as request:
+            with patch.object(smoke, 'pool', return_value={'instances': instances}), patch.object(smoke, 'call', side_effect=replies) as request, \
+                    patch.object(smoke, 'broker_routed', return_value=False):
                 served = smoke.verify_spread('not-printed', service, 3)
             self.assertEqual(set(served), {service + '/' + name for name in instances})
             self.assertTrue(all(c.args == (smoke.read_url(service), 'not-printed') for c in request.call_args_list))
+
+    def test_broker_routed_reads_start_once_the_broker_reports_an_even_load(self):
+        instances = ['a', 'b', 'c']
+        uneven = {'a': {'score': 0.0}, 'b': {'score': 1.0}, 'c': {'score': 0.0}}
+        even = {name: {'score': 1.0} for name in instances}
+        replies = [(200, {'X-Served-By': 'battle/' + name}) for name in instances]
+        with patch.object(smoke, 'pool', return_value={'instances': instances}), patch.object(smoke, 'broker_routed', return_value=True), \
+                patch.object(smoke, 'broker_instances', side_effect=[uneven, even]) as scores, \
+                patch.object(smoke.time, 'sleep'), patch.object(smoke, 'call', side_effect=replies):
+            served = smoke.verify_spread('not-printed', 'battle', 3)
+        self.assertEqual(set(served), {'battle/' + name for name in instances})
+        self.assertEqual(scores.call_count, 2)
+        scores.assert_called_with('not-printed', 'battle')
+
+    def test_broker_routing_and_pool_view_come_from_gateway_status_and_the_admin_queues(self):
+        with patch.object(smoke, 'gateway_status', return_value={'routing': {'map': 'message-broker', 'battle': 'gateway'}}):
+            self.assertTrue(smoke.broker_routed('map'))
+            self.assertFalse(smoke.broker_routed('battle'))
+        with patch.object(smoke, 'gateway_status', return_value={'pools': {}}):
+            self.assertFalse(smoke.broker_routed('map'))
+        queues = {'items': [{'service': 'map', 'instances': [{'instanceId': 'm1', 'score': 0.0}]},
+                            {'service': 'battle', 'instances': [{'instanceId': 'b1', 'score': 2.5}]}]}
+        with patch.object(smoke, 'request', return_value=queues) as read:
+            self.assertEqual(smoke.broker_instances('not-printed', 'battle'), {'b1': {'instanceId': 'b1', 'score': 2.5}})
+        read.assert_called_once_with(smoke.BROKER, 'GET', '/v1/queues', token='not-printed')
 
     def test_static_and_wrong_service_headers_do_not_pass_replica_coverage(self):
         for value in ('battle/static', 'map/map-1', ''):
