@@ -238,6 +238,14 @@ def stop_one_map_replica(token):
 
 
 def pause_one_raid_replica(token, since):
+    # Through the Message Broker, the broker's breaker trips and reports the ejection; Service
+    # Discovery's quarantine then takes the replica out of the Gateway's pool within seconds.
+    via_broker = broker_routed('monster-raid')
+
+    def tripped():
+        if via_broker:
+            return broker_instances(token, 'monster-raid').get(PAUSED, {}).get('circuit') == 'open'
+        return gateway_status()['circuits'].get('monster-raid/' + PAUSED) == 'open'
     try:
         lab.compose('pause', PAUSED)
         reads = 3 * REPLICAS['monster-raid']
@@ -245,12 +253,14 @@ def pause_one_raid_replica(token, since):
         for _ in range(3):
             with concurrent.futures.ThreadPoolExecutor(reads) as executor:
                 statuses += executor.map(lambda _: call(read_url('monster-raid'), token)[0], range(reads))
-            if gateway_status()['circuits'].get('monster-raid/' + PAUSED) == 'open':
+            if tripped():
                 break
         assert 504 in statuses, f'No read reached the paused replica: {statuses}'
-        status = gateway_status()
-        assert status['circuits'].get('monster-raid/' + PAUSED) == 'open', f'The breaker of {PAUSED} is not open'
-        assert PAUSED in status['pools']['monster-raid'].get('ejected', []), f'{PAUSED} is still in the pool'
+        assert tripped(), f'The breaker of {PAUSED} is not open'
+        if via_broker:
+            wait(f'{PAUSED} leaving the pools', lambda: PAUSED not in pool('monster-raid')['instances'], 20)
+        else:
+            assert PAUSED in gateway_status()['pools']['monster-raid'].get('ejected', []), f'{PAUSED} is still in the pool'
         offers = {negotiate(token)[0] for _ in range(REPLICAS['monster-raid'])}
         assert 'monster-raid/' + PAUSED not in offers, 'Negotiation still hands out the ejected replica'
         logs = output('logs', '--no-log-prefix', '--since', since, 'service-discovery')

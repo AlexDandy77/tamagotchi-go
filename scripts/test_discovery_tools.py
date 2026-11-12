@@ -167,6 +167,29 @@ class DisruptiveChecks(unittest.TestCase):
                 smoke.all_replicas_down('not-printed', 'monster-raid')
         self.assertEqual(run.call_args.args[0], ['docker', 'start', 'raid-id'])
 
+    def test_a_paused_raid_replica_trips_the_broker_breaker_and_leaves_the_pools(self):
+        paused = smoke.PAUSED
+        views = [{paused: {'circuit': 'closed'}}, {paused: {'circuit': 'open'}}, {paused: {'circuit': 'open'}}]
+        pools = [{'instances': ['monster-raid', 'monster-raid-2', paused]}, {'instances': ['monster-raid', 'monster-raid-2']},
+                 {'instances': ['monster-raid', 'monster-raid-2', paused]}]
+        offers = [('monster-raid/monster-raid', {}), ('monster-raid/monster-raid-2', {}), ('monster-raid/monster-raid', {})]
+        alert = '{"alert": "instance.ejected", "targetInstance": "%s"}' % paused
+        with patch.object(smoke, 'broker_routed', return_value=True), patch.object(smoke.lab, 'compose') as compose, \
+                patch.object(smoke, 'call', side_effect=[(200, {})] * 8 + [(504, {})] + [(200, {})] * 9), \
+                patch.object(smoke, 'broker_instances', side_effect=views), patch.object(smoke, 'pool', side_effect=pools), \
+                patch.object(smoke, 'negotiate', side_effect=offers), patch.object(smoke, 'output', return_value=alert), \
+                patch.object(smoke.time, 'sleep'):
+            smoke.pause_one_raid_replica('not-printed', 'since')
+        self.assertEqual([c.args for c in compose.call_args_list], [('pause', paused), ('unpause', paused)])
+
+    def test_a_paused_raid_replica_behind_the_gateway_still_needs_the_gateway_breaker(self):
+        with patch.object(smoke, 'broker_routed', return_value=False), patch.object(smoke.lab, 'compose') as compose, \
+                patch.object(smoke, 'call', return_value=(504, {})), \
+                patch.object(smoke, 'gateway_status', return_value={'circuits': {}, 'pools': {'monster-raid': {}}}):
+            with self.assertRaisesRegex(AssertionError, 'breaker of'):
+                smoke.pause_one_raid_replica('not-printed', 'since')
+        self.assertEqual(compose.call_args.args, ('unpause', smoke.PAUSED))
+
     def test_discovery_restart_checks_rebuilt_instance_identities(self):
         before = [{'instances': [name + '-1', name + '-2', name + '-3']} for name in smoke.REPLICAS]
         with patch.object(smoke, 'pool', side_effect=[*before, {'instances': ['different-id']}]), \
