@@ -6,6 +6,9 @@ between members connected to different Guild replicas. Destructive checks are op
 --disruptive stops one Map replica and pauses one Raid replica; --all-replicas-down [SERVICE]
 checks a complete managed pool outage; and --restart-discovery checks that heartbeats rebuild
 the registry. Never prints credentials.
+
+For services the Gateway sends through the Message Broker, the broker's admin queue view is read
+as Alice, so she must be the local demo admin (REGISTRY_ADMIN_USER_IDS, which setup fills).
 """
 import argparse
 import collections
@@ -23,6 +26,7 @@ from smoke import LiveSocket, USERS, request
 
 GATEWAY = 'http://127.0.0.1:8080'
 MAP = GATEWAY + '/services/map'
+BROKER = GATEWAY + '/services/message-broker'
 RAIDS = GATEWAY + '/services/monster-raid'
 NIGHT_OWLS = '22222222-2222-4222-8222-222222222222'
 PRACTICE = '44444444-4444-4444-8444-444444444444'
@@ -82,6 +86,17 @@ def pool(service):
     return gateway_status()['pools'][service]
 
 
+def broker_routed(service):
+    """Lab 4: the Gateway sends this service's requests through the Message Broker."""
+    return gateway_status().get('routing', {}).get(service) == 'message-broker'
+
+
+def broker_instances(token, service):
+    """The broker's view of one destination pool: routing score and breaker state per instance."""
+    queues = request(BROKER, 'GET', '/v1/queues', token=token)['items']
+    return {i['instanceId']: i for q in queues if q['service'] == service for i in q['instances']}
+
+
 def wait(what, condition, seconds):
     deadline = time.monotonic() + seconds
     last_error = None
@@ -119,6 +134,11 @@ def spread(token, requests, service='map'):
 def verify_spread(token, service, requests=30):
     expected = {service + '/' + instance for instance in pool(service)['instances']}
     assert len(expected) == REPLICAS[service], f'{service} has an unexpected pool'
+    if broker_routed(service):
+        # The broker sends each request to the lowest score and rotates only between equal
+        # scores, while replicas report their recent load for a few seconds after other traffic.
+        wait(f'{service} replicas reporting an even load to the broker',
+             lambda: len({i['score'] for i in broker_instances(token, service).values()}) == 1, 60)
     served = spread(token, requests, service)
     assert set(served) == expected, f'{service}: expected {sorted(expected)}, served {sorted(served)}'
     return served
