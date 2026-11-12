@@ -117,7 +117,7 @@ def main():
     def projection():
         eventually(lambda: request(REGISTRY, 'GET', f'/v1/packages/{PACKAGE}/users?limit=100', token=admin),
                    lambda x: {alice, bob} <= {i['userId'] for i in x['items']}, 'enrollments missing from Registry')
-    check('Kafka enrollment projection', projection)
+    check('enrollment projection through the Message Broker', projection)
 
     config = request(REGISTRY, 'GET', f'/v1/packages/{PACKAGE}/configurations/1')
     # The roster has a pet per enrolled package and its order is not part of the contract.
@@ -138,7 +138,7 @@ def main():
         f = request(USERS, 'POST', '/v1/friend-requests', {'recipientId': bob}, a, key(), 201)
         notification(b, 'friend.requested.v1', f['id'])
         request(USERS, 'PUT', f"/v1/friend-requests/{f['id']}/decision", {'decision': 'accept'}, b, key())
-    check('friend request → Kafka → Notification', friends)
+    check('friend request → Message Broker → Notification', friends)
 
     def mapping():
         at = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -153,7 +153,7 @@ def main():
         invite = request(GUILD, 'POST', f"/v1/guilds/{guild['id']}/invitations", {'recipientId': bob}, a, key(), 201)
         request(GUILD, 'PUT', f"/v1/guild-invitations/{invite['id']}/decision", {'decision': 'accept'}, b, key())
         notification(b, 'guild.invited.v1', invite['id'])
-    check('Guild membership and Kafka notification', invitation)
+    check('Guild membership and its notification through the Message Broker', invitation)
 
     def care():
         pet = starter
@@ -199,7 +199,7 @@ def main():
         finally:
             request(BATTLE, 'DELETE', '/v1/battles/'+battle['id'], token=a, key=key(), expected=204)
         assert request(BATTLE, 'GET', '/v1/battles/'+battle['id'], token=a)['status'] == 'cancelled'
-    check('Battle challenge, replay, cancellation and Kafka notification (no combat)', challenge)
+    check('Battle challenge, replay, cancellation and its notification through the Message Broker (no combat)', challenge)
 
     def battle():
         before = [request(USERS, 'GET', '/v1/wallet', token=token)['globalBalance'] for token in (a, b)]
