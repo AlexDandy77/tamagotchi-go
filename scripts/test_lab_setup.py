@@ -72,7 +72,7 @@ class StartupImagesTests(unittest.TestCase):
             lab.main()
         # The data stores start first; every event goes through the Message Broker, so no Kafka.
         self.assertEqual(compose.call_args_list[0].args, ('up', '-d', '--wait', '--pull', 'never', 'postgres', 'mongo'))
-        self.assertEqual(compose.call_args.args, ('up', '-d', '--wait', '--pull', 'never'))
+        self.assertEqual(compose.call_args.args, ('up', '-d', '--wait', '--pull', 'never', '--remove-orphans'))
 
     def test_missing_release_aborts_startup(self):
         import subprocess
