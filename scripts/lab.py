@@ -19,44 +19,10 @@ SERVICES = (
 )
 # Every published image startup refreshes: the services, Gateway, Service Discovery and the Message Broker.
 IMAGES = (*SERVICES, 'gateway', 'service-discovery', 'message-broker')
-# Topic -> Kafka principal allowed to produce it.
-TOPICS = {
-    'user.package-registered.v1': 'users',
-    'friend.requested.v1': 'users',
-    'battle.requested.v1': 'battles',
-    'battle.finished.v1': 'battles',
-    'guild.invited.v1': 'guilds',
-    'map.encountered.v1': 'locations',
-    'raid.started.v1': 'raids',
-    'raid.finished.v1': 'raids',
-    'user.package-registered.v1.dlq': 'registry',
-    'pet.used.v1': 'tamagotchi',
-    'pet.captured.v1': 'tamagotchi',
-}
-# Every event type Notification consumes (its README "Kafka events").
-NOTIFICATION_TOPICS = (
-    'friend.requested.v1', 'map.encountered.v1', 'battle.requested.v1', 'battle.finished.v1', 'pet.used.v1',
-    'pet.captured.v1', 'guild.invited.v1', 'raid.started.v1', 'raid.finished.v1',
-)
-# Notification dead-letters to <topic>.dlq for each topic it consumes.
-TOPICS.update({topic + '.dlq': 'notification' for topic in NOTIFICATION_TOPICS})
-# (principal, topic): write access to a topic another principal owns in TOPICS.
-# Tamagotchi and Package Registry both consume user.package-registered.v1 and
-# the contract names its dead-letter topic <topic>.dlq, so they share it.
-SHARED_PRODUCERS = (('tamagotchi', 'user.package-registered.v1.dlq'),)
-# (principal, topic, consumer group)
-CONSUMERS = (
-    ('registry', 'user.package-registered.v1', 'package-registry'),
-    ('tamagotchi', 'user.package-registered.v1', 'tamagotchi'),
-    *(('notification', topic, 'notification') for topic in NOTIFICATION_TOPICS),
-)
 SECRET_KEYS = (
     'POSTGRES_PASSWORD', 'USERS_DB_PASSWORD', 'BATTLES_DB_PASSWORD', 'GUILDS_DB_PASSWORD', 'LOCATIONS_DB_PASSWORD',
     'RAIDS_DB_PASSWORD', 'TAMAGOTCHI_DB_PASSWORD', 'NOTIFICATION_DB_PASSWORD',
-    'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD',
-    'KAFKA_BROKER_PASSWORD', 'KAFKA_ADMIN_PASSWORD', 'KAFKA_USERS_PASSWORD', 'KAFKA_BATTLES_PASSWORD',
-    'KAFKA_GUILDS_PASSWORD', 'KAFKA_REGISTRY_PASSWORD', 'KAFKA_LOCATIONS_PASSWORD', 'KAFKA_RAIDS_PASSWORD',
-    'KAFKA_TAMAGOTCHI_PASSWORD', 'KAFKA_NOTIFICATION_PASSWORD', 'GRAFANA_ADMIN_PASSWORD',
+    'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD', 'GRAFANA_ADMIN_PASSWORD',
 )
 # Prepare every service certificate; owners mount them when enabling Gateway transport.
 TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery', 'message-broker')
@@ -200,13 +166,6 @@ def setup():
     demo_admin()
     directory = ROOT / '.secrets'
     directory.mkdir(mode=0o700, exist_ok=True)
-    admin = directory / 'kafka-admin.properties'
-    if not admin.exists():
-        password = environment()['KAFKA_ADMIN_PASSWORD']
-        # The parent directory is owner-only; the broker reads this one bind-mounted file.
-        write_private(admin, 'security.protocol=SASL_PLAINTEXT\nsasl.mechanism=PLAIN\n'
-                             'sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required '
-                             'username="admin" password="' + password + '";\n', 0o444)
     key = directory / 'jwt.pem'
     if not key.exists():
         # The service itself generates its key; no host OpenSSL dependency.
@@ -247,20 +206,6 @@ GRANT CONNECT ON DATABASE {database} TO {role};
     compose('exec', '-T', 'mongo', 'mongosh', '--quiet', '--nodb', '--eval', script, stdout=subprocess.DEVNULL)
     print('Missing databases/roles created; existing data and passwords preserved.')
 
-def kafka(*args):
-    compose('exec', '-T', 'kafka', *args[:1], '--bootstrap-server', 'kafka:9092', '--command-config', '/run/secrets/kafka-admin.properties', *args[1:])
-
-def topics():
-    for topic, producer in TOPICS.items():
-        kafka('/opt/kafka/bin/kafka-topics.sh', '--create', '--if-not-exists', '--topic', topic, '--partitions', '1', '--replication-factor', '1')
-        kafka('/opt/kafka/bin/kafka-acls.sh', '--add', '--allow-principal', 'User:' + producer, '--producer', '--topic', topic)
-    for producer, topic in SHARED_PRODUCERS:
-        kafka('/opt/kafka/bin/kafka-acls.sh', '--add', '--allow-principal', 'User:' + producer, '--producer', '--topic', topic)
-    for producer in sorted(set(TOPICS.values())):
-        kafka('/opt/kafka/bin/kafka-acls.sh', '--add', '--allow-principal', 'User:' + producer, '--operation', 'IdempotentWrite', '--cluster')
-    for principal, topic, group in CONSUMERS:
-        kafka('/opt/kafka/bin/kafka-acls.sh', '--add', '--allow-principal', 'User:' + principal, '--consumer', '--topic', topic, '--group', group)
-
 def refresh_images():
     """Use the configured repositories' latest service images on every startup."""
     values = environment()
@@ -287,9 +232,8 @@ def main():
         setup()
     elif command == 'up':
         refresh_images()
-        compose('up', '-d', '--wait', '--pull', 'never', 'postgres', 'kafka', 'mongo')
+        compose('up', '-d', '--wait', '--pull', 'never', 'postgres', 'mongo')
         provision()
-        topics()
         for service in SERVICES:
             compose('run', '--rm', '--no-deps', '--pull', 'never', service, 'migrate')
             compose('run', '--rm', '--no-deps', '--pull', 'never', service, 'seed')

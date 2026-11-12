@@ -14,41 +14,6 @@ services:
       timeout: 3s
       retries: 30
     restart: unless-stopped
-  kafka:
-    image: apache/kafka:4.0.1
-    environment:
-      KAFKA_OPTS: -Djava.security.auth.login.config=/etc/kafka/lab-jaas.conf
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: CLIENT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: CLIENT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,CLIENT:SASL_PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_INTER_BROKER_LISTENER_NAME: CLIENT
-      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
-      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
-      KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="broker" password="${KAFKA_BROKER_PASSWORD}" user_broker="${KAFKA_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_users="${KAFKA_USERS_PASSWORD}" user_battles="${KAFKA_BATTLES_PASSWORD}" user_guilds="${KAFKA_GUILDS_PASSWORD}" user_registry="${KAFKA_REGISTRY_PASSWORD}" user_locations="${KAFKA_LOCATIONS_PASSWORD}" user_raids="${KAFKA_RAIDS_PASSWORD}" user_tamagotchi="${KAFKA_TAMAGOTCHI_PASSWORD}" user_notification="${KAFKA_NOTIFICATION_PASSWORD}";'
-      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
-      KAFKA_SUPER_USERS: User:broker;User:admin;User:ANONYMOUS
-      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'false'
-      KAFKA_LOG_RETENTION_HOURS: 168
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
-    volumes:
-      - kafka-data:/var/lib/kafka/data
-      - ./deployment/kafka-jaas.conf:/etc/kafka/lab-jaas.conf:ro
-      - ./.secrets/kafka-admin.properties:/run/secrets/kafka-admin.properties:ro
-    healthcheck:
-      test: [CMD-SHELL, /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --command-config /run/secrets/kafka-admin.properties --list >/dev/null]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-    restart: unless-stopped
   mongo:
     image: mongo:7.0
     # mongod requires an owner-only keyfile; copy the bind-mounted key before starting.
@@ -468,9 +433,6 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://tamagotchi:${TAMAGOTCHI_DB_PASSWORD:?Run setup}@postgres:5432/tamagotchi?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: tamagotchi
-      KAFKA_PASSWORD: ${KAFKA_TAMAGOTCHI_PASSWORD}
       DEPENDENCY_MODE: live
       PORT: 8080
       REGISTRY_URL: https://gateway:8443/services/package-registry
@@ -480,7 +442,7 @@ services:
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       GATEWAY_ONLY: 'true'
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
-      # Lab 4: events through the Message Broker (Kafka stays until every producer moved),
+      # Lab 4: events through the Message Broker,
       # Endpoint.Handle for the broker on GRPC_PORT, and Router.Call for BROKER_DESTINATIONS.
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
@@ -502,16 +464,13 @@ services:
       replicas: 3
     depends_on:
       postgres: {condition: service_healthy}
-      kafka: {condition: service_healthy}
+      message-broker: {condition: service_healthy}
     restart: unless-stopped
   notification:
     image: ${NOTIFICATION_IMAGE:?Set a published Notification image tag}
     pull_policy: always
     environment:
       DATABASE_URL: postgres://notification:${NOTIFICATION_DB_PASSWORD:?Run setup}@postgres:5432/notification?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: notification
-      KAFKA_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD}
       # Firebase push: mock by default; dry-run/live need the key in .secrets/fcm (see .env.example).
       FCM_MODE: ${FCM_MODE:-mock}
       FCM_CREDENTIALS_FILE: /run/secrets/fcm/fcm-service-account.json
@@ -523,7 +482,7 @@ services:
       SERVICE_TLS_CA_FILE: /run/tls/ca.pem
       GATEWAY_ONLY: 'true'
       GATEWAY_CERT_FILE: /run/tls/gateway.pem
-      # Lab 4: events through the Message Broker (Kafka stays until every producer moved),
+      # Lab 4: events through the Message Broker,
       # Endpoint.Handle for the broker on GRPC_PORT, and Router.Call for BROKER_DESTINATIONS.
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
@@ -540,13 +499,13 @@ services:
       - ./.secrets/tls/notification.pem:/run/tls/notification.pem:ro
       - ./.secrets/tls/notification-key.pem:/run/tls/notification-key.pem:ro
       - ./.secrets/fcm:/run/secrets/fcm:ro
-    # Idempotency results live in Postgres and the Kafka consumer group lets one replica read each
-    # partition, so Notification scales by count; it publishes no host port.
+    # Idempotency results live in Postgres and the broker leases each delivery of the notification
+    # group to one replica, so Notification scales by count; it publishes no host port.
     deploy:
       replicas: 3
     depends_on:
       postgres: {condition: service_healthy}
-      kafka: {condition: service_healthy}
+      message-broker: {condition: service_healthy}
     restart: unless-stopped
   # Lab 4 monitoring: Prometheus scrapes the broker's metrics, Grafana Alloy ships every
   # container's stdout to Loki, and Grafana shows both (http://localhost:3000).
@@ -591,7 +550,6 @@ services:
     restart: unless-stopped
 volumes:
   postgres-data:
-  kafka-data:
   mongo-data:
   mongo-config:
   broker-data:
