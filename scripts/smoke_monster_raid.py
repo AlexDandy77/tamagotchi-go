@@ -47,7 +47,10 @@ def output(*args, stdin=None):
     return lab.compose('exec', '-T', *args, input=stdin, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode().strip()
 
 def internal(method, path, body, host='monster-raid'):
-    return json.loads(output('package-registry', 'node', '-', method, path, json.dumps(body), host, stdin=INTERNAL_CALL.encode()))
+    # No body at all for None: Node sends a DELETE body without a length, which a server then
+    # reads as the start of the next request.
+    payload = '' if body is None else json.dumps(body)
+    return json.loads(output('package-registry', 'node', '-', method, path, payload, host, stdin=INTERNAL_CALL.encode()))
 
 def primary_pet(token):
     # Tamagotchi provisions the starter from the enrollment event, so it can lag a fresh start.
