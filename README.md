@@ -68,6 +68,9 @@ Import [one Postman environment](postman/local.postman_environment.json), set `s
 - [Guild](postman/guild.postman_collection.json) and [Package Registry](postman/package-registry.postman_collection.json)
 - [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json)
 - [Tamagotchi](postman/tamagotchi.postman_collection.json) and [Notification](postman/notification.postman_collection.json)
+- [Message Broker](postman/message-broker.postman_collection.json): the admin routes, as Alice, the demo admin
+
+Battle needs a second active package and at least 10 available global coins for Alice and Bob. Run the Package Registry collection first, which publishes a package, then have each player join a raid and land a hit before it is won. The collection checks both and says what is missing.
 
 Gateway has independent client/service task budgets. [Socket tickets](contracts/socket-tickets.md) are enabled. Guild's chat socket and Monster Raid's live raid socket require them.
 
