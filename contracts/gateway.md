@@ -1,6 +1,6 @@
 # Gateway transport contract
 
-Adding Gateway keeps service bodies, statuses, idempotency and data ownership unchanged. The Gateway handles REST authentication and routing; Kafka remains direct.
+Adding Gateway keeps service bodies, statuses, idempotency and data ownership unchanged. The Gateway handles REST authentication and routing; events go through the Message Broker, not the Gateway.
 
 > **Lab 4 change (proposed in [message-broker.md](message-broker.md)).** Gateway sends client requests to the Message Broker's subscriber queue of the destination instead of choosing an instance itself. Service-to-service calls move from `https://gateway:8443` to the broker's gRPC `Router.Call`, so the `internal` routes are removed from Gateway. Authentication, header stripping, the identity assertion and WebSocket negotiation stay in Gateway. Owners must also accept the peer `message-broker` and its assertions. The rules below describe the current Lab 3 deployment until the migration is done.
 

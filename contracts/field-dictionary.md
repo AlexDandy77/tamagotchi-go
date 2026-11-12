@@ -1,6 +1,6 @@
 # Field dictionary
 
-Request, response, event and WebSocket message types referenced by the [endpoint catalog](../README.md#endpoint-catalog), the [event contract](../README.md#kafka-event-contract) and the [guild chat contract](../README.md#guild-chat-websocket-contract) in the README.
+Request, response, event and WebSocket message types referenced by the [endpoint catalog](../README.md#endpoint-catalog), the [event contract](../README.md#event-contract) and the [guild chat contract](../README.md#guild-chat-websocket-contract) in the README.
 
 Notation: `T[]` is an array; `map<T>` is a JSON object whose values are `T`; `?` marks an optional key; keys without `?` are required; `T or null` requires the key but permits `null`. Closed objects reject additional fields. [openapi.yaml](openapi.yaml) additionally records numeric ranges, string limits, enums and path/query/header requirements, and is authoritative if a future edit creates a discrepancy.
 

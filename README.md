@@ -57,9 +57,9 @@ python3 scripts/smoke_discovery.py
 python3 scripts/smoke_live.py
 ```
 
-`setup` generates missing credentials and certificates. `up` checks and pulls every service repository's `latest` image before changing containers, then provisions databases/topics, migrates, seeds and starts the deployment. The Battle and Tamagotchi collections obtain a second starter through enrollment in another configured active package; Tamagotchi uses it to exercise changing the primary pet. Battle also selects an owned primary if capture cleared it, and each player needs at least 10 available global coins earned through raids. Combat changes pet ownership; seeding does not reset it. Failed pulls stop startup; stale cached images are not a fallback. Direct `docker compose up` also checks image updates. `down` retains all data.
+`setup` generates missing credentials and certificates. `up` checks and pulls every service repository's `latest` image before changing containers, then provisions databases, migrates, seeds and starts the deployment. The Battle and Tamagotchi collections obtain a second starter through enrollment in another configured active package; Tamagotchi uses it to exercise changing the primary pet. Battle also selects an owned primary if capture cleared it, and each player needs at least 10 available global coins earned through raids. Combat changes pet ownership; seeding does not reset it. Failed pulls stop startup; stale cached images are not a fallback. Direct `docker compose up` also checks image updates. `down` retains all data.
 
-All client REST URLs are `http://localhost:8080/services/{service}/{original-path}`. Migrated services call `message-broker:50051` over gRPC with their certificates. Unmigrated destinations retain the explicit Gateway path during the transition. Gateway verifies tokens, removes Authorization and sends a signed identity; each destination checks permissions. Only Gateway exposes REST. Guild ports 8087 to 8089 and Monster Raid ports 8084 to 8086, one per replica, are reserved for negotiated direct WebSockets; their implementations must reject direct business REST. Databases and Kafka remain direct. Registration, heartbeats and Gateway's pool reads go directly to `https://service-discovery:8443`: Gateway reads its routes from Service Discovery, so this control plane cannot pass through it.
+All client REST URLs are `http://localhost:8080/services/{service}/{original-path}`. Migrated services call `message-broker:50051` over gRPC with their certificates. Unmigrated destinations retain the explicit Gateway path during the transition. Gateway verifies tokens, removes Authorization and sends a signed identity; each destination checks permissions. Only Gateway exposes REST. Guild ports 8087 to 8089 and Monster Raid ports 8084 to 8086, one per replica, are reserved for negotiated direct WebSockets; their implementations must reject direct business REST. Databases remain direct. Registration, heartbeats and Gateway's pool reads go directly to `https://service-discovery:8443`: Gateway reads its routes from Service Discovery, so this control plane cannot pass through it.
 
 Import [one Postman environment](postman/local.postman_environment.json), set `seedPassword` locally, and import the collections you need:
 
@@ -88,7 +88,7 @@ The manual **Published runtime validation** workflow starts only public images, 
 Gateway authenticates players and sends migrated destinations to the Message Broker. The broker routes requests, balances by load, retries safe calls, and delivers durable topic events. See [ARCHITECTURE.md](ARCHITECTURE.md) and [the broker contract](contracts/message-broker.md).
 
 - Broker-ready owners in this deployment: all eight, User Management, Battle, Guild, Package Registry, Map, Monster Raid, Tamagotchi and Notification. Publish their merged `4.x.y` images before starting this configuration. Open PR commits are not release images.
-- `BROKER_SERVICES` selects Gateway destinations; `BROKER_DESTINATIONS` selects outgoing service calls. Both default to every owner. Guild publishes `guild.invited.v1` and Package Registry consumes `user.package-registered.v1` through the broker, so neither uses Kafka any more. Kafka keeps running while Tamagotchi and Notification still carry its settings; remove it once their owners confirm they no longer read it.
+- `BROKER_SERVICES` selects Gateway destinations; `BROKER_DESTINATIONS` selects outgoing service calls. Both default to every owner. Every producer and consumer uses the broker's event bus, so the deployment no longer runs Kafka; `check_lab4.py` fails if a Kafka service or a `KAFKA_*` setting returns.
 - Empty lists select the final all-broker mode. Enable that only after every owner migrates; Gateway then rejects service callers and removes internal routes.
 - Grafana: `http://localhost:3000`; Prometheus: `http://localhost:9090`. Alloy ships container logs to Loki. The broker's admin collection lists topics, queues, dead letters and downloads logs through Gateway.
 - After startup: `python3 scripts/check_lab4.py`, then `python3 scripts/demo_lab4.py`. These complement service Postman collections; they do not certify unmigrated owners.
@@ -98,7 +98,7 @@ Gateway authenticates players and sends migrated destinations to the Message Bro
 Contract version **1.5.0**. All eight services implement their portions.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
-- [`contracts/events.schema.json`](contracts/events.schema.json): the ten Kafka event envelopes and payloads (JSON Schema).
+- [`contracts/events.schema.json`](contracts/events.schema.json): the ten event envelopes and payloads (JSON Schema).
 - [`contracts/realtime.schema.json`](contracts/realtime.schema.json): the six guild chat and three live raid WebSocket frames (JSON Schema).
 - [`contracts/field-dictionary.md`](contracts/field-dictionary.md): readable definitions of every request, response, event and frame type named in the tables below.
 - [`contracts/game-rules.md`](contracts/game-rules.md): the numbers and formulas behind the contract.
@@ -147,11 +147,11 @@ A stale version returns `409`:
 | User Management | accounts, sessions, friends and enemies, enrollments, global and local currency, boosts, holds, reward ledger | package status, combat rules, raid rewards (Registry) |
 | Battle | challenges, loadouts, frozen inputs, turn and HP state, outcome, settlement progress | reserved pets (Tamagotchi), rules (Registry), wallet holds (User Management) |
 | Tamagotchi | pets, primary and secondary references, care progression, XP, reservations, ownership transfers | enrollment (User Management), package rules (Registry) |
-| Notification | device tokens, notification records, processed-event inbox | events (Kafka), Firebase responses |
+| Notification | device tokens, notification records, processed-event inbox | events (Message Broker), Firebase responses |
 | Map | latest location per user, encounter state | profiles and relationships (User Management) |
 | Monster Raid | raid instance, participants, HP, damage, timer, reward progress | monster and schedule snapshot (Registry), eligibility (Guild), frozen pets (Tamagotchi) |
 | Guild | guilds, invitations, members and roles, chat messages and sequence | identity and relationships (User Management) |
-| Package Registry | packages, moderators, immutable configurations, global rules, monsters, schedules | enrollment projection (User Management, via Kafka) |
+| Package Registry | packages, moderators, immutable configurations, global rules, monsters, schedules | enrollment projection (User Management, through the Message Broker) |
 
 There are no cross-database writes or foreign keys; IDs cross the API boundary and the owner validates them. A service that publishes an event writes the business change and an outbox row in one transaction; a worker publishes the outbox with a stable `eventId`. Consumers store processed event IDs in an inbox before committing offsets, and compare `aggregateVersion` so an old event never overwrites a newer state. Failed messages retry with backoff and then land in a dead-letter topic.
 
@@ -325,11 +325,11 @@ Admin routes of the [Message Broker](contracts/message-broker.md), reached throu
 | `GET /v1/queues` | admin | — | `200` | Subscriber queues with instances, scores and breakers |
 | `GET /v1/logs` | admin | `service?`, `instanceId?`, `level?`, `since?`, `until?`, `contains?`, `limit?` | `200` NDJSON | Download the system's logs from Loki (grade 4) |
 
-### Kafka event contract
+### Event contract
 
-> **Lab 4:** these topics move unchanged to our own [Message Broker](contracts/message-broker.md), with the same names, envelopes, producers and consumer groups. Kafka stays until every service has migrated.
+> **Lab 4:** events travel through our own [Message Broker](contracts/message-broker.md), with the same topic names, envelopes, producers and consumer groups as before. Kafka is no longer deployed.
 
-Each event type has its own Kafka topic named after the type. The message key is `aggregateId`, so events about one request, pet, battle, raid or enrollment stay in order within a partition. Each consuming service reads with its own consumer group and commits offsets only after durable processing. Producers publish from their outbox with `acks=all` and the idempotent producer setting, reusing the same `eventId` on retry. Topics retain events for 7 days; messages that keep failing go to `<topic>.dlq`. Topic ACLs allow writes only from the listed producer.
+Each event type has its own topic named after the type. The message key is `aggregateId`: within a consumer group the broker delivers the events of one key in publish order, so events about one request, pet, battle, raid or enrollment stay in order. Every consumer group receives each event, and one replica of the group gets each delivery. Consumers acknowledge only after durable processing; delivery is at least once, so they keep their inbox or processed-events tables. Producers publish from their outbox and retry with the same `eventId`, which the broker stores only once. Topics retain events for 7 days. A delivery that fails five times, or that its consumer rejects as invalid, moves to `<topic>.dlq`. The broker accepts each topic only from its listed producer.
 
 Every message carries the `EventEnvelope` fields (`eventId`, `type`, `schemaVersion`, `occurredAt`, `producer`, `aggregateId`, `aggregateVersion`, `correlationId`) and a typed `data` object. Consumers validate both.
 
@@ -494,7 +494,7 @@ Releases use Semantic Versioning, tagged on `main` as `vMAJOR.MINOR.PATCH`: brea
 
 The lab rules are explicit: pushing `.env` files, exposing API keys or committing `node_modules` lowers the whole team's grade. Every repository has a `.gitignore` covering the list below before its first code commit.
 
-- **Never commit:** secrets of any kind (`.env` and `.env.*` except `.env.example`, API keys, JWT signing keys, TLS keys, database passwords, Firebase service-account JSON, Kafka credentials, tokens in code or fixtures); installed dependencies (`node_modules/`, `.venv/`, Go module caches, `vendor/` unless agreed); build and run outputs (`dist/`, `build/`, `bin/`, binaries, coverage, logs, local database files, Docker volumes); editor and OS files (`.idea/`, `.vscode/` except agreed shared settings, `.DS_Store`); large or regenerable artifacts.
+- **Never commit:** secrets of any kind (`.env` and `.env.*` except `.env.example`, API keys, JWT signing keys, TLS keys, database passwords, Firebase service-account JSON, tokens in code or fixtures); installed dependencies (`node_modules/`, `.venv/`, Go module caches, `vendor/` unless agreed); build and run outputs (`dist/`, `build/`, `bin/`, binaries, coverage, logs, local database files, Docker volumes); editor and OS files (`.idea/`, `.vscode/` except agreed shared settings, `.DS_Store`); large or regenerable artifacts.
 - **Always commit:** source, tests, documentation, `.env.example` with placeholders and a comment per variable, manifests and lockfiles (`go.mod`, `go.sum`, `package.json`, `package-lock.json`), Dockerfiles, compose files and CI configuration.
 - **If a secret slips in:** rotate it immediately, rewrite the history of your task branch and push with `--force-with-lease`, and say so in the PR. A secret that reached `main` needs a coordinated history rewrite by the repository owner plus a new secret; deleting the file later is not enough.
 

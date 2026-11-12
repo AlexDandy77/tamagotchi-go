@@ -23,8 +23,8 @@ flowchart LR
 
 This is the flow for every owner. The default switches include all eight: User Management,
 Battle, Guild, Package Registry, Map, Monster Raid, Tamagotchi and Notification. Gateway would
-still route a destination removed from the switches directly. Kafka keeps running while
-Tamagotchi and Notification still carry its settings; Guild and Package Registry no longer use it.
+still route a destination removed from the switches directly. Every event goes through the
+broker, so Kafka is no longer deployed.
 
 ## Responsibilities
 
@@ -41,7 +41,6 @@ Tamagotchi and Notification still carry its settings; Guild and Package Registry
 | Package Registry | Packages, configurations, combat rules and raid schedules | MongoDB `registry` |
 | Tamagotchi | Pets, care, XP, reservations and ownership | PostgreSQL `tamagotchi` |
 | Notification | Devices and notification delivery | PostgreSQL `notification` |
-| Kafka | Events for owners still migrating | `kafka-data` |
 | Prometheus, Loki, Alloy, Grafana | Metrics, container logs and dashboards | Named monitoring volumes |
 
 ## Networking and trust
@@ -95,10 +94,10 @@ Each owner adds gRPC transport, broker trust and its event client, registers `gr
 any consumer interests, and publishes a validated merged `4.x.y` image. Producers name topics,
 not consumers. User Management and Battle produce events but subscribe to none.
 
-Add the owner to migration switches after its image supports broker identity. Verify its
-workflow, outage recovery and events before removing its Kafka settings. Remove Kafka only
-when all producers and consumers migrate. Update CPR submodule pointers to actual merged
-commits after service PRs merge; feature commits are not releases.
+Add an owner to the migration switches after its image supports broker identity, and verify its
+workflow, outage recovery and events through the broker. Kafka was removed once every producer
+and consumer had migrated. Update CPR submodule pointers to actual merged commits after service
+PRs merge; feature commits are not releases.
 
 The single-PC deployment uses Compose, one PostgreSQL, MongoDB, and one broker with a
 persistent volume. Broker-process replication, Kubernetes and autoscaling are future work;

@@ -7,7 +7,7 @@ The Message Broker carries every event and every service-to-service request. It 
 
 It is written in Python 3.13, lives in the private repository `arturtugui/pad-team-8-message-broker` and is published as `arturtugui/pad-team-8-message-broker`. The gRPC API is [proto/broker.proto](proto/broker.proto); the HTTP routes are in [message-broker.openapi.yaml](message-broker.openapi.yaml).
 
-Status: **Lab 4 contract proposal**. While services migrate, Kafka keeps running next to the broker. It is removed once every producer and consumer uses the broker.
+Status: **in use** (Lab 4). Every producer and consumer uses the broker, and Kafka is no longer deployed.
 
 ## Addressing and identity
 
