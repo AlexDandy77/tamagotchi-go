@@ -349,6 +349,24 @@
     "callers": []
   },
   {
+    "service": "battle",
+    "method": "PUT",
+    "pattern": "/internal/v1/battle\\-starts/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "message-broker"
+    ]
+  },
+  {
+    "service": "battle",
+    "method": "PUT",
+    "pattern": "/internal/v1/battle\\-outcomes/[^/]+",
+    "audience": "internal",
+    "callers": [
+      "message-broker"
+    ]
+  },
+  {
     "service": "notification",
     "method": "PUT",
     "pattern": "/v1/notification\\-devices/[^/]+",
@@ -737,6 +755,20 @@
     "service": "message-broker",
     "method": "GET",
     "pattern": "/v1/logs",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "message-broker",
+    "method": "GET",
+    "pattern": "/v1/sagas",
+    "audience": "admin",
+    "callers": []
+  },
+  {
+    "service": "message-broker",
+    "method": "GET",
+    "pattern": "/v1/sagas/[^/]+",
     "audience": "admin",
     "callers": []
   }

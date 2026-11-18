@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: Tamagotchi Go communication contract
-  version: 1.5.0
+  version: 1.6.0
   description: Business API contract. Paths are relative to the owning service. Gateway transport and
     staged migration are defined in gateway.md; endpoint bodies and ownership are unchanged.
 tags:
@@ -1967,6 +1967,108 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/BattleAction'
+  /internal/v1/battle-starts/{battleId}:
+    put:
+      tags:
+      - Battle
+      summary: Start combat after the saga reserved stakes and pets
+      operationId: PUT_internal_v1_battle_starts_battleId
+      description: Saga step start-combat (contracts/transactions.md). Called only by the Message Broker's saga coordinator with the PetReservation returned by Tamagotchi; freezes the combat inputs and moves the battle from preparing to active. Repeating the call with the same key returns the stored battle.
+      x-audience: internal
+      responses:
+        '200':
+          description: Combat started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Battle'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PetReservation'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - message-broker
+  /internal/v1/battle-outcomes/{battleId}:
+    put:
+      tags:
+      - Battle
+      summary: Record the saga's final outcome of a battle
+      operationId: PUT_internal_v1_battle_outcomes_battleId
+      description: Last saga step (contracts/transactions.md). Called only by the Message Broker's saga coordinator. finished after both settlements completed; Battle then emits battle.finished.v1 through its outbox. cancelled after the coordinator compensated the reservations, with the reason. Repeating the call with the same key returns the stored battle.
+      x-audience: internal
+      responses:
+        '200':
+          description: Outcome recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Battle'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: battleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BattleOutcomeInput'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - message-broker
   /v1/notification-devices/{deviceId}:
     put:
       tags:
@@ -4392,6 +4494,84 @@ paths:
           minimum: 1
           maximum: 10000
           default: 5000
+  /v1/sagas:
+    get:
+      tags:
+      - Message Broker
+      summary: Sagas with their state and current step
+      operationId: GET_v1_sagas
+      description: Sagas coordinated by the broker, newest first. Admin only, through Gateway; see contracts/transactions.md.
+      x-audience: admin
+      responses:
+        '200':
+          description: Sagas with their state and current step
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '422':
+          $ref: '#/components/responses/Error422'
+      parameters:
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^[a-z][a-z-]{0,62}$
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [started, waiting, settling, completed, compensating, compensated]
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /v1/sagas/{sagaId}:
+    parameters:
+    - name: sagaId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
+    get:
+      tags:
+      - Message Broker
+      summary: One saga with every step attempt
+      operationId: GET_v1_sagas_sagaId
+      description: One saga with every step, its attempts, last participant status and timing. Admin only, through Gateway; see contracts/transactions.md.
+      x-audience: admin
+      responses:
+        '200':
+          description: One saga with every step attempt
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '404':
+          $ref: '#/components/responses/Error404'
 components:
   securitySchemes:
     userBearer:
@@ -5251,6 +5431,24 @@ components:
       required:
       - expectedTurn
       - action
+    BattleOutcomeInput:
+      description: Saga coordinator only. finished after both settlements; cancelled after compensation, with the reason.
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum:
+          - finished
+          - cancelled
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 200
+          - type: 'null'
+      required:
+      - status
+      - reason
     Battle:
       description: Only participants may read. Currency/pet effects become final when settlement is complete.
       type: object

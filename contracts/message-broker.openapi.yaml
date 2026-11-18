@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Tamagotchi Go Message Broker
-  version: 1.0.0
+  version: 1.1.0
   description: >-
-    HTTP routes of the Message Broker. The gRPC API (EventBus, Router, Endpoint)
+    HTTP routes of the Message Broker. The gRPC API (EventBus, Router, Endpoint, Saga)
     is contracts/proto/broker.proto; rules are in message-broker.md. Probe and
     metrics routes are served on the internal HTTP listener; the subscriber
     queues and admin routes use the mutual TLS listener. Admin routes are
@@ -287,6 +287,57 @@ paths:
         '403': {$ref: '#/components/responses/Error'}
         '422': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
+  /v1/sagas:
+    get:
+      operationId: listSagas
+      x-audience: admin
+      description: Sagas coordinated by the broker, newest first. Rules are in transactions.md.
+      parameters:
+        - name: type
+          in: query
+          schema: {type: string, pattern: '^[a-z][a-z-]{0,62}$'}
+        - name: state
+          in: query
+          schema: {enum: [started, waiting, settling, completed, compensating, compensated]}
+        - name: cursor
+          in: query
+          schema: {type: string}
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Sagas with their state and current step
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Saga'}
+                  nextCursor: {type: [string, 'null']}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /v1/sagas/{sagaId}:
+    parameters:
+      - name: sagaId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getSaga
+      x-audience: admin
+      responses:
+        '200':
+          description: One saga with every step
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Saga'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
     serviceTLS:
@@ -375,6 +426,32 @@ components:
               inFlight: {type: integer, minimum: 0}
               score: {type: number, minimum: 0}
               circuit: {enum: [closed, open, halfOpen]}
+    Saga:
+      type: object
+      additionalProperties: false
+      required: [sagaId, type, initiator, state, currentStep, steps, failureReason, createdAt, updatedAt]
+      properties:
+        sagaId: {type: string, format: uuid, description: 'For type battle, the battle ID'}
+        type: {type: string, description: 'Saga definition, e.g. battle'}
+        initiator: {type: string, description: Certificate SAN of the service that started it}
+        state: {enum: [started, waiting, settling, completed, compensating, compensated]}
+        currentStep: {type: [string, 'null']}
+        steps:
+          type: array
+          items: {$ref: '#/components/schemas/SagaStep'}
+        failureReason: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    SagaStep:
+      type: object
+      additionalProperties: false
+      required: [name, status, attempts, lastHttpStatus, updatedAt]
+      properties:
+        name: {type: string, description: 'e.g. reserve-stakes'}
+        status: {enum: [pending, running, done, failed, compensating, compensated]}
+        attempts: {type: integer, minimum: 0}
+        lastHttpStatus: {type: [integer, 'null'], description: Status of the last participant answer}
+        updatedAt: {type: string, format: date-time}
   responses:
     Error:
       description: Common service error envelope

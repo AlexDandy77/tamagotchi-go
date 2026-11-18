@@ -1,4 +1,5 @@
-// Message Broker gRPC contract (Lab 4). Rules: contracts/message-broker.md.
+// Message Broker gRPC contract (Labs 4 and 5). Rules: contracts/message-broker.md;
+// sagas (Lab 5): contracts/transactions.md.
 //
 // Every RPC runs over mutual TLS with the shared CA. The caller is the single
 // DNS SAN of its certificate that names a known service, exactly as with
@@ -140,4 +141,61 @@ message HttpResponse {
   int32 status = 1;                 // HTTP status; errors use the common Error body
   map<string, string> headers = 2;  // lowercase names, e.g. content-type, x-served-by
   bytes body = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Sagas (Lab 5): the broker coordinates long-running distributed transactions.
+// The saga definition (steps, calls, compensations) lives in the broker; the
+// initiator only starts it, signals business events and reads its state.
+// ---------------------------------------------------------------------------
+service Saga {
+  // Start a saga. Idempotent per saga_id: the same input returns the existing
+  // saga; different input fails with ALREADY_EXISTS. Only services allowed to
+  // initiate the type may start it ("battle" for type "battle").
+  rpc Start(StartSagaRequest) returns (SagaState);
+
+  // Deliver a business event to a waiting saga, e.g. "finished" with the
+  // battle result, or "cancelled". Only the initiator may signal. Repeating a
+  // signal that was already applied returns the current state.
+  rpc Signal(SignalSagaRequest) returns (SagaState);
+
+  // Current state of a saga started by the caller.
+  rpc Get(GetSagaRequest) returns (SagaState);
+}
+
+message StartSagaRequest {
+  string type = 1;     // saga definition, e.g. "battle"
+  string saga_id = 2;  // UUID; for "battle" the battle ID
+  bytes input = 3;     // UTF-8 JSON; for "battle": {"hold": BattleHoldInput, "pets": PetReserveInput}
+}
+
+message SignalSagaRequest {
+  string saga_id = 1;
+  string signal = 2;   // "finished" or "cancelled" for "battle"
+  bytes payload = 3;   // UTF-8 JSON; "finished": {"winnerId", "loserId", "rulesVersion"}; "cancelled": {"reason"}
+}
+
+message GetSagaRequest {
+  string saga_id = 1;
+}
+
+message SagaStep {
+  string name = 1;          // e.g. "reserve-stakes"
+  string status = 2;        // pending, running, done, failed, compensating, compensated
+  int32 attempts = 3;
+  int32 last_http_status = 4;  // status of the last participant answer, 0 if none
+  string updated_at = 5;    // RFC 3339 UTC
+}
+
+message SagaState {
+  string saga_id = 1;
+  string type = 2;
+  string initiator = 3;     // certificate SAN of the service that started it
+  // started, waiting, settling, completed, compensating, compensated
+  string state = 4;
+  string current_step = 5;  // empty when completed or compensated
+  repeated SagaStep steps = 6;
+  string failure_reason = 7;  // set when compensating or compensated
+  string created_at = 8;
+  string updated_at = 9;
 }

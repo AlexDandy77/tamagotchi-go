@@ -159,6 +159,10 @@ Owners keep verifying an ES256 assertion in `X-Gateway-Identity`, with the claim
 
 The broker handles every request and RPC on **its own new thread**, named `req-<id>` in the logs. It has no shared worker pool. Concurrency is bounded by `MAX_CONCURRENT_TASKS` (64) and the queue capacities. Over the limit the answer is `503 TASK_LIMIT_REACHED` (`RESOURCE_EXHAUSTED` on gRPC), and over the deadline it is `504 TASK_TIMEOUT` (`DEADLINE_EXCEEDED`).
 
+## Sagas (Lab 5)
+
+The broker also coordinates **long-running sagas**: distributed transactions made of local steps with compensations. Initiators use the gRPC `Saga` service (`Start`, `Signal`, `Get`). The broker runs each step through the same routing, breakers and rerouting as `Router.Call`, stores progress in SQLite before every call, and resumes unfinished sagas after a restart. The first and only saga type is `battle`. Its steps, compensations, identities and failure rules are in [transactions.md](transactions.md).
+
 ## Admin and observability routes
 
 Routes are in [message-broker.openapi.yaml](message-broker.openapi.yaml). Admin routes reach the broker through Gateway as `admin` routes of the service `message-broker`, and the broker verifies Gateway's player assertion. An `admin` role or a player ID listed in `BROKER_ADMIN_USER_IDS` grants access; Compose uses the same configured demo admins as Package Registry.
@@ -171,6 +175,8 @@ Routes are in [message-broker.openapi.yaml](message-broker.openapi.yaml). Admin 
 | `GET /v1/dlq/{topic}` | Dead-lettered messages of one topic with group, attempts and reason |
 | `GET /v1/queues` | Subscriber queues: depth, in-flight, and instances with score and breaker state |
 | `GET /v1/logs` | Download the system's logs as NDJSON, filtered by service, instance, level, time and text |
+| `GET /v1/sagas` | Sagas with their state and current step (Lab 5) |
+| `GET /v1/sagas/{sagaId}` | One saga with every step attempt (Lab 5) |
 
 `GET /status` follows the common `Status` schema and adds `queues`. `GET /metrics` serves Prometheus text:
 
