@@ -84,6 +84,8 @@ Every client places keys with the same algorithm. Test vectors: [cache-ring-vect
 3. **Lookup.** Compute `point(key)` and take the first ring point whose position is `>=` it. Past the last point, wrap to the first. That point's node owns the key.
 4. **Unavailable node.** While a node's client is failing (3 errors within 10 s; it's retried after 5 s), skip its points and continue clockwise to the next point of an available node. Its keys therefore land on its neighbours, and every other key stays where it is.
 
+**Response headers stay accurate.** `X-Cache-Node` names the node actually used, after any fall-through.
+
 **Why 160 virtual nodes.** With one point per node, the arcs between points are very uneven. With 160 per node, the 30,000 benchmark keys in the vectors file split 35 % / 32 % / 33 %. When `cache-2` is unavailable, exactly its own 9,668 keys move, and none of the others.
 
 Each owner implements the ring in its language: about 40 lines, plus a test that loads `cache-ring-vectors.json` and checks every `node` and `nodeWhenCache2Down`. Reference implementations for Go and TypeScript ship in the Message Broker repository's client kit (`clients/go/cache`, `clients/ts/cache`), next to the Lab 4 broker clients, and can be copied as they are.
@@ -104,17 +106,40 @@ Lab 5 asks for consistent hashing. Redis Cluster, the ready-made alternative, sh
 
 Both avoid the `hash mod N` problem, where changing N moves almost every key. Hash slots are a **fixed partitioning**: 16384 partitions that move between nodes as whole units. Consistent hashing moves **ranges of the ring** implicitly whenever the node set changes. For a cache that may simply lose data, the ring is simpler and needs no coordinator.
 
-## Observability
+## Showing it: response headers and logs
 
-- Every cached read logs `cache hit` or `cache miss` at debug level with `key`, `node` and `requestId`, and each service exports `cache_requests_total{result="hit|miss|error", node}` on its existing metrics.
-- `GET /status` adds `cache: {nodes: [{name, available}]}`.
-- Demo: read a pet twice (miss, then hit on its node), stop `cache-2`, and read again. Only keys that lived on `cache-2` miss, and nothing errors.
+Every response of a cached route carries two headers. They pass through the broker and Gateway unchanged, next to the broker's `X-Served-By`:
+
+| Header | Values | Meaning |
+| --- | --- | --- |
+| `X-Cache` | `HIT`, `MISS`, `BYPASS` | Served from the cache; read from the database and stored; cache node unavailable, so the database was used and nothing was stored |
+| `X-Cache-Node` | `cache-1`, `cache-2`, `cache-3` | The shard that the ring chose for this key |
+
+Every cached read also writes one **info-level** log line, so it is visible in Docker Desktop's container logs without changing the log level:
+
+```text
+{"level":"info","msg":"cache miss, read from database","key":"tamagotchi:v1:pet:…","node":"cache-2","requestId":"…","instanceId":"tamagotchi-1"}
+{"level":"info","msg":"cache hit","key":"tamagotchi:v1:pet:…","node":"cache-2","requestId":"…","instanceId":"tamagotchi-3"}
+{"level":"info","msg":"cache invalidated","key":"tamagotchi:v1:pet:…","node":"cache-2","requestId":"…","instanceId":"tamagotchi-2"}
+```
+
+Each service also exports `cache_requests_total{result="hit|miss|bypass", node}` on its existing metrics, and `GET /status` adds `cache: {nodes: [{name, available}]}`.
+
+## Demo
+
+**By hand (Postman and Docker Desktop):**
+1. `GET /services/tamagotchi/v1/pets/{petId}` → `X-Cache: MISS`, `X-Cache-Node: cache-2`. The answering replica's log shows `cache miss, read from database`.
+2. Send it again → `X-Cache: HIT` on the same node, often from a **different replica** (`X-Served-By`), which shows that the cache is shared by all replicas.
+3. Care for the pet, then read it again → `MISS` (the write logged `cache invalidated`), then `HIT`.
+4. Stop `cache-2` in Docker Desktop and read again → `X-Cache-Node` is now the next node on the ring (`MISS`, then `HIT`). Keys that lived on `cache-1` or `cache-3` still answer `HIT`. Nothing fails.
+
+**By script**, for what is hard to see one request at a time: `python3 scripts/demo_lab5.py grade7` writes 1,000 keys through the ring, prints how many landed on each node, stops one node, and shows that only that node's share moved. That's the consistent-hashing property, and the same numbers as in [cache-ring-vectors.json](cache-ring-vectors.json).
 
 ## What each owner changes
 
 | Owner | Change |
 | --- | --- |
-| Every service | Read `CACHE_NODES` and `CACHE_PASSWORD`; add the ring client and its vectors test; add `cache` to `/status`; log hits and misses |
+| Every service | Read `CACHE_NODES` and `CACHE_PASSWORD`; add the ring client and its vectors test; add `cache` to `/status`; set `X-Cache` and `X-Cache-Node` on cached routes; log hits, misses and invalidations at info level |
 | User Management | Cache refresh sessions and user lookups; delete them on rotation, revocation and profile changes; cache wallets and relationships as listed |
 | Battle, Guild, Package Registry, Monster Raid | Cache the reads in the table above and delete them after the listed writes |
 | Tamagotchi, Notification | Cache their reads and the enrollment check; Tamagotchi also deletes negative enrollment entries on `user.package-registered.v1` |

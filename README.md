@@ -110,7 +110,16 @@ Lab 5 makes the data layer survive failures and adds analytics. Releases are `5.
 - `python3 scripts/lab.py setup` also generates `CACHE_PASSWORD` and `ETL_DB_PASSWORD`. `up` bootstraps the database cluster and the replica set. On the first start it copies the old single-server `postgres-data` volume into the cluster once and leaves the old volume untouched.
 - `python3 scripts/lab.py db-status` shows the database members, their roles and replication lag. `python3 scripts/lab.py etl` runs one ETL pass now.
 - Local tools bind to localhost only: the HAProxy statistics page at `http://localhost:7000` and the warehouse at `localhost:5434`.
-- After startup: `python3 scripts/check_lab5.py`, then `python3 scripts/demo_lab5.py`. The demo covers failover, cache hits and node loss, the battle saga with compensation and broker restart, and an ETL run.
+- After startup: `python3 scripts/check_lab5.py` checks the configuration. Each grade is shown live as below; a script is used only where one request at a time can't show it.
+
+| Grade | Shown by hand | Script |
+| --- | --- | --- |
+| 2–3 | The diagram in [ARCHITECTURE.md](ARCHITECTURE.md) | — |
+| 4 | Care actions in Postman → `lab.py etl` → the `etl` container log lists rows per view → Grafana "Game analytics" shows them | — |
+| 5 | Stop the primary in Docker Desktop → a replica logs `promoted self to leader`, the HAProxy page at `localhost:7000` moves, Postman requests keep working | `demo_lab5.py grade5` measures the failover |
+| 6 | The same Postman GET twice: `X-Cache: MISS`, then `HIT`, with the service log showing `cache miss, read from database`, then `cache hit` | — |
+| 7 | `X-Cache-Node` names the shard; stop that node and the key moves to the next node while other keys still `HIT` | `demo_lab5.py grade7` shows only the stopped node's keys move |
+| 8–9 | `GET /services/message-broker/v1/sagas/{battleId}` after a battle (completed) and after a failed accept (compensated); broker and participant logs share the `sagaId` | `demo_lab5.py grade9` restarts the broker mid-saga |
 
 ## Communication contract
 

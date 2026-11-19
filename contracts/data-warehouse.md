@@ -101,9 +101,16 @@ SELECT reason, sum(amount) FROM fact_currency_movement WHERE currency = 'global'
 
 ## Demo
 
-1. Run a battle, some care actions and a raid (`python3 scripts/smoke_live.py`).
-2. `python3 scripts/lab.py etl`, or wait for the next scheduled run; the log shows rows per view.
-3. Open Grafana → "Game analytics", or query `localhost:5434`: the new battle, care actions and raid rewards appear.
+1. Note the counts on Grafana → "Game analytics" (or `SELECT count(*) FROM fact_care_action` on `localhost:5434`).
+2. Do a few care actions and finish a battle in Postman.
+3. `python3 scripts/lab.py etl`, or wait for the next run. The `etl` container's log in Docker Desktop shows one info line per view and a summary:
+
+   ```text
+   {"level":"info","msg":"etl view loaded","source":"tamagotchi","view":"etl.care_actions","rows":3,"watermark":"…"}
+   {"level":"info","msg":"etl run finished","rows":11,"durationMs":…,"sourcesSkipped":[]}
+   ```
+
+4. Refresh the dashboard: the new care actions and the battle appear. Run the ETL again: the counts stay the same. Rows re-read within the 60-second look-back are upserted, not duplicated, which shows the watermarks and upserts work.
 
 ## What each owner changes
 

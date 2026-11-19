@@ -70,11 +70,15 @@ Leader election needs a **majority**. With two nodes, losing one leaves one of t
 
 ## Demo
 
-1. `python3 scripts/lab.py db-status` shows the members, roles and replication lag (`patronictl list`, `rs.status()`).
-2. Start traffic (`python3 scripts/smoke_live.py`) and stop the primary: `docker compose stop postgres-1`.
-3. Within about 30 s another node is the leader, the HAProxy page shows it, and the traffic continues; at most a few requests answer `503` and succeed on retry.
-4. `docker compose start postgres-1`: it rejoins as a replica.
-5. The same for Mongo: stop the primary member, and the Registry collection keeps working.
+**By hand (browser, Docker Desktop, Postman):**
+1. `python3 scripts/lab.py db-status` shows the members, their roles and replication lag (`patronictl list`, `rs.status()`). The HAProxy page `http://localhost:7000` shows the same primary in green.
+2. Stop the primary container (say `postgres-1`) in Docker Desktop.
+3. Watch the replicas' logs: within about 30 s one of them logs Patroni's `promoted self to leader by acquiring session lock`. The `haproxy` log shows the old node `DOWN` and the new one `UP`, and the HAProxy page turns the new primary green.
+4. Send Postman requests (`GET /services/tamagotchi/v1/pets`, a care action): they work, against the new primary. A service log shows `database connection lost, reconnecting` once, then normal lines.
+5. Start `postgres-1` again: its log shows it rejoining as a replica (`pg_rewind`), and `db-status` lists it as `Replica`.
+6. The same for Mongo: stop the primary member; the others log the election, and the Package Registry requests keep working.
+
+**By script**, for the numbers: `python3 scripts/demo_lab5.py grade5` sends a request every 200 ms, stops the primary, and prints when the new primary took over, how long writes were unavailable, and how many requests needed a retry.
 
 ## What each owner changes
 
@@ -84,3 +88,4 @@ Leader election needs a **majority**. With two nodes, losing one leaves one of t
 | Go services with an advisory-lock leader (User Management, Battle, Map, Monster Raid) | Treat a lost database session as lost leadership: stop the workers and compete for the lock again |
 | Package Registry | Use the three-host URL from Compose and `w: majority` |
 | Tamagotchi, Notification | Same pool and readiness checks (`pg` pool `error` handling) |
+| Every service | Log a lost database connection once at warning level (`database connection lost, reconnecting`) and the recovery at info level (`database connection restored`) |

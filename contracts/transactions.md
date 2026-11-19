@@ -79,18 +79,34 @@ Only the service that started a saga may signal or read it (checked against the 
 
 Both are `admin` routes reached through Gateway, like the other broker admin routes. Metrics: `broker_sagas_total{type, state}` and `broker_saga_step_duration_seconds{type, step}`.
 
+## Logs
+
+The broker writes one **info-level** line per transition, and every participant logs the `X-Saga-Id` it received. Filtering any container's logs by the battle ID in Docker Desktop therefore shows that container's part of the saga:
+
+```text
+message-broker   {"level":"info","msg":"saga started","sagaId":"…","type":"battle","initiator":"battle"}
+message-broker   {"level":"info","msg":"saga step done","sagaId":"…","step":"reserve-stakes","status":200,"instanceId":"user-management-2"}
+tamagotchi-1     {"level":"info","msg":"pet reservation stored","sagaId":"…","activityId":"…"}
+message-broker   {"level":"warning","msg":"saga step failed","sagaId":"…","step":"reserve-pets","status":409}
+message-broker   {"level":"info","msg":"saga compensation done","sagaId":"…","step":"reserve-stakes"}
+message-broker   {"level":"info","msg":"saga resumed after restart","sagaId":"…","step":"settle-pets"}
+message-broker   {"level":"info","msg":"saga completed","sagaId":"…","durationMs":…}
+```
+
 ## Demo
 
-1. **Happy path.** Play a battle to the end. `GET /v1/sagas/{battleId}` shows steps 1–6 `done` and the state `completed`.
-2. **Compensation.** Challenge with a player who has fewer than 10 coins, or reserve a pet that is already reserved, then accept. Step 1 or 2 fails, the completed steps are compensated, and the battle ends `cancelled` with the reason.
-3. **Crash recovery.** Stop the broker while a battle is settling and start it again. The saga resumes at the step it reached and completes once.
+**By hand (Postman and Docker Desktop):**
+1. **Happy path.** Play a battle to the end. `GET /services/message-broker/v1/sagas/{battleId}` shows steps 1–6 `done` and the state `completed`. The broker's logs show the same steps in order, and the User Management and Tamagotchi logs show their part with the same `sagaId`.
+2. **Compensation.** Challenge with a player who has fewer than 10 coins, or reserve a pet that is already reserved, then accept. The saga shows the failed step, the compensated steps and the state `compensated`. `GET /v1/battles/{battleId}` is `cancelled` with the reason, and the wallet shows the stake released.
+
+**By script**, because timing a crash by hand is unreliable: `python3 scripts/demo_lab5.py grade9` starts a battle, stops the broker container right after the `finished` signal, starts it again, and prints the saga before and after. It resumes at the step it reached, completes once, and the coins and pets moved exactly once.
 
 ## What each owner changes
 
 | Owner | Change |
 | --- | --- |
 | Battle (Alexei) | On accept, call `Saga.Start` instead of calling User Management and Tamagotchi. When combat ends, call `Saga.Signal("finished")`; when cancelled before combat, `Saga.Signal("cancelled")`. Serve `PUT /internal/v1/battle-starts/{battleId}` and `PUT /internal/v1/battle-outcomes/{battleId}`. Remove the direct hold, reservation and settlement calls |
-| User Management (Alexei) | Nothing new: the hold, release and settlement routes are already idempotent per battle |
-| Tamagotchi (Artur) | Nothing new: the reservation, release and settlement routes are already idempotent per activity |
+| User Management (Alexei) | Log the received `X-Saga-Id` on the hold, release and settlement routes, which are already idempotent per battle |
+| Tamagotchi (Artur) | Log the received `X-Saga-Id` on the reservation, release and settlement routes, which are already idempotent per activity |
 | Message Broker (Artur) | The `Saga` service, the SQLite saga store, the step runner and the admin routes |
 | Monster Raid | Nothing: raids keep their current settlement flow |
