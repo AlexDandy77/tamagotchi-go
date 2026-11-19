@@ -26,8 +26,10 @@ Every service gets `CACHE_NODES=cache-1=cache-1:6379,cache-2=cache-2:6379,cache-
 
 Rules:
 - **Delete after commit.** Deleting before the commit lets a concurrent read put the old value back.
-- **TTL backstop.** Every key has a TTL plus 0–10 % random jitter, so a lost `DEL` only means stale data until the TTL ends, and hot keys don't all expire at once.
-- **The cache never fails a request.** A connection error, timeout (50 ms per command) or decode error counts as a miss and is logged as `cache unavailable` at most once per 10 seconds per node. Writes still commit, and a failed `DEL` is logged and left to the TTL.
+- **TTL backstop.** Every key has a TTL plus 0–10 % random jitter, so hot keys don't all expire at once, and a copy that escaped deletion still expires.
+- **Stale copies after an outage.** A client that failed to delete keys on a node, or skipped a node (see [the ring](#consistent-hash-ring)), may have left old copies there. Before using that node again, the client runs `FLUSHDB` on it and logs `cache node flushed after an outage`. Other services' keys on that node become misses, which is harmless for a cache. So deleting only on the reachable node never leaves a stale value in use.
+- **The cache never decides who may do what.** Authorization and anything single-use, such as refresh tokens and idempotency records, is always checked in the owner's database.
+- **The cache never fails a request.** A connection error, timeout (50 ms per command) or decode error counts as a miss and is logged as `cache unavailable` at most once per 10 seconds per node. Writes still commit; a failed `DEL` is logged and makes the client flush that node before its next use (above).
 - **Only the owner writes its keys.** A service may read and delete only keys that start with its own service name. Other services' data is never cached directly, except for the [auth data](#authentication-data) below, which is keyed under the caller's own name.
 - **Values** are the JSON that the owner's route would return (UTF-8), at most 64 KiB. Larger results are not cached.
 - **Never cached:** mutations, `Idempotency-Key` replays, anything containing secrets (passwords, raw refresh tokens, device tokens), and paginated pages after the first.
@@ -38,7 +40,7 @@ Rules:
 {service}:v1:{resource}:{id}[:{id}...]
 ```
 
-Examples: `tamagotchi:v1:pet:{petId}`, `user-management:v1:session:{sha256(refreshToken)}`. The `v1` segment changes when the cached shape changes, which invalidates every old key at once.
+Examples: `tamagotchi:v1:pet:{petId}`, `user-management:v1:public-user:{userId}`. The `v1` segment changes when the cached shape changes, which invalidates every old key at once.
 
 ## What each owner caches
 
@@ -49,8 +51,8 @@ TTLs are upper bounds. Invalidation by `DEL` is what keeps data correct.
 | Tamagotchi | `GET /v1/pets` | `tamagotchi:v1:pets-of:{userId}` | 60 s | care, primary change, starter provisioning, reservation, settlement, capture |
 | Tamagotchi | `GET /v1/pets/{petId}` | `tamagotchi:v1:pet:{petId}` | 60 s | any change to that pet |
 | Tamagotchi | `GET /v1/pet-types` | `tamagotchi:v1:pet-types` | 1 h | never changes at runtime |
-| Notification | `GET /v1/notifications` (first page) | `notification:v1:inbox:{userId}` | 30 s | a notification for the user is created or read |
-| User Management | `GET /v1/users/{userId}`, `GET /internal/v1/users` | `user-management:v1:user:{userId}` | 5 min | profile change |
+| Notification | `GET /v1/notifications` without `cursor` and with the default `limit` (20); any other page or size reads the database | `notification:v1:inbox:{userId}:20` | 30 s | a notification for the user is created or read |
+| User Management | `GET /v1/users/{userId}`, `GET /internal/v1/users` | `user-management:v1:public-user:{userId}`, holding exactly the `PublicUser` shape `{id, username}` | 5 min | profile change |
 | User Management | `GET /v1/wallet` | `user-management:v1:wallet:{userId}` | 30 s | any hold, settlement or reward for the user |
 | User Management | `GET /internal/v1/relationships` | `user-management:v1:relationship:{userId}:{otherUserId}` | 60 s | a friend or enemy change between the two |
 | Battle | `GET /v1/battles/{battleId}` | `battle:v1:battle:{battleId}` | 10 s | every turn or status change |
@@ -67,13 +69,12 @@ Gateway verifies access tokens locally with User Management's keys, so verifying
 
 | Data | Who caches | Key | TTL | Deleted when |
 | --- | --- | --- | --- | --- |
-| Refresh session | User Management, on `POST /v1/auth/refresh` and `logout` | `user-management:v1:session:{sha256(refreshToken)}` | the session's remaining lifetime, at most 1 h | the token is rotated or revoked |
-| User by ID (status, roles) | User Management | `user-management:v1:user:{userId}` | 5 min | profile, role or status change |
+| Auth user: status and roles for a user ID | User Management, for its own role and status checks; never returned by any route | `user-management:v1:auth-user:{userId}`, value `{userId, status, roles}` | 5 min | role or status change |
 | Enrollment check `GET /internal/v1/users/{userId}/packages/{packageId}` | **the caller** (Tamagotchi, Notification and any other caller) | `{caller}:v1:enrollment:{userId}:{packageId}` | 60 s; a negative answer (`404`) 10 s | a caller that already consumes `user.package-registered.v1` (Tamagotchi) deletes the negative entry when the event arrives |
 
-- Only the SHA-256 of a refresh token is ever used as a key; the token itself is never stored in the cache.
+- **Refresh sessions are not cached.** `POST /v1/auth/refresh` and `logout` keep their single-use database transaction: the session is checked and consumed or revoked atomically on every call. A cached copy could otherwise refresh a revoked token after a shard outage.
+- The auth-user record and the public profile use different keys and shapes, so an internal field can never leak into a `PublicUser` response.
 - Enrollments are only ever added, so a cached positive answer can't go stale. A negative answer is cached for just 10 s, so a fresh enrollment shows up within 10 s even for callers that don't consume the event. No new topic subscriptions are needed.
-- Revoking a session deletes its key **before** answering, so a revoked token can't be refreshed from the cache.
 
 ## Consistent-hash ring
 
@@ -82,7 +83,7 @@ Every client places keys with the same algorithm. Test vectors: [cache-ring-vect
 1. **Points.** For each node `n` in `CACHE_NODES` and each `i` from 0 to 159, compute `point("{n}#{i}")`, where `point(s)` is the first 4 bytes of `MD5(UTF-8 s)` read as a big-endian unsigned 32-bit integer. Three nodes give 480 points.
 2. **Sort** the points in ascending order (ties, which don't occur for our names, go to the lexicographically smaller node).
 3. **Lookup.** Compute `point(key)` and take the first ring point whose position is `>=` it. Past the last point, wrap to the first. That point's node owns the key.
-4. **Unavailable node.** While a node's client is failing (3 errors within 10 s; it's retried after 5 s), skip its points and continue clockwise to the next point of an available node. Its keys therefore land on its neighbours, and every other key stays where it is.
+4. **Unavailable node.** While a node's client is failing (3 errors within 10 s; it's retried after 5 s), skip its points and continue clockwise to the next point of an available node. When the client uses the node again, it flushes it first (see "Stale copies after an outage"). Its keys therefore land on its neighbours, and every other key stays where it is.
 
 **Response headers stay accurate.** `X-Cache-Node` names the node actually used, after any fall-through.
 
@@ -140,7 +141,7 @@ Each service also exports `cache_requests_total{result="hit|miss|bypass", node}`
 | Owner | Change |
 | --- | --- |
 | Every service | Read `CACHE_NODES` and `CACHE_PASSWORD`; add the ring client and its vectors test; add `cache` to `/status`; set `X-Cache` and `X-Cache-Node` on cached routes; log hits, misses and invalidations at info level |
-| User Management | Cache refresh sessions and user lookups; delete them on rotation, revocation and profile changes; cache wallets and relationships as listed |
+| User Management | Cache the public profile and the auth-user record under their separate keys, and wallets and relationships as listed; delete them on the listed changes. Refresh and logout stay database-only |
 | Battle, Guild, Package Registry, Monster Raid | Cache the reads in the table above and delete them after the listed writes |
 | Tamagotchi, Notification | Cache their reads and the enrollment check; Tamagotchi also deletes negative enrollment entries on `user.package-registered.v1` |
 | Map | Nothing to cache; only the shared client setup, if it calls cached lookups in the future |

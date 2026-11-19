@@ -103,7 +103,7 @@ Lab 5 makes the data layer survive failures and adds analytics. Releases are `5.
 | Area | What runs | Contract |
 | --- | --- | --- |
 | Replication | PostgreSQL as a three-node Patroni cluster with etcd. HAProxy keeps `postgres:5432` on the current primary and serves read-only `postgres-replicas:5433`. MongoDB runs a three-member replica set `rs0`. Every service database has two replicas and fails over automatically | [replication](contracts/replication.md) |
-| Cache | Three independent Valkey nodes, `cache-1` to `cache-3`. Each owner caches its frequent reads and its authentication lookups (sessions, user lookups, enrollment checks) with cache-aside, sharded by a shared consistent-hash ring | [cache](contracts/cache.md) |
+| Cache | Three independent Valkey nodes, `cache-1` to `cache-3`. Each owner caches its frequent reads and its authentication lookups (status and roles, enrollment checks) with cache-aside; refresh tokens stay database-only, sharded by a shared consistent-hash ring | [cache](contracts/cache.md) |
 | Transactions | The battle is one long-running saga coordinated by the Message Broker, with compensation before the result and forward-only settlement after it. `GET /services/message-broker/v1/sagas` lists sagas | [transactions](contracts/transactions.md) |
 | Analytics | A `warehouse` PostgreSQL database with a star schema, filled every 5 minutes by the CPR ETL job from each owner's `etl` views on the replicas. Grafana has a "Game analytics" dashboard | [data warehouse](contracts/data-warehouse.md) |
 
