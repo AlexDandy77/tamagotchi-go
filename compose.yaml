@@ -23,7 +23,8 @@ x-patroni: &patroni
           retry_timeout: 10
           maximum_lag_on_failover: 1048576
           synchronous_mode: true
-          synchronous_mode_strict: false
+          # Never confirm a write on the primary alone: with both replicas down, commits wait.
+          synchronous_mode_strict: true
           failsafe_mode: true
           postgresql:
             parameters:

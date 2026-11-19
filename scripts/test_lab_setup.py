@@ -69,7 +69,9 @@ class StartupImagesTests(unittest.TestCase):
 
     def test_startup_completes_without_deleted_demo_helper(self):
         with patch.object(lab, 'refresh_images'), patch.object(lab, 'provision'), patch.object(lab, 'compose') as compose, \
-                patch.object(lab, 'wait_for_primary') as wait, patch.object(lab, 'copy_lab4_database') as copy, patch('sys.argv', ['lab.py', 'up']):
+                patch.object(lab, 'wait_for_primary') as wait, patch.object(lab, 'ensure_cluster_settings'), \
+                patch.object(lab, 'copy_lab4_database') as copy, patch.object(lab, 'grant_etl_reader') as grant, \
+                patch('sys.argv', ['lab.py', 'up']):
             lab.main()
         # The data stores start first (Lab 5: the Patroni cluster, HAProxy and the Mongo replica set);
         # every event goes through the Message Broker, so no Kafka.
@@ -77,6 +79,7 @@ class StartupImagesTests(unittest.TestCase):
         self.assertIn('haproxy', lab.DATA_SERVICES)
         wait.assert_called_once_with()
         copy.assert_called_once_with()
+        grant.assert_called_once_with()  # after migrations, so every service's etl views are readable
         self.assertEqual(compose.call_args.args, ('up', '-d', '--wait', '--pull', 'never', '--remove-orphans'))
 
     def test_missing_release_aborts_startup(self):

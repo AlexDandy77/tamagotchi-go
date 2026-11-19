@@ -219,6 +219,15 @@ def wait_for_primary(timeout=120):
             raise SystemExit('The PostgreSQL cluster elected no primary; see: docker compose logs postgres-1')
         time.sleep(2)
 
+def ensure_cluster_settings():
+    """Patroni reads its bootstrap settings only when a cluster is first created; applying them to
+    the live cluster configuration keeps existing clusters in line (contracts/replication.md)."""
+    running = set(compose('ps', '--services', '--status', 'running', stdout=subprocess.PIPE).stdout.decode().split())
+    node = next(n for n in POSTGRES_NODES if n in running)
+    compose('exec', '-T', node, 'patronictl', 'edit-config', '--force', '--quiet',
+            '--set', 'synchronous_mode=true', '--set', 'synchronous_mode_strict=true', '--set', 'failsafe_mode=true',
+            stdout=subprocess.DEVNULL)
+
 def copy_lab4_database():
     """Once: copies Lab 4's single-server volume into the cluster, leaving the old volume untouched."""
     if psql("SELECT to_regclass('public.lab5_copied_from_lab4') IS NOT NULL", capture=True) == 't':
@@ -332,6 +341,7 @@ def main():
         refresh_images()
         compose('up', '-d', '--wait', '--pull', 'never', *DATA_SERVICES)
         wait_for_primary()
+        ensure_cluster_settings()
         copy_lab4_database()
         provision()
         for service in SERVICES:
