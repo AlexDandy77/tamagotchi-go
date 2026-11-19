@@ -60,8 +60,8 @@ def token():
     return _token['alice']
 
 
-def http(method, url, body=None, key=False):
-    headers = {'Authorization': 'Bearer ' + token(), 'Content-Type': 'application/json'}
+def http(method, url, body=None, key=False, bearer=None):
+    headers = {'Authorization': 'Bearer ' + (bearer or token()), 'Content-Type': 'application/json'}
     if key:
         headers['Idempotency-Key'] = str(uuid.uuid4())
     data = json.dumps(body).encode() if body is not None else None
@@ -71,6 +71,21 @@ def http(method, url, body=None, key=False):
             return response.status, response.headers, json.loads(response.read() or b'null')
     except urllib.error.HTTPError as error:
         return error.code, error.headers, error.read()
+
+
+def fresh_player():
+    """A new account with its starter pet, so the demo never depends on what earlier battles captured."""
+    name = 'lab5demo' + uuid.uuid4().hex[:10]
+    session = request(USERS, 'POST', '/v1/auth/register',
+                      {'username': name, 'email': name + '@demo.invalid', 'password': lab.environment()['SEED_PASSWORD'],
+                       'packageId': '11111111-1111-4111-8111-111111111111'}, expected=201)
+    bearer = session['accessToken']
+    for _ in range(60):  # the starter pet arrives through user.package-registered.v1
+        roster = http('GET', PETS + '/v1/pets', bearer=bearer)[2]
+        if roster.get('pets'):
+            return bearer, roster
+        time.sleep(1)
+    raise RuntimeError('the new player received no starter pet within 60 s')
 
 
 def show(status, headers):
@@ -126,13 +141,15 @@ def grade4():
                          'SELECT count(*) FROM fact_care_action')
         return int(result.stdout.strip() or 0) if result.returncode == 0 else 0
 
-    lab.compose('run', '--rm', '--no-deps', '--pull', 'never', 'etl', '--once', stdout=subprocess.DEVNULL, check=False)
+    lab.compose('run', '--rm', '--no-deps', '--pull', 'never', 'etl', '--once', stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, check=False)
     before = facts()
-    status, _, roster = http('GET', PETS + '/v1/pets')
-    pet = next(p for p in roster['pets'] if p['id'] == roster['primaryPetId']) if roster.get('primaryPetId') else roster['pets'][0]
+    bearer, roster = fresh_player()
+    pet = roster['pets'][0]
     cared = False
     for action in ('feed', 'play', 'rest'):
-        status, _, body = http('POST', f"{PETS}/v1/pets/{pet['id']}/care", {'actionId': action, 'expectedVersion': pet['version']}, key=True)
+        status, _, body = http('POST', f"{PETS}/v1/pets/{pet['id']}/care", {'actionId': action, 'expectedVersion': pet['version']},
+                               key=True, bearer=bearer)
         if status == 200:
             cared = True
             print(f'   cared for {pet["name"]} with "{action}"')
@@ -221,11 +238,20 @@ def grade7():
     compose('stop', home)
     try:
         time.sleep(2)
-        results = [http('GET', PETS + '/v1/pets') for _ in range(5)]
+        # Each replica skips a node after 3 failures within 10 s; until then it answers BYPASS
+        # (read from the database). Keep asking until the replicas have all moved on.
+        results = []
+        for _ in range(40):
+            results.append(http('GET', PETS + '/v1/pets'))
+            if [r[1].get('X-Cache-Node') for r in results[-4:]] == [fallback] * 4:
+                break
+        bypassed = sum(1 for r in results if r[1].get('X-Cache') == 'BYPASS')
+        print(f'   {bypassed} requests answered BYPASS (database) while the replicas noticed {home} was gone')
         for status, headers, _ in results[-2:]:
             print('   ', show(status, headers))
         check('every request still answers 200', all(r[0] == 200 for r in results))
-        check(f'the key moved to the next node on the ring ({fallback})', results[-1][1].get('X-Cache-Node') == fallback)
+        check(f'the key moved to the next node on the ring ({fallback}) and hits there',
+              results[-1][1].get('X-Cache-Node') == fallback and results[-1][1].get('X-Cache') == 'HIT')
         if other_node != home:
             status, headers, _ = http('GET', PETS + '/v1/pet-types')
             check(f'a key on {other_node} did not move and still hits', headers.get('X-Cache-Node') == other_node
@@ -259,8 +285,8 @@ def grade9():
     section('Grade 9: a battle saga coordinated by the Message Broker')
     image = json.loads(compose('config', '--format', 'json').stdout)['services']['message-broker']['image']
     saga_id = str(uuid.uuid4())
-    roster = http('GET', PETS + '/v1/pets')[2]
-    me = http('GET', USERS + '/v1/users/me')[2]['id']
+    bearer, roster = fresh_player()
+    me = http('GET', USERS + '/v1/users/me', bearer=bearer)[2]['id']
     primary = roster.get('primaryPetId') or roster['pets'][0]['id']
     # Started as Battle would: hold both stakes, then reserve the pets. A real battle has two players.
     data = {'hold': {'participants': [{'userId': me, 'boostIds': []}], 'rulesVersion': 1},
@@ -279,11 +305,16 @@ def grade9():
     print(f"   saga {saga_id}: {result['state']}" + (f" ({result['reason']})" if result['reason'] else ''))
     for name, status, attempts, http_status in result['steps']:
         print(f'     {name:15} {status:12} attempts={attempts} last={http_status or "-"}')
-    check('the saga reached a resting state', result['state'] in ('waiting', 'compensated', 'completed'))
-    if result['state'] == 'compensated':
-        print('   (Battle does not serve its saga routes yet, so start-combat fails and everything is given back)')
-        check('every attempted reservation was released', all(s[1] in ('compensated', 'pending') for s in result['steps']
-                                                               if s[0] in ('reserve-stakes', 'reserve-pets')))
+    attempted = [st for st in result['steps'] if st[0] in ('reserve-stakes', 'reserve-pets') and st[2] > 0]
+    released = all(st[1] in ('compensated', 'done') for st in attempted)
+    if result['state'] in ('compensating', 'compensated'):
+        check('every attempted reservation was released', released and all(st[1] == 'compensated' for st in attempted),
+              ', '.join(f'{st[0]}={st[1]}' for st in attempted))
+        if result['state'] == 'compensating':
+            print('   The broker keeps retrying the "cancelled" outcome on Battle (PUT /internal/v1/battle-outcomes):')
+            print('   it completes once Battle serves its Lab 5 saga routes (MIGRATION.md in the broker repository).')
+    else:
+        check('the saga reached a resting state', result['state'] in ('waiting', 'completed'), result['state'])
     for entry in logs('message-broker', since, 'saga')[:8]:
         print(f"   broker log: {entry['msg']} step={entry.get('step', '-')} status={entry.get('status', '-')}")
     status, _, body = http('GET', f'{ADMIN}/v1/sagas/{saga_id}')

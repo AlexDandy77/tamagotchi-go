@@ -14,8 +14,17 @@ try {
   initiated = false;
 }
 if (!initiated) db.adminCommand({ replSetInitiate: { _id: 'rs0', members: [{ _id: 0, host }] } });
-for (let attempt = 0; attempt < 60 && !db.hello().isWritablePrimary; attempt += 1) sleep(500);
-if (!db.hello().isWritablePrimary) throw new Error('replica set has no primary');
+// Lab 5: with three members, the primary may be another member (after an election). Wait for
+// one, then continue on it: configuration and users can only be changed on the primary.
+let primary = null;
+for (let attempt = 0; attempt < 60 && !primary; attempt += 1) {
+  primary = db.hello().primary || null;
+  if (!primary) sleep(500);
+}
+if (!primary) throw new Error('replica set has no primary');
+if (!db.hello().isWritablePrimary) {
+  db = connect(`mongodb://root:${encodeURIComponent(rootPassword)}@${primary}/admin?directConnection=true`);
+}
 
 // Lab 5 (contracts/replication.md): grow rs0 to every listed member. MongoDB accepts one new
 // voting member per reconfiguration, so they are added one at a time.
