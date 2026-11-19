@@ -2,9 +2,7 @@ name: tamagotchi-lab1
 # Lab 5 (contracts/replication.md): three PostgreSQL 17 nodes managed by Patroni. The node
 # holding the leader lock in etcd is the primary; one replica is synchronous, so a confirmed
 # commit is on two nodes. HAProxy keeps the address postgres:5432 on the current primary.
-x-patroni: &patroni
-  image: ghcr.io/zalando/spilo-17:4.0-p3
-  environment:
+x-patroni-environment: &patroni-environment
     SCOPE: tamagotchi
     PGVERSION: '17'
     ETCD3_HOSTS: '"etcd:2379"'
@@ -30,6 +28,8 @@ x-patroni: &patroni
             parameters:
               # Replicas share this server; leave room for bounded pools and leader connections.
               max_connections: ${POSTGRES_MAX_CONNECTIONS:-250}
+x-patroni: &patroni
+  image: ghcr.io/zalando/spilo-17:4.0-p3
   healthcheck:
     test: [CMD-SHELL, 'curl -fs http://localhost:8008/health >/dev/null']
     interval: 3s
@@ -70,16 +70,31 @@ services:
   postgres-1:
     <<: *patroni
     hostname: postgres-1
+    environment:
+      <<: *patroni-environment
+      # Spilo advertises these instead of the container IP: IPs change when Docker restarts, names don't.
+      PG_CONNECT_ADDRESS: postgres-1:5432
+      RESTAPI_CONNECT_ADDRESS: postgres-1:8008
     volumes:
       - postgres-1-data:/home/postgres/pgdata
   postgres-2:
     <<: *patroni
     hostname: postgres-2
+    environment:
+      <<: *patroni-environment
+      # Spilo advertises these instead of the container IP: IPs change when Docker restarts, names don't.
+      PG_CONNECT_ADDRESS: postgres-2:5432
+      RESTAPI_CONNECT_ADDRESS: postgres-2:8008
     volumes:
       - postgres-2-data:/home/postgres/pgdata
   postgres-3:
     <<: *patroni
     hostname: postgres-3
+    environment:
+      <<: *patroni-environment
+      # Spilo advertises these instead of the container IP: IPs change when Docker restarts, names don't.
+      PG_CONNECT_ADDRESS: postgres-3:5432
+      RESTAPI_CONNECT_ADDRESS: postgres-3:8008
     volumes:
       - postgres-3-data:/home/postgres/pgdata
   # Answers as postgres:5432 (primary) and postgres-replicas:5433 (replicas); its statistics

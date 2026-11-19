@@ -60,7 +60,7 @@ def token():
     return _token['alice']
 
 
-def http(method, url, body=None, key=False, bearer=None):
+def http(method, url, body=None, key=False, bearer=None, retry=True):
     headers = {'Authorization': 'Bearer ' + (bearer or token()), 'Content-Type': 'application/json'}
     if key:
         headers['Idempotency-Key'] = str(uuid.uuid4())
@@ -70,6 +70,9 @@ def http(method, url, body=None, key=False, bearer=None):
         with urllib.request.urlopen(req, timeout=20) as response:
             return response.status, response.headers, json.loads(response.read() or b'null')
     except urllib.error.HTTPError as error:
+        if error.code == 401 and bearer is None and retry:
+            _token.clear()  # access tokens last 15 minutes: log in again once
+            return http(method, url, body, key, bearer, retry=False)
         return error.code, error.headers, error.read()
 
 
@@ -172,14 +175,14 @@ def grade5():
     if not check('the cluster has a leader', leader is not None):
         return
     print(f'   primary now: {leader}; replicas: {", ".join(n["Member"] for n in nodes if n["Role"] != "Leader")}')
-    lab.psql('CREATE TABLE IF NOT EXISTS lab5_failover_probe (at timestamptz DEFAULT now())')
+    lab.psql('CREATE TABLE IF NOT EXISTS lab5_failover_probe (at timestamptz DEFAULT now())', timeout=10)
     results, stop = [], threading.Event()
 
     def writer():
         start = time.monotonic()
         while not stop.is_set():
             try:
-                lab.psql('INSERT INTO lab5_failover_probe DEFAULT VALUES')
+                lab.psql('INSERT INTO lab5_failover_probe DEFAULT VALUES', timeout=5)
                 results.append((time.monotonic() - start, True))
             except subprocess.CalledProcessError:
                 results.append((time.monotonic() - start, False))
@@ -201,7 +204,10 @@ def grade5():
     check('writes resumed after the failover', results and results[-1][1],
           f'{len(results)} writes, {len(failed)} failed, unavailable for about {gap:.0f} s')
     compose('start', leader)
-    lab.psql('DROP TABLE lab5_failover_probe')
+    try:
+        lab.psql('DROP TABLE IF EXISTS lab5_failover_probe', timeout=10)
+    except subprocess.CalledProcessError:
+        print('   (could not drop the probe table now; it is harmless)')
     print(f'   {leader} restarted; it rejoins as a replica (python3 scripts/lab.py db-status)')
 
 
@@ -227,7 +233,10 @@ def grade7():
         moved = sum(1 for k in keys if node_for(k) != node_for(k, (down,)))
         own = sum(1 for k in keys if node_for(k) == down)
         print(f'   without {down}: {moved} of 1000 keys move, exactly the {own} it held')
-    user_id = http('GET', USERS + '/v1/users/me')[2]['id']
+    status, _, me = http('GET', USERS + '/v1/users/me')
+    if not check('Alice can read her profile', status == 200, f'GET /v1/users/me answered {status}'):
+        return
+    user_id = me['id']
     key = f'tamagotchi:v1:pets-of:{user_id}'
     home, fallback = node_for(key), node_for(key, (node_for(key),))
     status, headers, _ = http('GET', PETS + '/v1/pets')
@@ -283,7 +292,8 @@ print(json.dumps({'state': state.state, 'reason': state.failure_reason,
 
 def grade9():
     section('Grade 9: a battle saga coordinated by the Message Broker')
-    image = json.loads(compose('config', '--format', 'json').stdout)['services']['message-broker']['image']
+    # The image the broker is running now (it may be a local build), not what Compose would pull.
+    image = compose('ps', 'message-broker', '--format', '{{.Image}}').stdout.strip().splitlines()[0]
     saga_id = str(uuid.uuid4())
     bearer, roster = fresh_player()
     me = http('GET', USERS + '/v1/users/me', bearer=bearer)[2]['id']
@@ -330,6 +340,7 @@ def main(argv):
     os.environ.setdefault('PYTHONUTF8', '1')
     token()
     for name in (GRADES if argv[0] == 'all' else [argv[0]]):
+        _token.clear()  # a fresh login per grade: a long grade must not leave an expired token behind
         try:
             GRADES[name]()
         except Exception as error:  # report and continue with the next grade

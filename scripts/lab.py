@@ -194,14 +194,19 @@ def check_password(value):
         raise ValueError('Use a URL-safe database password of 24–128 characters')
     return value
 
-def psql(sql, database='postgres', capture=False, host='postgres'):
+def psql(sql, database='postgres', capture=False, host='postgres', timeout=None):
     """Runs SQL as the superuser through HAProxy (postgres:5432 is always the primary).
 
     A throwaway client container on the Compose network, so this works whichever node is
     primary or stopped. The password travels in the environment, never in arguments.
     """
     env = {**os.environ, 'PGPASSWORD': environment()['POSTGRES_PASSWORD']}
-    result = run(['docker', 'run', '--rm', '-i', '--network', f'{PROJECT}_default', '-e', 'PGPASSWORD', TOOLS_IMAGE,
+    limits = []
+    if timeout:
+        # The server cancels a statement (or a commit waiting for a standby) after `timeout` seconds.
+        env.update(PGCONNECT_TIMEOUT='3', PGOPTIONS=f'-c statement_timeout={int(timeout * 1000)}')
+        limits = ['-e', 'PGCONNECT_TIMEOUT', '-e', 'PGOPTIONS']
+    result = run(['docker', 'run', '--rm', '-i', '--network', f'{PROJECT}_default', '-e', 'PGPASSWORD', *limits, TOOLS_IMAGE,
                   'psql', '-h', host, '-U', 'postgres', '-d', database, '-v', 'ON_ERROR_STOP=1', '-qAt'],
                  input=sql.encode(), env=env, stdout=subprocess.PIPE if capture else subprocess.DEVNULL)
     return result.stdout.decode().strip() if capture else None
