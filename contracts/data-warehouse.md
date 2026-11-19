@@ -71,18 +71,30 @@ The ETL **never reads an owner's tables**. Each owner creates a schema `etl` in 
 | `fact_notification` | notification | `notification_id`, `date_key`, `user_id`, `type`, `read_after_seconds` |
 
 Transform rules:
-- **Joins happen here, not in the sources.** `fact_care_action.pet_type` comes from `etl.pets`. `fact_battle.captured_pet_id` comes from `etl.ownership_transfers`, and `fact_battle.package_id` is the package of the captured pet, or the winner's when nothing was captured. `fact_raid_participation.won` comes from the raid's status.
+- **Joins happen here, from the staging tables, not in the sources** (see [Incremental runs](#incremental-runs-staging-then-facts)). `fact_care_action.pet_type` comes from `etl.pets`. `fact_battle.captured_pet_id` comes from `etl.ownership_transfers`, and `fact_battle.package_id` is the package of the captured pet, or the winner's when nothing was captured. `fact_raid_participation.won` comes from the raid's status.
 - **Times → `date_key`** in UTC. Durations are computed from the two timestamps.
 - **IDs stay the services' UUIDs.** They're unique across services, so no surrogate keys are needed.
 
-## Incremental runs
+## Incremental runs: staging, then facts
 
-1. For each view, read `etl.watermarks(source, view, last_updated_at)` from the warehouse.
-2. Extract rows with `updated_at > last_updated_at − 60 s`, ordered by `updated_at`, in pages of 5,000. The 60-second look-back catches transactions that committed late with an older timestamp.
-3. Transform, then **upsert** into the target table on its natural key (`INSERT … ON CONFLICT DO UPDATE`), so re-reading a row is harmless.
-4. Commit the page and advance the watermark in the same warehouse transaction. A crashed run repeats at most one page.
+The ETL loads in two stages, so a fact that joins several sources is always rebuilt from complete inputs:
 
-One run handles each source independently. An unreachable source is logged (`etl source unavailable`), skipped and retried next run, and the other sources still load. Every run logs `etl run finished` with rows per view and its duration, and writes a row to `etl.runs`.
+1. **Stage each source.** Every view has a staging table in the warehouse (`stg_tamagotchi_pets`, `stg_battle_battles`, …) with the view's exact columns:
+   - read `etl.watermarks(source, view, last_updated_at)`;
+   - extract rows with `updated_at > last_updated_at − 60 s`, ordered by `updated_at`, in pages of 5,000 (the 60-second look-back catches transactions that committed late with an older timestamp);
+   - upsert them into the staging table on the natural key, and advance the watermark in the same transaction. A crashed run repeats at most one page.
+
+   An unreachable source is logged (`etl source unavailable`) and skipped; its staging table and watermark stay as they were and catch up on a later run.
+2. **Rebuild the affected facts.** Each fact lists its inputs: `fact_battle` reads `stg_battle_battles`, `stg_tamagotchi_ownership_transfers` and `stg_tamagotchi_pets`. A run collects the keys whose rows changed in **any** of a fact's inputs during this run, for example every `battle_id` whose battle row or transfer row arrived. It then recomputes exactly those facts from the staging tables with `INSERT … ON CONFLICT DO UPDATE`.
+
+So a late source repairs the facts it feeds. If Battle loaded first and Tamagotchi's transfers were unreachable, `fact_battle` first has no `captured_pet_id`. The run in which the transfer arrives recomputes that battle's fact, even though the battle row itself didn't change. Facts whose inputs are incomplete are marked `complete = false`, and the dashboard counts them separately.
+
+Every run logs `etl run finished` with rows per view, facts recomputed and its duration, and writes a row to `etl.runs`.
+
+**Validation, including outages:**
+- **Normal run:** after a smoke run, every fact matches its staging rows.
+- **Late source:** stop the Tamagotchi containers, run the ETL (the battle fact is incomplete), start them again, and run it again. The fact now has `captured_pet_id` and `complete = true`.
+- **Reruns:** running the ETL twice in a row changes no fact.
 
 ## Example questions
 
