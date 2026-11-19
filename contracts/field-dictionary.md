@@ -478,11 +478,11 @@ action: "attack" / "forfeit"
 
 #### BattleOutcomeInput
 
-Saga coordinator only. finished after both settlements; cancelled after compensation, with the reason.
+Saga coordinator only. finished after both settlements; cancelled after (or, for an uncertain start, before) compensation, with the reason. reason is sent only with cancelled.
 
 ```text
 status: "finished" / "cancelled"
-reason: string or null
+reason?: string or null
 ```
 
 #### Battle

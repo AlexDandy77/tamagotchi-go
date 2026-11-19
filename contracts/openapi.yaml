@@ -5432,7 +5432,7 @@ components:
       - expectedTurn
       - action
     BattleOutcomeInput:
-      description: Saga coordinator only. finished after both settlements; cancelled after compensation, with the reason.
+      description: Saga coordinator only. finished after both settlements; cancelled after (or, for an uncertain start, before) compensation, with the reason. reason is sent only with cancelled.
       type: object
       additionalProperties: false
       properties:
@@ -5448,7 +5448,6 @@ components:
           - type: 'null'
       required:
       - status
-      - reason
     Battle:
       description: Only participants may read. Currency/pet effects become final when settlement is complete.
       type: object
