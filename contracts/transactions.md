@@ -30,11 +30,21 @@ Battle starts one saga per battle when the opponent accepts. The saga's ID is th
 | — | *wait* | The saga waits until Battle signals the result with `Saga.Signal(battleId, "finished", {winnerId, loserId})` | — |
 | 4 | `settle-stakes` | User Management `PUT /internal/v1/battle-settlements/{battleId}` with `BattleMoneyResult` | none: after the pivot |
 | 5 | `settle-pets` | Tamagotchi `PUT /internal/v1/pet-battle-settlements/{battleId}` with `PetBattleResult` | none: after the pivot |
-| 6 | `finish` | Battle `PUT /internal/v1/battle-outcomes/{battleId}` with `{status: "finished"}` | none: after the pivot |
+| 6 | `finish` | Battle `PUT /internal/v1/battle-outcomes/{battleId}` with `{status: "finished"}` (`reason` is only sent with `cancelled`) | none: after the pivot |
 
 **The pivot is the `finished` signal.** Before it, the saga can still be undone. After it, the result is decided, and the README rule applies: a completed reward is never reversed. The settlement steps are therefore only ever **retried forward**, never compensated.
 
-**Undoing before the pivot.** A step can fail *permanently*: a `4xx` other than `408`/`429`, for example a `409` because a player lacks the 10-coin stake or a pet is already reserved. The step can also fail *transiently* until its 60-second budget runs out: transport errors, `503` and `504`. Either way, the broker runs the compensations of the completed steps in reverse order, then calls Battle `PUT /internal/v1/battle-outcomes/{battleId}` with `{status: "cancelled", reason}`. The same happens when Battle signals `cancelled` before combat starts, for example when the challenger cancels during `preparing`.
+**Undoing before the pivot.** A step can fail *permanently*: a `4xx` other than `408`/`429`, for example a `409` because a player lacks the 10-coin stake or a pet is already reserved. It can also fail *transiently* until its 60-second budget runs out: transport errors, `503` and `504`. A transient failure leaves the outcome **unknown**: the hold may have committed even though its answer was lost. So the broker compensates every step it **attempted**, not only the ones it saw succeed:
+
+1. **Resolve `start-combat` first** if it was attempted. The broker calls Battle `PUT /internal/v1/battle-outcomes/{battleId}` with `{status: "cancelled", reason}`.
+   - If Battle answers `200`, the battle is fenced: it can never become active, and a late `battle-starts` call answers `409 BATTLE_CANCELLED`.
+   - If Battle answers `409 BATTLE_ACTIVE`, combat did start, so there is nothing to undo; the saga continues to *waiting* instead.
+2. **Release the reservations** in reverse order, pets then stakes: `DELETE /internal/v1/pet-reservations/{battleId}`, then `DELETE /internal/v1/battle-holds/{battleId}`. Each release is called even when its reserve step's outcome is unknown. Both are idempotent: `204` means released, and `404` means nothing was held.
+3. **Close the battle.** If step 1 didn't run, the broker calls Battle `battle-outcomes` with `cancelled` last.
+
+The saga is `compensated` only after every release answered `204` or `404`. Releases are retried until they do.
+
+**A release closes the reservation for good.** A release for an id that holds nothing records a tombstone. A reserve that arrives later for that id answers `409 RESERVATION_CLOSED`, so a delayed or retried reserve can never take coins or pets after the saga gave them back. The same happens when Battle signals `cancelled` before combat starts, for example when the challenger cancels during `preparing`.
 
 ```text
 started ──1──▶ ──2──▶ ──3──▶ waiting ──signal "finished"──▶ settling ──4──▶ ──5──▶ ──6──▶ completed
@@ -98,6 +108,7 @@ message-broker   {"level":"info","msg":"saga completed","sagaId":"…","duration
 **By hand (Postman and Docker Desktop):**
 1. **Happy path.** Play a battle to the end. `GET /services/message-broker/v1/sagas/{battleId}` shows steps 1–6 `done` and the state `completed`. The broker's logs show the same steps in order, and the User Management and Tamagotchi logs show their part with the same `sagaId`.
 2. **Compensation.** Challenge with a player who has fewer than 10 coins, or reserve a pet that is already reserved, then accept. The saga shows the failed step, the compensated steps and the state `compensated`. `GET /v1/battles/{battleId}` is `cancelled` with the reason, and the wallet shows the stake released.
+3. **Unknown outcome.** Pause the Tamagotchi containers in Docker Desktop during an accept. The reservation step runs out of budget with an unknown outcome; the broker still calls both releases and logs `saga compensation done` for each, so nothing stays held.
 
 **By script**, because timing a crash by hand is unreliable: `python3 scripts/demo_lab5.py grade9` starts a battle, stops the broker container right after the `finished` signal, starts it again, and prints the saga before and after. It resumes at the step it reached, completes once, and the coins and pets moved exactly once.
 
@@ -105,8 +116,8 @@ message-broker   {"level":"info","msg":"saga completed","sagaId":"…","duration
 
 | Owner | Change |
 | --- | --- |
-| Battle (Alexei) | On accept, call `Saga.Start` instead of calling User Management and Tamagotchi. When combat ends, call `Saga.Signal("finished")`; when cancelled before combat, `Saga.Signal("cancelled")`. Serve `PUT /internal/v1/battle-starts/{battleId}` and `PUT /internal/v1/battle-outcomes/{battleId}`. Remove the direct hold, reservation and settlement calls |
-| User Management (Alexei) | Log the received `X-Saga-Id` on the hold, release and settlement routes, which are already idempotent per battle |
-| Tamagotchi (Artur) | Log the received `X-Saga-Id` on the reservation, release and settlement routes, which are already idempotent per activity |
+| Battle (Alexei) | On accept, call `Saga.Start` instead of calling User Management and Tamagotchi. When combat ends, call `Saga.Signal("finished")`; when cancelled before combat, `Saga.Signal("cancelled")`. Serve `PUT /internal/v1/battle-starts/{battleId}` and `PUT /internal/v1/battle-outcomes/{battleId}`: `cancelled` on an active battle answers `409 BATTLE_ACTIVE`, and a start after `cancelled` answers `409 BATTLE_CANCELLED`. Remove the direct hold, reservation and settlement calls |
+| User Management (Alexei) | Log the received `X-Saga-Id` on the hold, release and settlement routes. A release of an unknown `battleId` answers `404` and records a tombstone; a later hold for that id answers `409 RESERVATION_CLOSED` |
+| Tamagotchi (Artur) | Log the received `X-Saga-Id` on the reservation, release and settlement routes. Same tombstone rule for `pet-reservations` |
 | Message Broker (Artur) | The `Saga` service, the SQLite saga store, the step runner and the admin routes |
 | Monster Raid | Nothing: raids keep their current settlement flow |
