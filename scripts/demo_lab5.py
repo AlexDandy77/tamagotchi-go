@@ -16,7 +16,6 @@ import json
 import os
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -168,6 +167,19 @@ def grade4():
     print('   Grafana: http://localhost:3000, dashboard "Game analytics (Lab 5 warehouse)"; warehouse on localhost:5434')
 
 
+PROBE = r"""
+end=$(( $(date +%s) + SECONDS_TO_RUN ))
+while [ $(date +%s) -lt $end ]; do
+  if psql -h postgres -U postgres -qAtc "INSERT INTO lab5_failover_probe DEFAULT VALUES" >/dev/null 2>&1; then
+    echo "$(date +%s.%N) ok"
+  else
+    echo "$(date +%s.%N) fail"
+  fi
+  sleep 0.5
+done
+"""
+
+
 def grade5():
     section('Grade 5: stop the primary while writes continue')
     nodes = json.loads(compose('exec', '-T', 'postgres-1', 'patronictl', 'list', '-f', 'json').stdout or '[]')
@@ -176,33 +188,32 @@ def grade5():
         return
     print(f'   primary now: {leader}; replicas: {", ".join(n["Member"] for n in nodes if n["Role"] != "Leader")}')
     lab.psql('CREATE TABLE IF NOT EXISTS lab5_failover_probe (at timestamptz DEFAULT now())', timeout=10)
-    results, stop = [], threading.Event()
-
-    def writer():
-        start = time.monotonic()
-        while not stop.is_set():
-            try:
-                lab.psql('INSERT INTO lab5_failover_probe DEFAULT VALUES', timeout=5)
-                results.append((time.monotonic() - start, True))
-            except subprocess.CalledProcessError:
-                results.append((time.monotonic() - start, False))
-                time.sleep(0.5)
-
-    thread = threading.Thread(target=writer)
-    thread.start()
-    time.sleep(4)
+    # One long-lived client writes every 0.5 s through postgres:5432 (HAProxy) and timestamps each
+    # attempt, so the measurement is the database's outage, not container start-up time.
+    env = {**os.environ, 'PGPASSWORD': lab.environment()['POSTGRES_PASSWORD'], 'PGCONNECT_TIMEOUT': '2',
+           'PGOPTIONS': '-c statement_timeout=3000'}
+    probe = subprocess.Popen(
+        ['docker', 'run', '--rm', '-i', '--network', f'{lab.PROJECT}_default', '-e', 'PGPASSWORD', '-e', 'PGCONNECT_TIMEOUT',
+         '-e', 'PGOPTIONS', lab.TOOLS_IMAGE, 'bash', '-c', PROBE.replace('SECONDS_TO_RUN', '75')],
+        stdout=subprocess.PIPE, text=True, env=env)
+    time.sleep(6)
+    stopped_at = time.time()
     print(f'   stopping {leader} (as the Stop button in Docker Desktop does)')
     compose('stop', leader)
-    time.sleep(40)
-    stop.set()
-    thread.join()
-    failed = [t for t, ok in results if not ok]
-    gap = (failed[-1] - failed[0]) if failed else 0
+    output, _ = probe.communicate(timeout=120)
+    results = [(float(line.split()[0]), line.split()[1] == 'ok') for line in output.splitlines() if line.strip()]
+    first_fail = next((t for t, ok in results if not ok and t >= stopped_at - 1), None)
+    recovered = next((t for t, ok in results if ok and first_fail is not None and t > first_fail), None)
     nodes = json.loads(compose('exec', '-T', next(n for n in lab.POSTGRES_NODES if n != leader), 'patronictl', 'list', '-f', 'json').stdout or '[]')
     new_leader = next((n['Member'] for n in nodes if n['Role'] == 'Leader'), None)
     check('a replica was promoted', new_leader not in (None, leader), f'new primary: {new_leader}')
-    check('writes resumed after the failover', results and results[-1][1],
-          f'{len(results)} writes, {len(failed)} failed, unavailable for about {gap:.0f} s')
+    if first_fail is None:
+        check('writes kept working', bool(results) and results[-1][1], f'{len(results)} writes, none failed')
+    else:
+        failed = sum(1 for t, ok in results if not ok)
+        check('writes resumed after the failover', recovered is not None,
+              f'{len(results)} writes, {failed} failed; writes unavailable for {recovered - first_fail:.1f} s' if recovered
+              else f'{len(results)} writes, {failed} failed, never recovered in 75 s')
     compose('start', leader)
     try:
         lab.psql('DROP TABLE IF EXISTS lab5_failover_probe', timeout=10)
