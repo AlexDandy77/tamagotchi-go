@@ -59,10 +59,10 @@ HAProxy closes the client sessions of a node that stops being primary (`on-marke
 
 ## MongoDB
 
-Package Registry's database runs on the replica set `rs0` with three members, `mongo-1`, `mongo-2` and `mongo-3` (previously one member):
+Package Registry's database runs on the replica set `rs0` with three members, `mongo` (the existing one, so its data and configuration stay), `mongo-2` and `mongo-3`:
 
 - Members elect a primary by majority vote. If the primary fails, a new one is elected in about 10–12 s.
-- Registry's URL lists every member: `mongodb://registry:…@mongo-1:27017,mongo-2:27017,mongo-3:27017/registry?replicaSet=rs0&authSource=registry`. The driver finds and follows the primary by itself.
+- Registry's URL keeps one seed host: `mongodb://registry:…@mongo:27017/registry?replicaSet=rs0&authSource=registry&w=majority`. With `replicaSet` set, the driver learns every member from the seed and follows the primary by itself after an election.
 - Writes use `w: majority`, so a confirmed write is on two members and survives a failover.
 - The members share the existing keyfile. `lab.py up` initiates the set, or adds the new members to an existing one.
 
@@ -88,6 +88,6 @@ Leader election needs a **majority**. With two nodes, losing one leaves one of t
 | --- | --- |
 | All PostgreSQL services | No URL change. Check that the pool replaces broken connections, retries once for reads and idempotent writes, and reports not ready while the database is unreachable |
 | Go services with an advisory-lock leader (User Management, Battle, Map, Monster Raid) | Treat a lost database session as lost leadership: stop the workers and compete for the lock again |
-| Package Registry | Use the three-host URL from Compose and `w: majority` |
+| Package Registry | Nothing: the URL in Compose adds `w=majority`, and the driver already follows elections |
 | Tamagotchi, Notification | Same pool and readiness checks (`pg` pool `error` handling) |
 | Every service | Log a lost database connection once at warning level (`database connection lost, reconnecting`) and the recovery at info level (`database connection restored`) |

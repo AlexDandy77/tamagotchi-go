@@ -7,7 +7,8 @@ from smoke import request,USERS
 # Run only against a disposable local lab: briefly interrupts APIs and the Message Broker.
 
 def sql(db,query):
- return lab.compose('exec','-T','postgres','psql','-U','postgres','-d',db,'-At','-c',query,stdout=subprocess.PIPE).stdout.decode().strip()
+ # Lab 5: through HAProxy, so it reaches whichever cluster node is primary.
+ return lab.psql(query,database=db,capture=True)
 def snapshot():
  return [sql(db,"SELECT md5(string_agg(kind||id||body::text,',' ORDER BY kind,id)) FROM records") for db in ['users','battles']]
 before=snapshot();lab.provision()
@@ -16,7 +17,8 @@ for s in lab.SERVICES:
  lab.compose('run','--rm','--no-deps',s,'seed')
 assert before==snapshot(),'Provision/migrate/seed changed existing data'
 lab.compose('stop','user-management','battle')
-before=snapshot();lab.compose('up','-d','--force-recreate','--wait','postgres');assert before==snapshot(),'Postgres recreation lost data'
+# Lab 5: recreating the primary's container fails over; the data must survive on the cluster.
+before=snapshot();lab.compose('up','-d','--force-recreate','--wait',*lab.POSTGRES_NODES);lab.wait_for_primary();assert before==snapshot(),'Postgres recreation lost data'
 def status(path,token):
  try:
   with urllib.request.urlopen(urllib.request.Request(USERS+path,headers={'Authorization':'Bearer '+token}),timeout=15) as r:return r.status
@@ -40,6 +42,6 @@ for _ in range(40):
  time.sleep(.25)
 else:raise AssertionError('outbox did not recover')
 # A service role must not connect to the other database.
-r=lab.compose('exec','-T','postgres','psql','-U','postgres','-At','-c',"SELECT has_database_privilege('users','battles','CONNECT'),has_database_privilege('battles','users','CONNECT')",stdout=subprocess.PIPE)
-assert r.stdout.strip()==b'f|f','Cross-database connection allowed'
+r=lab.psql("SELECT has_database_privilege('users','battles','CONNECT'),has_database_privilege('battles','users','CONNECT')",capture=True)
+assert r=='f|f','Cross-database connection allowed'
 print('Verified: repeatable provisioning/migrations/seeds, database recreation, database isolation, Message Broker outage recovery.')

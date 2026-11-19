@@ -45,7 +45,8 @@ def stored(token, start):
 
 def wait_for_empty_outbox():
     for _ in range(40):
-        if output('postgres', 'psql', '-U', 'postgres', '-d', 'locations', '-At', '-c', 'SELECT count(*) FROM outbox') == '0':
+        # Lab 5: through HAProxy (postgres:5432 is the cluster's primary).
+        if lab.psql('SELECT count(*) FROM outbox', database='locations', capture=True) == '0':
             return
         time.sleep(.25)
     raise AssertionError('Map did not publish its outbox')

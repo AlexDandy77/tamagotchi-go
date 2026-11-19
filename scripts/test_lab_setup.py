@@ -68,10 +68,15 @@ class StartupImagesTests(unittest.TestCase):
         self.assertNotIn(values['SEED_PASSWORD'], output.getvalue())
 
     def test_startup_completes_without_deleted_demo_helper(self):
-        with patch.object(lab, 'refresh_images'), patch.object(lab, 'provision'), patch.object(lab, 'compose') as compose, patch('sys.argv', ['lab.py', 'up']):
+        with patch.object(lab, 'refresh_images'), patch.object(lab, 'provision'), patch.object(lab, 'compose') as compose, \
+                patch.object(lab, 'wait_for_primary') as wait, patch.object(lab, 'copy_lab4_database') as copy, patch('sys.argv', ['lab.py', 'up']):
             lab.main()
-        # The data stores start first; every event goes through the Message Broker, so no Kafka.
-        self.assertEqual(compose.call_args_list[0].args, ('up', '-d', '--wait', '--pull', 'never', 'postgres', 'mongo'))
+        # The data stores start first (Lab 5: the Patroni cluster, HAProxy and the Mongo replica set);
+        # every event goes through the Message Broker, so no Kafka.
+        self.assertEqual(compose.call_args_list[0].args, ('up', '-d', '--wait', '--pull', 'never', *lab.DATA_SERVICES))
+        self.assertIn('haproxy', lab.DATA_SERVICES)
+        wait.assert_called_once_with()
+        copy.assert_called_once_with()
         self.assertEqual(compose.call_args.args, ('up', '-d', '--wait', '--pull', 'never', '--remove-orphans'))
 
     def test_missing_release_aborts_startup(self):
