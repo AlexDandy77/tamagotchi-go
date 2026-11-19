@@ -24,7 +24,7 @@ SECRET_KEYS = (
     'RAIDS_DB_PASSWORD', 'TAMAGOTCHI_DB_PASSWORD', 'NOTIFICATION_DB_PASSWORD',
     'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD', 'GRAFANA_ADMIN_PASSWORD',
     # Lab 5: Patroni's replication user, the shared cache and the ETL's read-only role.
-    'POSTGRES_REPLICATION_PASSWORD', 'CACHE_PASSWORD', 'ETL_DB_PASSWORD',
+    'POSTGRES_REPLICATION_PASSWORD', 'CACHE_PASSWORD', 'ETL_DB_PASSWORD', 'WAREHOUSE_PASSWORD',
 )
 PROJECT = 'tamagotchi-lab1'
 # Lab 5 (contracts/replication.md): the database cluster and the Mongo replica set.
@@ -333,8 +333,10 @@ def db_status():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['setup', 'up', 'provision', 'migrate', 'seed', 'down', 'status', 'db-status'])
-    command = parser.parse_args().command
+    parser.add_argument('command', choices=['setup', 'up', 'provision', 'migrate', 'seed', 'down', 'status', 'db-status', 'etl'])
+    parser.add_argument('--full', action='store_true', help='etl: empty the warehouse and rebuild it from scratch')
+    arguments = parser.parse_args()
+    command = arguments.command
     if command == 'setup':
         setup()
     elif command == 'up':
@@ -357,6 +359,9 @@ def main():
             compose('run', '--rm', '--no-deps', service, command)
     elif command == 'db-status':
         db_status()
+    elif command == 'etl':
+        # One ETL pass now (Lab 5 demo), instead of waiting for the next 5-minute run.
+        compose('run', '--rm', '--no-deps', '--pull', 'never', 'etl', '--full' if arguments.full else '--once')
     elif command == 'down':
         compose('down')  # Deliberately retains all data volumes.
     else:

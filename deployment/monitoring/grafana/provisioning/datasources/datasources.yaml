@@ -12,3 +12,16 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+  # Lab 5 (contracts/data-warehouse.md): the analytics star schema filled by the ETL.
+  - name: Warehouse
+    uid: warehouse
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: warehouse:5432
+    user: postgres
+    jsonData:
+      database: warehouse
+      sslmode: disable
+      postgresVersion: 1700
+    secureJsonData:
+      password: $WAREHOUSE_PASSWORD

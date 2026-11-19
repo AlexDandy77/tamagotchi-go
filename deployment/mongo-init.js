@@ -31,4 +31,10 @@ const registry = db.getSiblingDB('registry');
 if (!registry.getUser('registry')) {
   registry.createUser({ user: 'registry', pwd: registryPassword, roles: [{ role: 'readWrite', db: 'registry' }] });
 }
-print('MongoDB replica set and registry user ready; existing data and passwords preserved.');
+// Lab 5 (contracts/data-warehouse.md): the ETL's read-only login. Package Registry decides what
+// its etl_* views contain; this user can only read the registry database.
+const etlPassword = process.env.ETL_DB_PASSWORD;
+if (etlPassword && !registry.getUser('etl_reader')) {
+  registry.createUser({ user: 'etl_reader', pwd: etlPassword, roles: [{ role: 'read', db: 'registry' }] });
+}
+print('MongoDB replica set, registry user and ETL reader ready; existing data and passwords preserved.');
