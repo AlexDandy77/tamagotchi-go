@@ -1,0 +1,46 @@
+{
+  "description": "Test vectors for the cache consistent-hash ring (contracts/cache.md). Every cache client, in any language, must place each key on the node given here. Positions are unsigned 32-bit integers.",
+  "algorithm": {
+    "hash": "md5",
+    "point": "first 4 bytes of the MD5 digest, read as a big-endian unsigned 32-bit integer",
+    "nodes": ["cache-1", "cache-2", "cache-3"],
+    "virtualNodesPerNode": 160,
+    "virtualNodeName": "{node}#{index}, index 0..159, e.g. cache-1#0",
+    "keyPosition": "point of the UTF-8 key",
+    "lookup": "the first ring point whose position is greater than or equal to the key position; past the last point, wrap to the first; skip points of unavailable nodes"
+  },
+  "ring": {
+    "points": 480,
+    "first": [
+      {"position": 15635782, "node": "cache-3"},
+      {"position": 20292760, "node": "cache-1"},
+      {"position": 33762552, "node": "cache-1"},
+      {"position": 33798749, "node": "cache-2"},
+      {"position": 34302109, "node": "cache-3"}
+    ],
+    "last": {"position": 4292974906, "node": "cache-2"}
+  },
+  "vectors": [
+    {"key": "tamagotchi:v1:pet:00000000-0000-4000-8000-000000000001", "position": 1056582582, "node": "cache-1", "nodeWhenCache2Down": "cache-1"},
+    {"key": "tamagotchi:v1:pet:00000000-0000-4000-8000-000000000002", "position": 2201329939, "node": "cache-2", "nodeWhenCache2Down": "cache-1"},
+    {"key": "tamagotchi:v1:pet:00000000-0000-4000-8000-000000000006", "position": 1121362943, "node": "cache-2", "nodeWhenCache2Down": "cache-3"},
+    {"key": "tamagotchi:v1:pet:00000000-0000-4000-8000-000000000013", "position": 2899738845, "node": "cache-2", "nodeWhenCache2Down": "cache-1"},
+    {"key": "tamagotchi:v1:pet:00000000-0000-4000-8000-000000000453", "position": 4294520966, "node": "cache-3", "nodeWhenCache2Down": "cache-3", "note": "past the last point: wraps to the first point"},
+    {"key": "tamagotchi:v1:pets-of:11111111-1111-4111-8111-111111111111", "position": 368825640, "node": "cache-3", "nodeWhenCache2Down": "cache-3"},
+    {"key": "user-management:v1:user:22222222-2222-4222-8222-222222222222", "position": 1403265977, "node": "cache-1", "nodeWhenCache2Down": "cache-1"},
+    {"key": "user-management:v1:session:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b", "position": 3962277052, "node": "cache-3", "nodeWhenCache2Down": "cache-3"},
+    {"key": "notification:v1:enrollment:44444444-4444-4444-8444-444444444444:11111111-1111-4111-8111-111111111111", "position": 3324942952, "node": "cache-3", "nodeWhenCache2Down": "cache-3"},
+    {"key": "package-registry:v1:package:11111111-1111-4111-8111-111111111111", "position": 2763926848, "node": "cache-2", "nodeWhenCache2Down": "cache-3"},
+    {"key": "guild:v1:guild:22222222-2222-4222-8222-222222222222", "position": 1951315343, "node": "cache-3", "nodeWhenCache2Down": "cache-3"},
+    {"key": "map:v1:location:55555555-5555-4555-8555-555555555555", "position": 1307731295, "node": "cache-3", "nodeWhenCache2Down": "cache-3"},
+    {"key": "", "position": 3558706393, "node": "cache-1", "nodeWhenCache2Down": "cache-1"},
+    {"key": "a", "position": 214005177, "node": "cache-2", "nodeWhenCache2Down": "cache-1"},
+    {"key": "hello", "position": 1564557354, "node": "cache-3", "nodeWhenCache2Down": "cache-3"}
+  ],
+  "distribution": {
+    "keys": "bench:0 .. bench:29999",
+    "perNode": {"cache-1": 10539, "cache-2": 9668, "cache-3": 9793},
+    "movedWhenCache2Down": 9668,
+    "meaning": "Only cache-2's own keys move when it is unavailable; keys on cache-1 and cache-3 stay where they are."
+  }
+}

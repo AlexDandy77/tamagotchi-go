@@ -476,6 +476,15 @@ expectedTurn: integer
 action: "attack" / "forfeit"
 ```
 
+#### BattleOutcomeInput
+
+Saga coordinator only. finished after both settlements; cancelled after (or, for an uncertain start, before) compensation, with the reason. reason is sent only with cancelled.
+
+```text
+status: "finished" / "cancelled"
+reason?: string or null
+```
+
 #### Battle
 
 Only participants may read. Currency/pet effects become final when settlement is complete.

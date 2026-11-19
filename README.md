@@ -96,9 +96,34 @@ Gateway authenticates players and sends migrated destinations to the Message Bro
 - Grafana: `http://localhost:3000`; Prometheus: `http://localhost:9090`. Alloy ships container logs to Loki. The broker's admin collection lists topics, queues, dead letters and downloads logs through Gateway.
 - After startup: `python3 scripts/check_lab4.py`, then `python3 scripts/demo_lab4.py`. These complement service Postman collections; they do not certify unmigrated owners.
 
+## Replication, cache, sagas and analytics (Lab 5)
+
+Lab 5 makes the data layer survive failures and adds analytics. Releases are `5.x.y`.
+
+| Area | What runs | Contract |
+| --- | --- | --- |
+| Replication | PostgreSQL as a three-node Patroni cluster with etcd. HAProxy keeps `postgres:5432` on the current primary and serves read-only `postgres-replicas:5433`. MongoDB runs a three-member replica set `rs0`. Every service database has two replicas and fails over automatically | [replication](contracts/replication.md) |
+| Cache | Three independent Valkey nodes, `cache-1` to `cache-3`. Each owner caches its frequent reads and its authentication lookups (status and roles, enrollment checks) with cache-aside; refresh tokens stay database-only, sharded by a shared consistent-hash ring | [cache](contracts/cache.md) |
+| Transactions | The battle is one long-running saga coordinated by the Message Broker, with compensation before the result and forward-only settlement after it. `GET /services/message-broker/v1/sagas` lists sagas | [transactions](contracts/transactions.md) |
+| Analytics | A `warehouse` PostgreSQL database with a star schema, filled every 5 minutes by the CPR ETL job from each owner's `etl` views on the replicas. Grafana has a "Game analytics" dashboard | [data warehouse](contracts/data-warehouse.md) |
+
+- `python3 scripts/lab.py setup` also generates `CACHE_PASSWORD` and `ETL_DB_PASSWORD`. `up` bootstraps the database cluster and the replica set. On the first start it copies the old single-server `postgres-data` volume into the cluster once and leaves the old volume untouched.
+- `python3 scripts/lab.py db-status` shows the database members, their roles and replication lag. `python3 scripts/lab.py etl` runs one ETL pass now.
+- Local tools bind to localhost only: the HAProxy statistics page at `http://localhost:7000` and the warehouse at `localhost:5434`.
+- After startup: `python3 scripts/check_lab5.py` checks the configuration. Each grade is shown live as below; a script is used only where one request at a time can't show it.
+
+| Grade | Shown by hand | Script |
+| --- | --- | --- |
+| 2–3 | The diagram in [ARCHITECTURE.md](ARCHITECTURE.md) | — |
+| 4 | Care actions in Postman → `lab.py etl` → the `etl` container log lists rows per view → Grafana "Game analytics" shows them | — |
+| 5 | Stop the primary in Docker Desktop → a replica logs `promoted self to leader`, the HAProxy page at `localhost:7000` moves, Postman requests keep working | `demo_lab5.py grade5` measures the failover |
+| 6 | The same Postman GET twice: `X-Cache: MISS`, then `HIT`, with the service log showing `cache miss, read from database`, then `cache hit` | — |
+| 7 | `X-Cache-Node` names the shard; stop that node and the key moves to the next node while other keys still `HIT` | `demo_lab5.py grade7` shows only the stopped node's keys move |
+| 8–9 | `GET /services/message-broker/v1/sagas/{battleId}` after a battle (completed) and after a failed accept (compensated); broker and participant logs share the `sagaId` | `demo_lab5.py grade9` restarts the broker mid-saga |
+
 ## Communication contract
 
-Contract version **1.5.0**. All eight services implement their portions.
+Contract version **1.6.0** (Lab 5 adds the cache, replication, saga and warehouse contracts below). All eight services implement their portions.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten event envelopes and payloads (JSON Schema).
@@ -107,6 +132,10 @@ Contract version **1.5.0**. All eight services implement their portions.
 - [`contracts/game-rules.md`](contracts/game-rules.md): the numbers and formulas behind the contract.
 - [`contracts/service-discovery.md`](contracts/service-discovery.md): instance registration, status endpoints, load balancing, circuit breakers, replicas and health alerts; Service Discovery's own routes are in [`contracts/service-discovery.openapi.yaml`](contracts/service-discovery.openapi.yaml).
 - [`contracts/message-broker.md`](contracts/message-broker.md) (Lab 4): our own broker that replaces Kafka and carries service-to-service requests over gRPC; its gRPC API is [`contracts/proto/broker.proto`](contracts/proto/broker.proto) and its HTTP routes are in [`contracts/message-broker.openapi.yaml`](contracts/message-broker.openapi.yaml).
+- [`contracts/replication.md`](contracts/replication.md) (Lab 5): the three-node PostgreSQL cluster (Patroni, etcd, HAProxy), the three-member MongoDB replica set and automatic failover.
+- [`contracts/cache.md`](contracts/cache.md) (Lab 5): cache-aside per owner, authentication-data caching and the consistent-hash ring over three Valkey nodes; test vectors in [`contracts/cache-ring-vectors.json`](contracts/cache-ring-vectors.json).
+- [`contracts/transactions.md`](contracts/transactions.md) (Lab 5): the battle saga coordinated by the Message Broker, and why it replaces two-phase commit.
+- [`contracts/data-warehouse.md`](contracts/data-warehouse.md) (Lab 5): the warehouse star schema, the owners' `etl` views and the incremental ETL job.
 
 ### Rules
 
@@ -156,14 +185,14 @@ A stale version returns `409`:
 | Guild | guilds, invitations, members and roles, chat messages and sequence | identity and relationships (User Management) |
 | Package Registry | packages, moderators, immutable configurations, global rules, monsters, schedules | enrollment projection (User Management, through the Message Broker) |
 
-There are no cross-database writes or foreign keys; IDs cross the API boundary and the owner validates them. A service that publishes an event writes the business change and an outbox row in one transaction; a worker publishes the outbox with a stable `eventId`. Consumers store processed event IDs in an inbox before committing offsets, and compare `aggregateVersion` so an old event never overwrites a newer state. Failed messages retry with backoff and then land in a dead-letter topic.
+There are no cross-database writes or foreign keys; IDs cross the API boundary and the owner validates them. The only cross-database reader is the Lab 5 ETL job, which reads each owner's published `etl` views from a replica with a read-only role ([data warehouse](contracts/data-warehouse.md)). A service that publishes an event writes the business change and an outbox row in one transaction; a worker publishes the outbox with a stable `eventId`. Consumers store processed event IDs in an inbox before committing offsets, and compare `aggregateVersion` so an old event never overwrites a newer state. Failed messages retry with backoff and then land in a dead-letter topic.
 
-Cross-service workflows complete eventually rather than in one distributed transaction:
+Cross-service workflows complete eventually. The battle workflow (3 and 4) is one long-running saga coordinated by the Message Broker ([transactions](contracts/transactions.md)); the others are driven by their owner:
 
 1. **Enrollment and starter pet.** User Management commits the enrollment and emits `user.package-registered.v1`. Registry records the projection; Tamagotchi provisions exactly one starter per user and package. Until then `GET /v1/pets` may be empty.
 2. **Care rewards.** Tamagotchi stores the action and calls User Management's local-reward endpoint with the action ID. User Management enforces the daily cap; `CareResult.localRewardStatus` stays `pending` until it settles. Retrying the care request never applies the stat change twice.
-3. **Starting a battle.** Battle reserves currency and boosts for both users in User Management and all four pets in Tamagotchi. Combat starts only after both holds succeed; a failed hold releases the other and cancels the battle. Held pets cannot be cared for, reassigned or used elsewhere.
-4. **Finishing a battle.** Battle stores the result, then asks User Management to move the stake and Tamagotchi to apply XP and transfer the loser's primary, both keyed by battle ID. The battle shows `settling` until both confirm, then `finished`, then emits `battle.finished.v1`. Retries reuse the same IDs; a completed reward is never repeated or reversed.
+3. **Starting a battle.** On accept, Battle starts the battle saga in the Message Broker. The broker reserves currency and boosts for both users in User Management, then all four pets in Tamagotchi, then tells Battle to start combat. If a step fails, the broker releases the completed holds in reverse order and Battle records the battle as `cancelled`. Held pets cannot be cared for, reassigned or used elsewhere.
+4. **Finishing a battle.** Battle signals the result to the saga. From then on the broker only moves forward: User Management moves the stake, Tamagotchi applies XP and transfers the loser's primary, and Battle records `finished` and emits `battle.finished.v1`. The battle shows `settling` until then. Every step is keyed by the battle ID and retried until it succeeds; a completed reward is never repeated or reversed.
 5. **Raids.** Registry dispatches a due schedule with `raidId = scheduleId`. Monster Raid pins the configuration, reserves each joining member's primary, updates HP atomically per attack, and on victory settles currency once per raid and XP once per participant. Cancellation writes a tombstone so a late start cannot run; once victory settlement begins, cancellation returns `409`.
 
 ### Game rules in short
@@ -219,10 +248,12 @@ Path parameters and listed bodies are required. `cursor?` and `limit?` are optio
 | `POST /v1/battles` | player | `BattleCreate` | `201` `Battle` | Challenge another player |
 | `GET /v1/battles` | player | `cursor?`, `limit?` | `200` `BattlePage` | Own battles |
 | `GET /v1/battles/{battleId}` | player | — | `200` `Battle` | Battle state and settlement |
-| `POST /v1/battles/{battleId}/accept` | player | `BattleAccept` | `202` `Battle` | Opponent accepts; holds are reserved, then combat starts |
+| `POST /v1/battles/{battleId}/accept` | player | `BattleAccept` | `202` `Battle` | Opponent accepts; the broker's battle saga reserves holds, then combat starts |
 | `POST /v1/battles/{battleId}/decline` | player | — | `200` `Battle` | Opponent declines |
 | `DELETE /v1/battles/{battleId}` | player | — | `204` | Challenger cancels before combat |
 | `POST /v1/battles/{battleId}/actions` | player | `BattleAction` | `200` `Battle` | Attack or forfeit |
+| `PUT /internal/v1/battle-starts/{battleId}` | internal | `PetReservation` | `200` `Battle` | Saga step: start combat with the reserved pets (caller: Message Broker) |
+| `PUT /internal/v1/battle-outcomes/{battleId}` | internal | `BattleOutcomeInput` | `200` `Battle` | Saga step: record `finished` or `cancelled` (caller: Message Broker) |
 
 #### Tamagotchi
 
@@ -327,6 +358,8 @@ Admin routes of the [Message Broker](contracts/message-broker.md), reached throu
 | `GET /v1/dlq/{topic}` | admin | `cursor?`, `limit?` | `200` | Dead-lettered messages with group, attempts and reason |
 | `GET /v1/queues` | admin | — | `200` | Subscriber queues with instances, scores and breakers |
 | `GET /v1/logs` | admin | `service?`, `instanceId?`, `level?`, `since?`, `until?`, `contains?`, `limit?` | `200` NDJSON | Download the system's logs from Loki (grade 4) |
+| `GET /v1/sagas` | admin | `type?`, `state?`, `cursor?`, `limit?` | `200` | Sagas with state and current step (Lab 5, [transactions](contracts/transactions.md)) |
+| `GET /v1/sagas/{sagaId}` | admin | — | `200` | One saga with every step attempt |
 
 ### Event contract
 
