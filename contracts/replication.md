@@ -54,7 +54,7 @@ HAProxy closes the client sessions of a node that stops being primary (`on-marke
 ### Data and settings
 
 - `lab.py setup/up` provisions databases and roles on the primary through `postgres:5432`, exactly as before; replication copies them to the replicas. On the first start, `lab.py up` copies the old single-server volume `postgres-data` into the cluster once, with `pg_dumpall`, and leaves the old volume untouched.
-- `max_connections=250` and the other server settings move into Patroni's cluster configuration, so all nodes share them.
+- `max_connections=250` and the other server settings move into Patroni's cluster configuration, so all nodes share them. `max_prepared_transactions=64` enables the prepared transactions of the raid join's [two-phase commit](transactions.md#two-phase-commit-joining-a-raid); replicas need at least the primary's value, which the shared configuration guarantees. `lab.py up` applies it to an existing cluster and restarts the nodes that need it.
 - Volumes: `postgres-1-data`, `postgres-2-data`, `postgres-3-data`, `etcd-data`. `down` keeps them.
 
 ## MongoDB
@@ -62,7 +62,7 @@ HAProxy closes the client sessions of a node that stops being primary (`on-marke
 Package Registry's database runs on the replica set `rs0` with three members, `mongo` (the existing one, so its data and configuration stay), `mongo-2` and `mongo-3`:
 
 - Members elect a primary by majority vote. If the primary fails, a new one is elected in about 10–12 s.
-- Registry's URL keeps one seed host: `mongodb://registry:…@mongo:27017/registry?replicaSet=rs0&authSource=registry&w=majority`. With `replicaSet` set, the driver learns every member from the seed and follows the primary by itself after an election.
+- Registry's URL lists every member: `mongodb://registry:…@mongo:27017,mongo-2:27017,mongo-3:27017/registry?replicaSet=rs0&authSource=registry&w=majority`. The driver finds and follows the primary by itself, and with three seeds it still finds the set when `mongo` itself is the member that is down, for example after a restart during the failover demo. The ETL connects the same way.
 - Writes use `w: majority`, so a confirmed write is on two members and survives a failover.
 - The members share the existing keyfile. `lab.py up` initiates the set, or adds the new members to an existing one.
 
@@ -80,7 +80,7 @@ Leader election needs a **majority**. With two nodes, losing one leaves one of t
 5. Start `postgres-1` again: its log shows it rejoining as a replica (`pg_rewind`), and `db-status` lists it as `Replica`.
 6. The same for Mongo: stop the primary member; the others log the election, and the Package Registry requests keep working.
 
-**By script**, for the numbers: `python3 scripts/demo_lab5.py grade5` sends a request every 200 ms, stops the primary, and prints when the new primary took over, how long writes were unavailable, and how many requests needed a retry.
+**By script**, for the numbers: `python3 scripts/demo_lab5.py grade5` writes through `postgres:5432` every 0.5 s from one long-lived client, stops the primary, and prints which replica was promoted, how many writes failed and how long writes were unavailable. Service requests during the failover are shown by hand (step 4).
 
 ## What each owner changes
 

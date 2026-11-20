@@ -28,6 +28,9 @@ x-patroni-environment: &patroni-environment
             parameters:
               # Replicas share this server; leave room for bounded pools and leader connections.
               max_connections: ${POSTGRES_MAX_CONNECTIONS:-250}
+              # The raid join is a two-phase commit (contracts/transactions.md); PostgreSQL
+              # disables PREPARE TRANSACTION unless this is above 0, on every node.
+              max_prepared_transactions: 64
 x-patroni: &patroni
   image: ghcr.io/zalando/spilo-17:4.0-p3
   healthcheck:
@@ -274,6 +277,9 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://users:${USERS_DB_PASSWORD:?Run setup}@postgres:5432/users?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
@@ -314,6 +320,9 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://battles:${BATTLES_DB_PASSWORD:?Run setup}@postgres:5432/battles?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
@@ -355,6 +364,9 @@ services:
     pull_policy: always
     environment: &guild-env
       DATABASE_URL: postgres://guilds:${GUILDS_DB_PASSWORD:?Run setup}@postgres:5432/guilds?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
       # and Router.Call for BROKER_DESTINATIONS. Relationships and signing keys come from User
@@ -412,7 +424,10 @@ services:
     image: ${PACKAGE_REGISTRY_IMAGE:?Set a published Package Registry image tag}
     pull_policy: always
     environment:
-      MONGODB_URL: mongodb://registry:${REGISTRY_DB_PASSWORD:?Run setup}@mongo:27017/registry?replicaSet=rs0&authSource=registry&w=majority
+      MONGODB_URL: mongodb://registry:${REGISTRY_DB_PASSWORD:?Run setup}@mongo:27017,mongo-2:27017,mongo-3:27017/registry?replicaSet=rs0&authSource=registry&w=majority
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       # Lab 4: enrollments from the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
       # and Router.Call for BROKER_DESTINATIONS. Raid commands and signing keys go through the
@@ -458,6 +473,9 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://locations:${LOCATIONS_DB_PASSWORD:?Run setup}@postgres:5432/locations?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
       # and Router.Call for BROKER_DESTINATIONS. Profiles and relationships come from User
@@ -508,6 +526,14 @@ services:
     pull_policy: always
     environment: &monster-raid-env
       DATABASE_URL: postgres://raids:${RAIDS_DB_PASSWORD:?Run setup}@postgres:5432/raids?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
+      # Lab 5 grade 8 (contracts/transactions.md): two-phase means the raid join is a two-phase
+      # commit with Tamagotchi, which needs its prepare/commit/abort routes; compensation is
+      # the Lab 4 flow, kept as the default until Tamagotchi serves them.
+      JOIN_COMMIT: ${MONSTER_RAID_JOIN_COMMIT:-compensation}
+      JOIN_PREPARED_PAUSE_SECONDS: ${MONSTER_RAID_JOIN_PREPARED_PAUSE_SECONDS:-}
       DEPENDENCY_MODE: live
       # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
       # and Router.Call for BROKER_DESTINATIONS; the other dependencies use their Gateway URL.
@@ -685,6 +711,7 @@ services:
     environment:
       ETL_DB_PASSWORD: ${ETL_DB_PASSWORD:?Run python3 scripts/lab.py setup}
       WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:?Run python3 scripts/lab.py setup}
+      WAREHOUSE_READER_PASSWORD: ${WAREHOUSE_READER_PASSWORD:?Run python3 scripts/lab.py setup}
     volumes:
       - ./deployment/etl:/etl:ro
       - etl-deps:/deps
@@ -723,7 +750,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run setup}
       # Lab 5: the warehouse data source behind the "Game analytics" dashboard.
-      WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:?Run setup}
+      # Grafana reads the warehouse as grafana_reader, which may only SELECT (deployment/etl/etl.py).
+      WAREHOUSE_READER_PASSWORD: ${WAREHOUSE_READER_PASSWORD:?Run setup}
       # The lab dashboard is readable without a login; changes need the admin login.
       GF_AUTH_ANONYMOUS_ENABLED: 'true'
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer

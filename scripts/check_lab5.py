@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 POSTGRES_NODES = ('postgres-1', 'postgres-2', 'postgres-3')
 MONGO_MEMBERS = ('mongo', 'mongo-2', 'mongo-3')
 CACHE_NODES = ('cache-1', 'cache-2', 'cache-3')
-CACHE_USERS = ('tamagotchi', 'notification')
+# Every business service gets the cache settings (contracts/cache.md), replicas included.
+CACHE_USERS = ('user-management', 'battle', 'guild', 'guild-2', 'guild-3', 'package-registry', 'map',
+               'monster-raid', 'monster-raid-2', 'monster-raid-3', 'tamagotchi', 'notification')
 
 
 def named_volume(service, target):
@@ -61,7 +63,9 @@ def audit(config, root=ROOT):
             failures.append(f'{name}: Patroni node missing')
             continue
         spilo = node.get('environment', {}).get('SPILO_CONFIGURATION', '')
-        for setting in ('synchronous_mode: true', 'synchronous_mode_strict: true', 'failsafe_mode: true'):
+        # max_prepared_transactions enables the raid join's two-phase commit (grade 8).
+        for setting in ('synchronous_mode: true', 'synchronous_mode_strict: true', 'failsafe_mode: true',
+                        'max_prepared_transactions: 64'):
             if setting not in spilo:
                 failures.append(f'{name}: SPILO_CONFIGURATION must set {setting}')
         if not named_volume(node, '/home/postgres/pgdata'):
@@ -81,7 +85,8 @@ def audit(config, root=ROOT):
             failures.append('haproxy: the statistics page must be published on 127.0.0.1:7000 only')
         cfg = root / 'deployment/haproxy/haproxy.cfg'
         text = cfg.read_text() if cfg.is_file() else ''
-        for needle in ('GET /primary', 'GET /replica', 'on-marked-down shutdown-sessions', 'option redispatch'):
+        for needle in ('GET /primary', 'GET /replica', 'on-marked-down shutdown-sessions', 'option redispatch',
+                       'nbsrv(postgres-replicas) gt 0'):
             if needle not in text:
                 failures.append(f'haproxy: haproxy.cfg must contain "{needle}"')
     for name, service in services.items():
@@ -94,6 +99,8 @@ def audit(config, root=ROOT):
     registry = services.get('package-registry', {}).get('environment', {}).get('MONGODB_URL', '')
     if 'replicaSet=rs0' not in registry or 'w=majority' not in registry:
         failures.append('package-registry: MONGODB_URL needs replicaSet=rs0 and w=majority')
+    if not all(f'{member}:27017' in registry for member in MONGO_MEMBERS):
+        failures.append('package-registry: MONGODB_URL must list every member, so the set is found when one is down')
 
     # Cache and sharding (grades 6 and 7).
     for name in CACHE_NODES:

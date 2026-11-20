@@ -18,10 +18,11 @@ datasources:
     type: grafana-postgresql-datasource
     access: proxy
     url: warehouse:5432
-    user: postgres
+    # Anonymous viewers can send this data source SQL, so it logs in read-only, never as postgres.
+    user: grafana_reader
     jsonData:
       database: warehouse
       sslmode: disable
       postgresVersion: 1700
     secureJsonData:
-      password: $WAREHOUSE_PASSWORD
+      password: $WAREHOUSE_READER_PASSWORD

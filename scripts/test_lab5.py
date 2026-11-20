@@ -4,7 +4,8 @@ import unittest
 
 import check_lab5
 
-SPILO = 'bootstrap:\n  dcs:\n    synchronous_mode: true\n    synchronous_mode_strict: true\n    failsafe_mode: true\n'
+SPILO = ('bootstrap:\n  dcs:\n    synchronous_mode: true\n    synchronous_mode_strict: true\n    failsafe_mode: true\n'
+         '    postgresql:\n      parameters:\n        max_prepared_transactions: 64\n')
 
 
 def good():
@@ -19,10 +20,13 @@ def good():
         'haproxy': {'networks': {'default': {'aliases': ['postgres', 'postgres-replicas']}},
                     'ports': [{'host_ip': '127.0.0.1', 'published': '7000'}]},
         'mongo': member(), 'mongo-2': member(), 'mongo-3': member(),
-        'package-registry': {'environment': {'MONGODB_URL': 'mongodb://r@mongo:27017/registry?replicaSet=rs0&w=majority'}},
+        'package-registry': {'environment': {
+            'MONGODB_URL': 'mongodb://r@mongo:27017,mongo-2:27017,mongo-3:27017/registry?replicaSet=rs0&w=majority', **cache_env}},
         'cache-1': cache(), 'cache-2': cache(), 'cache-3': cache(),
         'tamagotchi': {'environment': dict(cache_env), 'depends_on': {'haproxy': {}}},
         'notification': {'environment': dict(cache_env)},
+        **{name: {'environment': dict(cache_env)} for name in ('user-management', 'battle', 'guild', 'guild-2', 'guild-3', 'map',
+                                                               'monster-raid', 'monster-raid-2', 'monster-raid-3')},
         'warehouse': {'volumes': [volume('/var/lib/postgresql/data')], 'ports': [{'host_ip': '127.0.0.1', 'published': '5434'}]},
         'etl': {'environment': {'ETL_DB_PASSWORD': 'x'}, 'depends_on': {'warehouse': {}, 'haproxy': {}}},
     }}
@@ -44,6 +48,10 @@ class AuditTests(unittest.TestCase):
             'w=majority': lambda s: s['package-registry']['environment'].update(MONGODB_URL='mongodb://mongo/registry'),
             'without persistence': lambda s: s['cache-2'].update(command=['valkey-server']),
             'notification: CACHE_NODES': lambda s: s['notification']['environment'].update(CACHE_NODES='cache-1=cache-1:6379'),
+            'monster-raid-2: CACHE_NODES': lambda s: s['monster-raid-2']['environment'].pop('CACHE_PASSWORD'),
+            'max_prepared_transactions: 64': lambda s: s['postgres-3']['environment'].update(SPILO_CONFIGURATION=SPILO.split('    postgresql')[0]),
+            'must list every member': lambda s: s['package-registry']['environment'].update(
+                MONGODB_URL='mongodb://r@mongo:27017/registry?replicaSet=rs0&w=majority'),
             'warehouse: must be published': lambda s: s['warehouse'].update(ports=[]),
             'etl: the ETL job is missing': lambda s: s.pop('etl'),
         }

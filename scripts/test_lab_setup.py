@@ -4,6 +4,7 @@ import contextlib
 import io
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -75,7 +76,7 @@ class StartupImagesTests(unittest.TestCase):
             lab.main()
         # The data stores start first (Lab 5: the Patroni cluster, HAProxy and the Mongo replica set);
         # every event goes through the Message Broker, so no Kafka.
-        self.assertEqual(compose.call_args_list[0].args, ('up', '-d', '--wait', '--pull', 'never', *lab.DATA_SERVICES))
+        self.assertEqual(compose.call_args_list[0].args, ('up', '-d', '--wait', '--pull', 'never', '--remove-orphans', *lab.DATA_SERVICES))
         self.assertIn('haproxy', lab.DATA_SERVICES)
         wait.assert_called_once_with()
         copy.assert_called_once_with()
@@ -167,3 +168,31 @@ class BrokerDefaultsTests(unittest.TestCase):
                 with patch.object(lab, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
                     lab.broker_defaults()
                 self.assertEqual((root / '.env').read_text(), 'BROKER_DESTINATIONS=' + expected + '\n')
+
+
+class Lab4CopyTests(unittest.TestCase):
+    def test_roles_can_be_applied_again_and_the_superuser_is_left_alone(self):
+        dump = '\n'.join(['CREATE ROLE postgres;', 'ALTER ROLE postgres WITH SUPERUSER;', 'CREATE ROLE users;',
+                          "ALTER ROLE users WITH LOGIN PASSWORD 'SCRAM-SHA-256$x';", 'GRANT etl_reader TO users;'])
+        sql = lab.tolerant_roles(dump)
+        self.assertNotIn('ROLE postgres', sql)
+        self.assertIn('DO $$ BEGIN CREATE ROLE users; EXCEPTION WHEN duplicate_object THEN NULL; END $$;', sql)
+        self.assertIn("ALTER ROLE users WITH LOGIN PASSWORD 'SCRAM-SHA-256$x';", sql)
+        self.assertIn('GRANT etl_reader TO users;', sql)
+
+    def test_a_volume_still_in_use_is_never_copied(self):
+        answers = {"SELECT to_regclass('public.lab5_copied_from_lab4') IS NOT NULL": 'f',
+                   "SELECT count(*) FROM pg_database WHERE datname NOT IN ('postgres','template0','template1')": '0',
+                   "SELECT to_regclass('public.lab5_copy_started') IS NOT NULL": 'f'}
+
+        def fake_run(args, **kwargs):
+            if args[:3] == ['docker', 'ps', '-q']:
+                return subprocess.CompletedProcess(args, 0, stdout=b'abc123\n')
+            return subprocess.CompletedProcess(args, 0, stdout=b'')
+
+        with patch.object(lab, 'psql', side_effect=lambda sql, **kw: answers.get(sql)), \
+                patch.object(lab, 'run', side_effect=fake_run) as run:
+            with self.assertRaises(SystemExit) as stopped:
+                lab.copy_lab4_database()
+        self.assertIn('still in use by container abc123', str(stopped.exception))
+        self.assertFalse(any(call.args[0][:3] == ['docker', 'run', '-d'] for call in run.call_args_list))

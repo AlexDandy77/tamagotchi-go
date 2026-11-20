@@ -121,8 +121,34 @@ class EtlTests(unittest.TestCase):
         self.assertIn("view = 'pets'", etl.FACTS['fact_care_action'].split('INSERT')[0])
         self.assertIn("view = 'raids'", etl.FACTS['fact_raid_participation'].split('INSERT')[0])
         for sql in etl.FACTS.values():
-            self.assertIn('%(run)s', sql)
+            self.assertIn('%(since)s', sql)
             self.assertIn('ON CONFLICT', sql)
+
+    def test_facts_cover_everything_staged_since_the_last_finished_run(self):
+        last = datetime.datetime(2026, 11, 19, 11, 55, tzinfo=UTC)
+
+        class Runs(FakeWarehouse):
+            def execute(self, sql, params=None):
+                if sql.startswith('SELECT max(started_at)'):
+                    self.statements.append((sql, params))
+                    return FakeResult((last,))
+                return super().execute(sql, params)
+
+        warehouse = Runs()
+        quietly(etl.run_once, warehouse, {}, lambda spec, since, env: iter(()), lambda tz: RUN)
+        recomputes = [params for sql, params in warehouse.statements if sql.lstrip().startswith(('WITH', 'INSERT INTO fact'))]
+        self.assertTrue(recomputes and all(params == {'since': last} for params in recomputes))
+        # A first run, with no finished run before it, covers everything.
+        fresh = FakeWarehouse()
+        quietly(etl.run_once, fresh, {}, lambda spec, since, env: iter(()), lambda tz: RUN)
+        recomputes = [params for sql, params in fresh.statements if sql.lstrip().startswith(('WITH', 'INSERT INTO fact'))]
+        self.assertTrue(all(params == {'since': etl.EPOCH} for params in recomputes))
+
+    def test_a_battle_waits_for_its_transfer_and_pet_and_counts_only_once_over(self):
+        battle = etl.FACTS['fact_battle']
+        self.assertIn("p.view = 'pets'", battle.split('INSERT')[0])
+        self.assertIn("p.row_key IS NOT NULL", battle)
+        self.assertIn("IN ('finished', 'cancelled')", battle)
 
     def test_requires_one_mode(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):

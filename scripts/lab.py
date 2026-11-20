@@ -23,8 +23,10 @@ SECRET_KEYS = (
     'POSTGRES_PASSWORD', 'USERS_DB_PASSWORD', 'BATTLES_DB_PASSWORD', 'GUILDS_DB_PASSWORD', 'LOCATIONS_DB_PASSWORD',
     'RAIDS_DB_PASSWORD', 'TAMAGOTCHI_DB_PASSWORD', 'NOTIFICATION_DB_PASSWORD',
     'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD', 'GRAFANA_ADMIN_PASSWORD',
-    # Lab 5: Patroni's replication user, the shared cache and the ETL's read-only role.
+    # Lab 5: Patroni's replication user, the shared cache, the ETL's read-only role, the
+    # warehouse, and Grafana's read-only login to the warehouse.
     'POSTGRES_REPLICATION_PASSWORD', 'CACHE_PASSWORD', 'ETL_DB_PASSWORD', 'WAREHOUSE_PASSWORD',
+    'WAREHOUSE_READER_PASSWORD',
 )
 PROJECT = 'tamagotchi-lab1'
 # Lab 5 (contracts/replication.md): the database cluster and the Mongo replica set.
@@ -231,17 +233,42 @@ def ensure_cluster_settings():
     node = next(n for n in POSTGRES_NODES if n in running)
     compose('exec', '-T', node, 'patronictl', 'edit-config', '--force', '--quiet',
             '--set', 'synchronous_mode=true', '--set', 'synchronous_mode_strict=true', '--set', 'failsafe_mode=true',
+            '--set', 'postgresql.parameters.max_prepared_transactions=64',
             stdout=subprocess.DEVNULL)
+    if psql('SHOW max_prepared_transactions', capture=True) == '64':
+        return
+    # max_prepared_transactions takes effect only after a restart. Patroni flags the nodes within
+    # one loop (10 s), then restarts them one at a time, before any service connects.
+    print('Restarting the database nodes once to enable prepared transactions.', flush=True)
+    for _ in range(30):
+        listing = compose('exec', '-T', node, 'patronictl', 'list', '--format', 'json', stdout=subprocess.PIPE).stdout
+        if any(member.get('Pending restart') for member in json.loads(listing or b'[]')):
+            break
+        time.sleep(1)
+    compose('exec', '-T', node, 'patronictl', 'restart', 'tamagotchi', '--pending', '--force',
+            stdout=subprocess.DEVNULL)
+    wait_for_primary()
 
 def copy_lab4_database():
-    """Once: copies Lab 4's single-server volume into the cluster, leaving the old volume untouched."""
+    """Once: copies Lab 4's single-server volume into the cluster, leaving the old volume untouched.
+
+    Each database is restored with --create --clean, so a copy that was interrupted (Ctrl-C, a
+    Docker hiccup) simply runs again on the next `up`; only a finished copy sets the marker."""
     if psql("SELECT to_regclass('public.lab5_copied_from_lab4') IS NOT NULL", capture=True) == 't':
         return
     volume = f'{PROJECT}_postgres-data'
     has_old = run(['docker', 'volume', 'inspect', volume], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
     has_user_databases = psql("SELECT count(*) FROM pg_database WHERE datname NOT IN ('postgres','template0','template1')", capture=True) != '0'
-    if has_old and not has_user_databases:
+    interrupted = psql("SELECT to_regclass('public.lab5_copy_started') IS NOT NULL", capture=True) == 't'
+    if has_old and (interrupted or not has_user_databases):
+        users = run(['docker', 'ps', '-q', '--filter', f'volume={volume}'], stdout=subprocess.PIPE).stdout.decode().split()
+        if users:
+            # A second server on a data directory that a running Lab 4 server still uses would
+            # corrupt it, and that server would also answer for the alias postgres.
+            raise SystemExit(f'The Lab 4 volume {volume} is still in use by container {users[0]}; '
+                             'stop the Lab 4 stack (python3 scripts/lab.py down) and run up again.')
         print('Copying the Lab 4 database volume into the cluster (once).', flush=True)
+        psql('CREATE TABLE IF NOT EXISTS lab5_copy_started (at timestamptz NOT NULL DEFAULT now())')
         name = f'{PROJECT}-lab4-copy'
         run(['docker', 'run', '-d', '--rm', '--name', name, '-v', f'{volume}:/var/lib/postgresql/data', TOOLS_IMAGE], stdout=subprocess.DEVNULL)
         try:
@@ -249,16 +276,38 @@ def copy_lab4_database():
                 if run(['docker', 'exec', name, 'pg_isready', '-U', 'postgres'], stdout=subprocess.DEVNULL, check=False).returncode == 0:
                     break
                 time.sleep(1)
-            # No --clean: the cluster holds no service databases yet (checked above), and dropping
-            # the postgres database would fail while Patroni is connected to it.
-            dump = run(['docker', 'exec', name, 'pg_dumpall', '-U', 'postgres'], stdout=subprocess.PIPE).stdout.decode()
-            # The cluster's own superuser already exists; skip the statements about it.
-            dump = '\n'.join(line for line in dump.splitlines()
-                              if not re.match(r'^(DROP|CREATE|ALTER) ROLE (IF EXISTS )?postgres\b', line))
-            psql(dump)
+            psql(tolerant_roles(run(['docker', 'exec', name, 'pg_dumpall', '-U', 'postgres', '--globals-only'],
+                                    stdout=subprocess.PIPE).stdout.decode()))
+            databases = run(['docker', 'exec', name, 'psql', '-U', 'postgres', '-Atc',
+                             "SELECT datname FROM pg_database WHERE NOT datistemplate AND datname <> 'postgres'"],
+                            stdout=subprocess.PIPE).stdout.decode().split()
+            for database in databases:
+                dump = run(['docker', 'exec', name, 'pg_dump', '-U', 'postgres', '-Fc', database], stdout=subprocess.PIPE).stdout
+                restore(dump)
         finally:
             run(['docker', 'stop', name], stdout=subprocess.DEVNULL, check=False)
     psql('CREATE TABLE IF NOT EXISTS lab5_copied_from_lab4 (at timestamptz NOT NULL DEFAULT now())')
+    psql('DROP TABLE IF EXISTS lab5_copy_started')
+
+def tolerant_roles(globals_sql):
+    """The roles of a globals dump, safe to apply again: CREATE ROLE skips a role that exists, and
+    the cluster's own superuser is left alone."""
+    lines = []
+    for line in globals_sql.splitlines():
+        if re.match(r'^(DROP|CREATE|ALTER) ROLE (IF EXISTS )?postgres\b', line):
+            continue
+        created = re.match(r'^CREATE ROLE ([^;]+);$', line)
+        if created:
+            line = f'DO $$ BEGIN CREATE ROLE {created.group(1)}; EXCEPTION WHEN duplicate_object THEN NULL; END $$;'
+        lines.append(line)
+    return '\n'.join(lines)
+
+def restore(dump):
+    """Restores one custom-format database dump on the primary, replacing that database if it exists."""
+    env = {**os.environ, 'PGPASSWORD': environment()['POSTGRES_PASSWORD']}
+    run(['docker', 'run', '--rm', '-i', '--network', f'{PROJECT}_default', '-e', 'PGPASSWORD', TOOLS_IMAGE,
+         'pg_restore', '-h', 'postgres', '-U', 'postgres', '-d', 'postgres', '--create', '--clean', '--if-exists',
+         '--exit-on-error'], input=dump, env=env, stdout=subprocess.DEVNULL)
 
 def provision():
     env = environment()
@@ -346,7 +395,9 @@ def main():
         setup()
     elif command == 'up':
         refresh_images()
-        compose('up', '-d', '--wait', '--pull', 'never', *DATA_SERVICES)
+        # --remove-orphans first: a Lab 4 postgres container left running would still answer for
+        # the alias postgres and hold the volume the copy reads.
+        compose('up', '-d', '--wait', '--pull', 'never', '--remove-orphans', *DATA_SERVICES)
         wait_for_primary()
         ensure_cluster_settings()
         copy_lab4_database()
@@ -368,7 +419,7 @@ def main():
         # One ETL pass now (Lab 5 demo), instead of waiting for the next 5-minute run.
         compose('run', '--rm', '--no-deps', '--pull', 'never', 'etl', '--full' if arguments.full else '--once')
     elif command == 'down':
-        compose('down')  # Deliberately retains all data volumes.
+        compose('down', '--remove-orphans')  # Deliberately retains all data volumes.
     else:
         compose('ps')
 

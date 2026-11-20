@@ -55,8 +55,10 @@ def stg(alias, src, view):
 
 
 def changed(src, view, key_sql="s.row_key"):
-    """Keys of a fact touched in this run through one input: `key_sql` maps the input row to the fact's key."""
-    return f"SELECT {key_sql} AS k FROM etl.staging s WHERE s.source = '{src}' AND s.view = '{view}' AND s.loaded_at = %(run)s"
+    """Keys of a fact touched through one input since the last finished run: `key_sql` maps the
+    input row to the fact's key. Rows a crashed run staged are newer than that run, so they
+    are picked up by the next one."""
+    return f"SELECT {key_sql} AS k FROM etl.staging s WHERE s.source = '{src}' AND s.view = '{view}' AND s.loaded_at > %(since)s"
 
 
 # Stage 2: each fact, its inputs (for the changed-key set) and how it is computed.
@@ -65,7 +67,7 @@ FACTS = {
 WITH changed AS (
   {changed('tamagotchi', 'care_actions')}
   UNION SELECT c.row_key FROM etl.staging c
-    JOIN etl.staging p ON p.source = 'tamagotchi' AND p.view = 'pets' AND p.loaded_at = %(run)s AND p.row_key = c.data->>'pet_id'
+    JOIN etl.staging p ON p.source = 'tamagotchi' AND p.view = 'pets' AND p.loaded_at > %(since)s AND p.row_key = c.data->>'pet_id'
     WHERE c.source = 'tamagotchi' AND c.view = 'care_actions')
 INSERT INTO fact_care_action (operation_id, date_key, user_id, package_id, pet_id, pet_type, action_id, xp_gained, complete)
 SELECT c.row_key::uuid, {DATE_KEY.format("(c.data->>'created_at')::timestamptz")}, c.data->>'user_id',
@@ -77,11 +79,15 @@ ON CONFLICT (operation_id) DO UPDATE SET date_key = EXCLUDED.date_key, user_id =
   package_id = EXCLUDED.package_id, pet_id = EXCLUDED.pet_id, pet_type = EXCLUDED.pet_type,
   action_id = EXCLUDED.action_id, xp_gained = EXCLUDED.xp_gained, complete = EXCLUDED.complete""",
 
-    # A finished battle always moves the loser's primary, so it is complete once the transfer arrived.
+    # A finished battle always moves the loser's primary, so it is complete once the transfer and
+    # the captured pet (for its package) arrived. Battles still running are not facts yet.
     'fact_battle': f"""
 WITH changed AS (
   {changed('battles', 'battles')}
-  UNION {changed('tamagotchi', 'ownership_transfers', "s.data->>'battle_id'")})
+  UNION {changed('tamagotchi', 'ownership_transfers', "s.data->>'battle_id'")}
+  UNION SELECT t.data->>'battle_id' FROM etl.staging t
+    JOIN etl.staging p ON p.source = 'tamagotchi' AND p.view = 'pets' AND p.loaded_at > %(since)s AND p.row_key = t.data->>'pet_id'
+    WHERE t.source = 'tamagotchi' AND t.view = 'ownership_transfers')
 INSERT INTO fact_battle (battle_id, date_key, package_id, challenger_id, opponent_id, winner_id, loser_id, status,
                          turns, duration_seconds, captured_pet_id, complete)
 SELECT b.row_key::uuid,
@@ -89,11 +95,12 @@ SELECT b.row_key::uuid,
        (p.data->>'package_id')::uuid, b.data->>'challenger_id', b.data->>'opponent_id', b.data->>'winner_id',
        b.data->>'loser_id', b.data->>'status', (b.data->>'turns')::int,
        EXTRACT(EPOCH FROM (b.data->>'finished_at')::timestamptz - (b.data->>'created_at')::timestamptz)::int,
-       (t.data->>'pet_id')::uuid, b.data->>'status' <> 'finished' OR t.row_key IS NOT NULL
+       (t.data->>'pet_id')::uuid, b.data->>'status' <> 'finished' OR (t.row_key IS NOT NULL AND p.row_key IS NOT NULL)
 FROM etl.staging b
 LEFT JOIN etl.staging t ON t.source = 'tamagotchi' AND t.view = 'ownership_transfers' AND t.data->>'battle_id' = b.row_key
 LEFT JOIN {stg('p', 'tamagotchi', 'pets')} AND p.row_key = t.data->>'pet_id'
 WHERE b.source = 'battles' AND b.view = 'battles' AND b.row_key IN (SELECT k FROM changed)
+  AND b.data->>'status' IN ('finished', 'cancelled')
 ON CONFLICT (battle_id) DO UPDATE SET date_key = EXCLUDED.date_key, package_id = EXCLUDED.package_id,
   challenger_id = EXCLUDED.challenger_id, opponent_id = EXCLUDED.opponent_id, winner_id = EXCLUDED.winner_id,
   loser_id = EXCLUDED.loser_id, status = EXCLUDED.status, turns = EXCLUDED.turns,
@@ -103,21 +110,21 @@ ON CONFLICT (battle_id) DO UPDATE SET date_key = EXCLUDED.date_key, package_id =
 INSERT INTO fact_notification (notification_id, date_key, user_id, type, read_after_seconds)
 SELECT n.row_key::uuid, {DATE_KEY.format("(n.data->>'created_at')::timestamptz")}, n.data->>'user_id', n.data->>'type',
        EXTRACT(EPOCH FROM (n.data->>'read_at')::timestamptz - (n.data->>'created_at')::timestamptz)::int
-FROM etl.staging n WHERE n.source = 'notification' AND n.view = 'notifications' AND n.loaded_at = %(run)s
+FROM etl.staging n WHERE n.source = 'notification' AND n.view = 'notifications' AND n.loaded_at > %(since)s
 ON CONFLICT (notification_id) DO UPDATE SET read_after_seconds = EXCLUDED.read_after_seconds""",
 
     'fact_currency_movement': f"""
 INSERT INTO fact_currency_movement (entry_id, date_key, user_id, package_id, currency, amount, reason)
 SELECT m.row_key::uuid, {DATE_KEY.format("(m.data->>'created_at')::timestamptz")}, m.data->>'user_id',
        (m.data->>'package_id')::uuid, m.data->>'currency', (m.data->>'amount')::bigint, m.data->>'reason'
-FROM etl.staging m WHERE m.source = 'users' AND m.view = 'currency_movements' AND m.loaded_at = %(run)s
+FROM etl.staging m WHERE m.source = 'users' AND m.view = 'currency_movements' AND m.loaded_at > %(since)s
 ON CONFLICT (entry_id) DO NOTHING""",
 
     'fact_raid_participation': f"""
 WITH changed AS (
   {changed('raids', 'raid_participants')}
   UNION SELECT rp.row_key FROM etl.staging rp
-    JOIN etl.staging r ON r.source = 'raids' AND r.view = 'raids' AND r.loaded_at = %(run)s AND r.row_key = rp.data->>'raid_id'
+    JOIN etl.staging r ON r.source = 'raids' AND r.view = 'raids' AND r.loaded_at > %(since)s AND r.row_key = rp.data->>'raid_id'
     WHERE rp.source = 'raids' AND rp.view = 'raid_participants')
 INSERT INTO fact_raid_participation (raid_id, user_id, date_key, guild_id, monster_id, damage, reward_coins, won, complete)
 SELECT (rp.data->>'raid_id')::uuid, rp.data->>'user_id',
@@ -134,14 +141,14 @@ ON CONFLICT (raid_id, user_id) DO UPDATE SET date_key = EXCLUDED.date_key, guild
 INSERT INTO fact_guild_membership (guild_id, user_id, role, joined_date_key, left_date_key)
 SELECT (g.data->>'guild_id')::uuid, g.data->>'user_id', g.data->>'role', {DATE_KEY.format("(g.data->>'joined_at')::timestamptz")},
        CASE WHEN g.data->>'left_at' IS NULL THEN NULL ELSE {DATE_KEY.format("(g.data->>'left_at')::timestamptz")} END
-FROM etl.staging g WHERE g.source = 'guilds' AND g.view = 'guild_members' AND g.loaded_at = %(run)s
+FROM etl.staging g WHERE g.source = 'guilds' AND g.view = 'guild_members' AND g.loaded_at > %(since)s
 ON CONFLICT (guild_id, user_id) DO UPDATE SET role = EXCLUDED.role, left_date_key = EXCLUDED.left_date_key""",
 }
 
 # Dimensions: from their owner's view when it exists, otherwise from the ids the facts mention.
 DIMENSIONS = [
     """INSERT INTO dim_user (user_id, username)
-SELECT s.row_key, s.data->>'username' FROM etl.staging s WHERE s.source = 'users' AND s.view = 'users' AND s.loaded_at = %(run)s
+SELECT s.row_key, s.data->>'username' FROM etl.staging s WHERE s.source = 'users' AND s.view = 'users' AND s.loaded_at > %(since)s
 ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username""",
     """INSERT INTO dim_user (user_id) SELECT DISTINCT user_id FROM (
   SELECT user_id FROM fact_care_action UNION SELECT user_id FROM fact_notification
@@ -152,15 +159,15 @@ ON CONFLICT (user_id) DO NOTHING""",
   FROM etl.staging s WHERE s.source = 'users' AND s.view = 'enrollments' GROUP BY 1) e WHERE d.user_id = e.user_id""",
     """INSERT INTO dim_package (package_id, name, status)
 SELECT s.row_key::uuid, s.data->>'name', s.data->>'status' FROM etl.staging s
-WHERE s.source = 'registry' AND s.view = 'etl_packages' AND s.loaded_at = %(run)s
+WHERE s.source = 'registry' AND s.view = 'etl_packages' AND s.loaded_at > %(since)s
 ON CONFLICT (package_id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status""",
     """INSERT INTO dim_package (package_id) SELECT DISTINCT (s.data->>'package_id')::uuid FROM etl.staging s
 WHERE s.source = 'tamagotchi' AND s.view = 'pets' ON CONFLICT (package_id) DO NOTHING""",
     """INSERT INTO dim_guild (guild_id, name) SELECT s.row_key::uuid, s.data->>'name' FROM etl.staging s
-WHERE s.source = 'guilds' AND s.view = 'guilds' AND s.loaded_at = %(run)s
+WHERE s.source = 'guilds' AND s.view = 'guilds' AND s.loaded_at > %(since)s
 ON CONFLICT (guild_id) DO UPDATE SET name = EXCLUDED.name""",
     """INSERT INTO dim_monster (monster_id, name, type) SELECT s.row_key::uuid, s.data->>'name', s.data->>'type' FROM etl.staging s
-WHERE s.source = 'registry' AND s.view = 'etl_monsters' AND s.loaded_at = %(run)s
+WHERE s.source = 'registry' AND s.view = 'etl_monsters' AND s.loaded_at > %(since)s
 ON CONFLICT (monster_id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type""",
     """INSERT INTO dim_date (date_key, date, year, month, day, weekday)
 SELECT k, d, EXTRACT(YEAR FROM d), EXTRACT(MONTH FROM d), EXTRACT(DAY FROM d), EXTRACT(ISODOW FROM d)
@@ -208,7 +215,9 @@ def extract_postgres(spec, since, env):
 
 def extract_mongo(spec, since, env):
     import pymongo
-    client = pymongo.MongoClient(host=env.get('ETL_MONGO_HOST', 'mongo'), port=27017, username='etl_reader',
+    # Every member as a seed, so the set is found whichever member is down.
+    hosts = env.get('ETL_MONGO_HOSTS', 'mongo:27017,mongo-2:27017,mongo-3:27017').split(',')
+    client = pymongo.MongoClient(host=hosts, username='etl_reader',
                                  password=env['ETL_DB_PASSWORD'], authSource='registry', replicaSet='rs0',
                                  readPreference='secondaryPreferred', serverSelectionTimeoutMS=5000)
     try:
@@ -264,14 +273,18 @@ def run_once(warehouse, env, extract=None, now=None):
         staged += rows
         log('etl view loaded', source=spec['source'], view=spec['view'], rows=rows)
     recomputed = 0
+    # Everything staged since the last run that finished, so a run that died between the
+    # stages is repaired by the next one rather than lost.
+    last = warehouse.execute('SELECT max(started_at) FROM etl.runs').fetchone()
+    since = {'since': (last[0] if last and last[0] else EPOCH)}
     with warehouse.transaction():
         for fact, sql in FACTS.items():
-            count = warehouse.execute(sql, {'run': run}).rowcount
+            count = warehouse.execute(sql, since).rowcount
             recomputed += max(count, 0)
             if count:
                 log('etl fact recomputed', fact=fact, rows=count)
         for sql in DIMENSIONS:
-            warehouse.execute(sql, {'run': run})
+            warehouse.execute(sql, since)
         warehouse.execute('INSERT INTO etl.runs VALUES (%s, now(), %s, %s, %s)', (run, staged, recomputed, skipped))
     log('etl run finished', rowsStaged=staged, factsRecomputed=recomputed, sourcesSkipped=skipped,
         durationMs=round((time.monotonic() - started) * 1000))
@@ -283,7 +296,22 @@ def connect_warehouse(env):
     conn = psycopg.connect(host=env.get('WAREHOUSE_HOST', 'warehouse'), dbname='warehouse', user='postgres',
                            password=env['WAREHOUSE_PASSWORD'], connect_timeout=5, autocommit=True)
     conn.execute((Path(__file__).with_name('warehouse.sql')).read_text())
+    if env.get('WAREHOUSE_READER_PASSWORD'):
+        grant_reader(conn, env['WAREHOUSE_READER_PASSWORD'])
     return conn
+
+
+def grant_reader(conn, password):
+    """Grafana's login: it may read the star schema and the run log, and change nothing. Anonymous
+    viewers can send its data source arbitrary SQL, so it must never be the superuser."""
+    from psycopg import sql
+    exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = 'grafana_reader'").fetchone()
+    verb = sql.SQL('ALTER') if exists else sql.SQL('CREATE')
+    conn.execute(sql.SQL('{} ROLE grafana_reader LOGIN PASSWORD {}').format(verb, sql.Literal(password)))
+    conn.execute("""ALTER ROLE grafana_reader SET default_transaction_read_only = on;
+GRANT USAGE ON SCHEMA public, etl TO grafana_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_reader;
+GRANT SELECT ON etl.runs TO grafana_reader""")
 
 
 def empty_warehouse(warehouse):
