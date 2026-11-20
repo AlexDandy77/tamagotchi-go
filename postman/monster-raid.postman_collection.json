@@ -1012,7 +1012,35 @@
        "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
        "const b = pm.response.json();",
        "pm.test(\"Alice is a participant of the active raid\", () => { pm.expect(b.status).to.eql(\"active\"); pm.expect(b.participants.map(p => p.userId)).to.include(pm.environment.get(\"aliceId\")); });",
-       "if(pm.response.code===200)pm.variables.set(\"raidRunHpBefore\",b.hp);"
+       "if(pm.response.code===200)pm.variables.set(\"raidRunHpBefore\",b.hp);",
+       "pm.test(\"X-Cache says where the raid came from (Lab 5 cache)\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.be.oneOf([\"MISS\", \"HIT\", \"BYPASS\"]));",
+       "pm.variables.set(\"raidRunCacheNode\", pm.response.headers.get(\"X-Cache-Node\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read the practice raid again from the cache",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{monsterRaid}}/v1/raids/{{raidRunPracticeId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.expect(pm.response.code).to.eql(200));",
+       "pm.test(\"Served from the shared cache, on the same shard (contracts/cache.md)\", () => { pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"HIT\"); pm.expect(pm.response.headers.get(\"X-Cache-Node\")).to.eql(pm.variables.get(\"raidRunCacheNode\")); });",
+       "pm.test(\"The same raid\", () => pm.expect(pm.response.json().hp).to.eql(pm.variables.get(\"raidRunHpBefore\")));"
       ]
      }
     }

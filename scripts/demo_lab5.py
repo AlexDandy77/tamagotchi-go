@@ -224,12 +224,15 @@ def grade5():
 
 def grade6():
     section('Grade 6: the first read goes to the database, the second is a cache hit')
+    # A new player's pet has never been read, so its first read is sure to miss.
+    bearer, roster = fresh_player()
+    pet = PETS + '/v1/pets/' + roster['pets'][0]['id']
     since = now()
-    first = http('GET', PETS + '/v1/pets')
-    second = http('GET', PETS + '/v1/pets')
+    first = http('GET', pet, bearer=bearer)
+    second = http('GET', pet, bearer=bearer)
     print('   1st:', show(first[0], first[1]))
     print('   2nd:', show(second[0], second[1]))
-    check('MISS, then HIT on the same node', first[1].get('X-Cache') in ('MISS', 'HIT') and second[1].get('X-Cache') == 'HIT'
+    check('MISS, then HIT on the same node', first[1].get('X-Cache') == 'MISS' and second[1].get('X-Cache') == 'HIT'
           and first[1].get('X-Cache-Node') == second[1].get('X-Cache-Node'))
     missed = logs('tamagotchi', since, 'cache miss') + logs('tamagotchi', since, 'cache hit')
     for entry in missed[:2]:
@@ -340,6 +343,22 @@ def grade9():
         print(f"   broker log: {entry['msg']} step={entry.get('step', '-')} status={entry.get('status', '-')}")
     status, _, body = http('GET', f'{ADMIN}/v1/sagas/{saga_id}')
     check('GET /services/message-broker/v1/sagas/{id} shows it', status == 200 and body.get('sagaId') == saga_id)
+
+    # The saga is stored before every step, so a restarted broker carries on where it was.
+    print('   restarting the message broker mid-saga')
+    since = now()
+    compose('restart', 'message-broker')
+    for _ in range(60):
+        status, _, body = http('GET', f'{ADMIN}/v1/sagas/{saga_id}')
+        if status == 200:
+            break
+        time.sleep(1)
+    check('the saga survived the restart', status == 200 and body.get('state') in (result['state'], 'waiting', 'completed', 'compensated'),
+          f"before {result['state']}, after {body.get('state') if status == 200 else status}")
+    if result['state'] in ('started', 'settling', 'compensating'):
+        resumed = [e for e in logs('message-broker', since, 'saga resumed after restart') if e.get('sagaId') == saga_id]
+        check('the broker resumed it from its last recorded step', bool(resumed),
+              f"step {resumed[0].get('step')}" if resumed else 'no "saga resumed after restart" line')
 
 
 GRADES = {'grade4': grade4, 'grade5': grade5, 'grade6': grade6, 'grade7': grade7, 'grade9': grade9}
