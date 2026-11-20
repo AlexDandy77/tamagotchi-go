@@ -104,7 +104,7 @@ Lab 5 makes the data layer survive failures and adds analytics. Releases are `5.
 | --- | --- | --- |
 | Replication | PostgreSQL as a three-node Patroni cluster with etcd. HAProxy keeps `postgres:5432` on the current primary and serves read-only `postgres-replicas:5433`. MongoDB runs a three-member replica set `rs0`. Every service database has two replicas and fails over automatically | [replication](contracts/replication.md) |
 | Cache | Three independent Valkey nodes, `cache-1` to `cache-3`. Each owner caches its frequent reads and its authentication lookups (status and roles, enrollment checks) with cache-aside; refresh tokens stay database-only, sharded by a shared consistent-hash ring | [cache](contracts/cache.md) |
-| Transactions | The battle is one long-running saga coordinated by the Message Broker, with compensation before the result and forward-only settlement after it. `GET /services/message-broker/v1/sagas` lists sagas | [transactions](contracts/transactions.md) |
+| Transactions | Joining a raid is a two-phase commit coordinated by Monster Raid over its own and Tamagotchi's databases (PostgreSQL prepared transactions). The battle is one long-running saga coordinated by the Message Broker, with compensation before the result and forward-only settlement after it. `GET /services/message-broker/v1/sagas` lists sagas | [transactions](contracts/transactions.md) |
 | Analytics | A `warehouse` PostgreSQL database with a star schema, filled every 5 minutes by the CPR ETL job from each owner's `etl` views on the replicas. Grafana has a "Game analytics" dashboard | [data warehouse](contracts/data-warehouse.md) |
 
 - `python3 scripts/lab.py setup` also generates `CACHE_PASSWORD` and `ETL_DB_PASSWORD`. `up` bootstraps the database cluster and the replica set. On the first start it copies the old single-server `postgres-data` volume into the cluster once and leaves the old volume untouched.
@@ -119,11 +119,12 @@ Lab 5 makes the data layer survive failures and adds analytics. Releases are `5.
 | 5 | Stop the primary in Docker Desktop → a replica logs `promoted self to leader`, the HAProxy page at `localhost:7000` moves, Postman requests keep working | `demo_lab5.py grade5` measures the failover |
 | 6 | The same Postman GET twice: `X-Cache: MISS`, then `HIT`, with the service log showing `cache miss, read from database`, then `cache hit` | — |
 | 7 | `X-Cache-Node` names the shard; stop that node and the key moves to the next node while other keys still `HIT` | `demo_lab5.py grade7` shows only the stopped node's keys move |
-| 8–9 | `GET /services/message-broker/v1/sagas/{battleId}` after a battle (completed) and after a failed accept (compensated); broker and participant logs share the `sagaId` | `demo_lab5.py grade9` restarts the broker mid-saga |
+| 8 | Join a raid: the Monster Raid and Tamagotchi logs show both prepares, then the commit (`join transaction committed`); joining with a reserved pet shows the abort. With `JOIN_PREPARED_PAUSE_SECONDS` set, stopping the Monster Raid replica mid-join leaves both transactions in `pg_prepared_xacts` until another replica's leader resolves them | — |
+| 9 | `GET /services/message-broker/v1/sagas/{battleId}` after a battle (completed) and after a failed accept (compensated); broker and participant logs share the `sagaId` | `demo_lab5.py grade9` restarts the broker mid-saga |
 
 ## Communication contract
 
-Contract version **1.6.0** (Lab 5 adds the cache, replication, saga and warehouse contracts below). All eight services implement their portions.
+Contract version **1.7.0** (Lab 5 adds the cache, replication, saga and warehouse contracts below, and the raid join's two-phase commit). All eight services implement their portions.
 
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): every HTTP path, parameter, body, response and caller restriction (OpenAPI 3.1).
 - [`contracts/events.schema.json`](contracts/events.schema.json): the ten event envelopes and payloads (JSON Schema).
@@ -268,6 +269,9 @@ Path parameters and listed bodies are required. `cursor?` and `limit?` are optio
 | `PUT /internal/v1/starter-pets/{operationId}` | internal | `StarterInput` | `200` `Pet` | Provision a starter pet exactly once |
 | `PUT /internal/v1/pet-reservations/{activityId}` | internal | `PetReserveInput` | `200` `PetReservation` | Reserve pets and return frozen combat properties |
 | `DELETE /internal/v1/pet-reservations/{activityId}` | internal | — | `204` | Release reserved pets without rewards |
+| `PUT /internal/v1/pet-reservations/{activityId}/prepare` | internal | `PetReserveInput` | `200` `PetReservation` | Raid join two-phase commit, phase 1: prepare the reservation and vote (Lab 5) |
+| `PUT /internal/v1/pet-reservations/{activityId}/commit` | internal | — | `204` | Phase 2: commit the prepared reservation |
+| `PUT /internal/v1/pet-reservations/{activityId}/abort` | internal | — | `204` | Phase 2: roll the prepared reservation back |
 | `PUT /internal/v1/pet-battle-settlements/{battleId}` | internal | `PetBattleResult` | `200` `PetResult` | Apply XP and transfer the loser's primary |
 | `PUT /internal/v1/pet-raid-settlements/{activityId}` | internal | `PetRaidResult` | `200` `PetResult` | Apply raid XP and release the pet |
 

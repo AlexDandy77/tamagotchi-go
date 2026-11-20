@@ -1,6 +1,6 @@
 # Distributed transactions contract
 
-A battle changes three databases: User Management (stakes and boosts), Tamagotchi (pets, XP and ownership) and Battle (the battle itself). Lab 5 makes this change all-or-nothing with a **long-running saga** whose **coordinator is the Message Broker**. The saga replaces the two-phase commit (2PC) that the lab asks for first; [why](#from-two-phase-commit-to-a-saga) is explained below.
+A battle changes three databases: User Management (stakes and boosts), Tamagotchi (pets, XP and ownership) and Battle (the battle itself). Lab 5 makes this change all-or-nothing with a **long-running saga** whose **coordinator is the Message Broker**. For the battle, the saga replaces the two-phase commit (2PC) that the lab asks for first; [why](#from-two-phase-commit-to-a-saga) is explained below. Joining a raid, which changes Monster Raid's and Tamagotchi's databases in one short step, is a real [two-phase commit](#two-phase-commit-joining-a-raid) coordinated by Monster Raid.
 
 Status: **proposed** (Lab 5). The gRPC API is the `Saga` service in [proto/broker.proto](proto/broker.proto); the admin routes are in [message-broker.openapi.yaml](message-broker.openapi.yaml).
 
@@ -16,7 +16,42 @@ Status: **proposed** (Lab 5). The gRPC API is the `Saga` service in [proto/broke
 
 For a battle this is a poor fit. The "prepared" state would last for the **whole combat**, minutes of 30-second turns, with the participants blocked on the coordinator's decision. If the coordinator crashed between the phases, they would stay blocked.
 
-A **saga** commits each step locally right away and undoes earlier steps with **compensating actions** if a later one fails. Nothing waits on a vote. The holds and reservations are business-level states that the game already understands (a reserved pet can't be cared for), not database locks. The saga's progress is stored durably by the coordinator, so it survives restarts. This is the version that is implemented.
+A **saga** commits each step locally right away and undoes earlier steps with **compensating actions** if a later one fails. Nothing waits on a vote. The holds and reservations are business-level states that the game already understands (a reserved pet can't be cared for), not database locks. The saga's progress is stored durably by the coordinator, so it survives restarts. This is the version that is implemented for the battle.
+
+Two-phase commit is still the right tool where the prepared state lasts only milliseconds: [joining a raid](#two-phase-commit-joining-a-raid) changes two databases in one short step, and Monster Raid coordinates it as a real PostgreSQL two-phase commit.
+
+## Two-phase commit: joining a raid
+
+Joining a raid changes two databases: Monster Raid records the participant, and Tamagotchi reserves the pet, frozen for the fight. Both changes must happen together or not at all. The whole join takes milliseconds, so participants that hold their locks while they wait for the decision cost nothing, which is the case two-phase commit fits. Monster Raid is the **coordinator**, and both databases are **participants**, using PostgreSQL's own prepared transactions (`PREPARE TRANSACTION`, `COMMIT PREPARED`, `ROLLBACK PREPARED`).
+
+| Phase | Monster Raid (coordinator and participant) | Tamagotchi (participant) |
+| --- | --- | --- |
+| Begin | Records the transaction as `preparing` in its `join_transactions` table and commits that row | — |
+| 1. Prepare | — | `PUT /internal/v1/pet-reservations/{activityId}/prepare` with `PetReserveInput` (`kind: "raid"`). Tamagotchi runs the reservation in one transaction and ends it with `PREPARE TRANSACTION 'pet-reservation:{activityId}'`. `200` with the frozen `PetReservation` is a **yes** vote; a refusal is a **no** vote with nothing prepared |
+| 1. Prepare | Its own transaction locks the raid, checks that the raid is active and has a free place, and stores the joined participant with the frozen pet. It ends with `PREPARE TRANSACTION 'monster-raid-join:{transactionId}'`, a yes vote; a failed check is a no vote | — |
+| Decision | Two yes votes: records `commit` in `join_transactions`, which is the **commit point**. Any no vote, error or timeout: records `abort` | — |
+| 2. Commit or abort | `COMMIT PREPARED` or `ROLLBACK PREPARED` of its own transaction | `PUT /internal/v1/pet-reservations/{activityId}/commit` or `.../abort` |
+
+- **Order:** Tamagotchi prepares first, because Monster Raid's participant row stores the frozen pet that Tamagotchi returns.
+- **`activityId`** is the participant's reservation ID, `UUIDv5(raidId, userId)`, so the raid's settlement later rewards or releases the pet exactly as before. An aborted prepare leaves no reservation and no tombstone, so the player can simply try again.
+- **Nobody decides alone.** A prepared transaction keeps its row locks and stays invisible until the coordinator's decision arrives, even across a restart: it is in the WAL, so a promoted replica holds it too. That waiting is the price of two-phase commit, and the reason the battle, which would wait for minutes, uses the saga instead.
+- **Recovery:** Monster Raid's leader resolves every unfinished transaction every 2 seconds:
+  - a decided `commit` is committed on both sides, retried until each answers;
+  - a decided `abort`, or a `preparing` older than 10 seconds whose coordinator crashed, is rolled back on both sides.
+  - `abort` answers `204` even when nothing was prepared, so an unanswered prepare is always safe to abort.
+- **Idempotency:**
+  - `commit` repeated after success answers `204` again;
+  - `prepare` for an `activityId` that is already prepared or reserved answers `409`, a no vote;
+  - each call carries an `Idempotency-Key` derived from the transaction ID and the phase.
+- **Settings:** PostgreSQL disables prepared transactions by default (`max_prepared_transactions = 0`). The cluster sets it to 64 on every node ([replication.md](replication.md)).
+
+### Logs and demo
+
+Monster Raid logs `join transaction prepared`, `join transaction committed` or `join transaction aborted` (with the reason), and `join transaction recovered`, each with the `transactionId` and the `reservationId`. Tamagotchi logs `pet reservation prepared`, `committed` and `aborted` with the `activityId`, which is that `reservationId`, so filtering either container's logs by it shows both sides of one join.
+
+1. **Commit:** join a raid in Postman. Both containers' logs show the prepare and the commit, and `SELECT * FROM pg_prepared_xacts` on either database is empty again.
+2. **Abort on a no vote:** join with a pet that is already reserved. Tamagotchi votes no, the participant is never visible, and the raid's participant count doesn't change.
+3. **Blocking and recovery:** with `JOIN_PREPARED_PAUSE_SECONDS` set on Monster Raid, a join stops after both votes. Stop that replica: `pg_prepared_xacts` on both databases shows the prepared transactions, and the raid's row stays locked. Within about 10 seconds another replica's leader aborts them (`join transaction recovered`), and the raid is free again.
 
 ## The battle saga
 
@@ -110,7 +145,7 @@ message-broker   {"level":"info","msg":"saga completed","sagaId":"…","duration
 2. **Compensation.** Challenge with a player who has fewer than 10 coins, or reserve a pet that is already reserved, then accept. The saga shows the failed step, the compensated steps and the state `compensated`. `GET /v1/battles/{battleId}` is `cancelled` with the reason, and the wallet shows the stake released.
 3. **Unknown outcome.** Pause the Tamagotchi containers in Docker Desktop during an accept. The reservation step runs out of budget with an unknown outcome; the broker still calls both releases and logs `saga compensation done` for each, so nothing stays held.
 
-**By script**, because timing a crash by hand is unreliable: `python3 scripts/demo_lab5.py grade9` starts a battle, stops the broker container right after the `finished` signal, starts it again, and prints the saga before and after. It resumes at the step it reached, completes once, and the coins and pets moved exactly once.
+**By script**, because timing a crash by hand is unreliable: `python3 scripts/demo_lab5.py grade9` starts a battle saga with the battle certificate, as Battle does, prints its steps, restarts the broker container mid-saga, and checks that the saga is still there and resumed from its last recorded step (`saga resumed after restart`). Every call carries its step's `Idempotency-Key`, so the resumed steps change nothing twice.
 
 ## What each owner changes
 
@@ -118,6 +153,6 @@ message-broker   {"level":"info","msg":"saga completed","sagaId":"…","duration
 | --- | --- |
 | Battle (Alexei) | On accept, call `Saga.Start` instead of calling User Management and Tamagotchi. When combat ends, call `Saga.Signal("finished")`; when cancelled before combat, `Saga.Signal("cancelled")`. Serve `PUT /internal/v1/battle-starts/{battleId}` and `PUT /internal/v1/battle-outcomes/{battleId}`: `cancelled` on an active battle answers `409 BATTLE_ACTIVE`, and a start after `cancelled` answers `409 BATTLE_CANCELLED`. Remove the direct hold, reservation and settlement calls |
 | User Management (Alexei) | Log the received `X-Saga-Id` on the hold, release and settlement routes. A release of an unknown `battleId` answers `404` and records a tombstone; a later hold for that id answers `409 RESERVATION_CLOSED` |
-| Tamagotchi (Artur) | Log the received `X-Saga-Id` on the reservation, release and settlement routes. Same tombstone rule for `pet-reservations` |
+| Tamagotchi (Artur) | Log the received `X-Saga-Id` on the reservation, release and settlement routes. Same tombstone rule for `pet-reservations`. For the raid join, also serve `PUT /internal/v1/pet-reservations/{activityId}/prepare`, `/commit` and `/abort` for Monster Raid, with `PREPARE TRANSACTION 'pet-reservation:{activityId}'`, `COMMIT PREPARED` and `ROLLBACK PREPARED` |
 | Message Broker (Artur) | The `Saga` service, the SQLite saga store, the step runner and the admin routes |
-| Monster Raid | Nothing: raids keep their current settlement flow |
+| Monster Raid | Coordinates the raid join as a two-phase commit ([above](#two-phase-commit-joining-a-raid)) when `JOIN_COMMIT=two-phase`: the `join_transactions` log, its own prepared transaction, the decision and the recovery worker. Raids keep their settlement flow |

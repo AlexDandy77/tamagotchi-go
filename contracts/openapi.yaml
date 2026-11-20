@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: Tamagotchi Go communication contract
-  version: 1.6.0
+  version: 1.7.0
   description: Business API contract. Paths are relative to the owning service. Gateway transport and
     staged migration are defined in gateway.md; endpoint bodies and ownership are unchanged.
 tags:
@@ -1555,6 +1555,139 @@ paths:
       - serviceTLS: []
       x-allowed-callers:
       - battle
+      - monster-raid
+  /internal/v1/pet-reservations/{activityId}/prepare:
+    put:
+      tags:
+      - Tamagotchi
+      summary: 'Two-phase commit, phase 1: prepare a raid pet reservation and vote'
+      operationId: PUT_internal_v1_pet_reservations_activityId_prepare
+      description: 'Raid join two-phase commit (contracts/transactions.md). Runs the reservation of PUT /internal/v1/pet-reservations/{activityId} in one database transaction and ends it with PREPARE TRANSACTION instead of COMMIT, so the reservation is durable but not visible until the coordinator decides. 200 is a yes vote and returns the reservation as it will be committed; any refusal (4xx) is a no vote with nothing prepared. A repeated prepare for an activityId that is already prepared or reserved answers 409.'
+      x-audience: internal
+      responses:
+        '200':
+          description: Prepared; the vote is yes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetReservation'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: activityId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PetReserveInput'
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - monster-raid
+  /internal/v1/pet-reservations/{activityId}/commit:
+    put:
+      tags:
+      - Tamagotchi
+      summary: 'Two-phase commit, phase 2: commit a prepared pet reservation'
+      operationId: PUT_internal_v1_pet_reservations_activityId_commit
+      description: 'COMMIT PREPARED for the reservation prepared under activityId (contracts/transactions.md). Idempotent: once committed, repeating it answers 204 again. 404 means nothing was prepared or committed under this activityId.'
+      x-audience: internal
+      responses:
+        '204':
+          description: Committed; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: activityId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
+      - monster-raid
+  /internal/v1/pet-reservations/{activityId}/abort:
+    put:
+      tags:
+      - Tamagotchi
+      summary: 'Two-phase commit, phase 2: abort a prepared pet reservation'
+      operationId: PUT_internal_v1_pet_reservations_activityId_abort
+      description: 'ROLLBACK PREPARED for the reservation prepared under activityId (contracts/transactions.md). Answers 204 whether or not anything was prepared, so the coordinator may abort a phase 1 whose answer it never received. It never touches a committed reservation (409).'
+      x-audience: internal
+      responses:
+        '204':
+          description: Rolled back, or nothing was prepared; no response body.
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: activityId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+        description: Stable key for retries of this logical mutation. Reuse with changed input returns 409.
+      security:
+      - serviceTLS: []
+      x-allowed-callers:
       - monster-raid
   /internal/v1/pet-battle-settlements/{battleId}:
     put:
