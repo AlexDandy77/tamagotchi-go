@@ -5,6 +5,7 @@
     python3 scripts/demo_lab5.py grade5   stop the primary under writes; time the failover
     python3 scripts/demo_lab5.py grade6   the same GET twice: MISS (database), then HIT
     python3 scripts/demo_lab5.py grade7   consistent hashing: stop a key's node, only its keys move
+    python3 scripts/demo_lab5.py grade8   a raid join as a two-phase commit: commit, a no vote, a stopped coordinator
     python3 scripts/demo_lab5.py grade9   a battle saga started as Battle, followed step by step
     python3 scripts/demo_lab5.py all
 
@@ -16,6 +17,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -26,10 +28,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lab  # noqa: E402
 from smoke import USERS, request  # noqa: E402
+from smoke_monster_raid import fresh_raid  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PETS = 'http://127.0.0.1:8080/services/tamagotchi'
 ADMIN = 'http://127.0.0.1:8080/services/message-broker'
+GUILDS = 'http://127.0.0.1:8080/services/guild'
+RAIDS = 'http://127.0.0.1:8080/services/monster-raid'
+MONSTER_RAIDS = ('monster-raid', 'monster-raid-2', 'monster-raid-3')
 RESULTS = {'passed': 0, 'failed': 0}
 CACHE_NODES = ('cache-1', 'cache-2', 'cache-3')
 
@@ -361,7 +367,164 @@ def grade9():
               f"step {resumed[0].get('step')}" if resumed else 'no "saga resumed after restart" line')
 
 
-GRADES = {'grade4': grade4, 'grade5': grade5, 'grade6': grade6, 'grade7': grade7, 'grade9': grade9}
+# -- grade 8 helpers -----------------------------------------------------------------------
+
+
+def joins(since, message, user_id):
+    """Monster Raid's log lines starting with message about user_id, with the replica that wrote each."""
+    return [(service, entry) for service in MONSTER_RAIDS for entry in logs(service, since, message)
+            if entry.get('userId') == user_id]
+
+
+def waiting(find, seconds):
+    """find() until it returns something, for up to seconds: log lines take a moment to appear."""
+    deadline = time.monotonic() + seconds
+    while True:
+        found = find()
+        if found or time.monotonic() > deadline:
+            return found
+        time.sleep(1)
+
+
+def prepared():
+    """The raid join's prepared transactions. Both databases are on the same PostgreSQL cluster,
+    and pg_prepared_xacts lists every database's."""
+    rows = lab.psql("SELECT database || ' ' || gid FROM pg_prepared_xacts WHERE gid LIKE 'monster-raid-join:%' "
+                    "OR gid LIKE 'pet-reservation:%' ORDER BY prepared", capture=True, timeout=10)
+    return rows.splitlines() if rows else []
+
+
+def join(raid, bearer, pet):
+    return http('POST', f'{RAIDS}/v1/raids/{raid}/participants', {'primaryPetId': pet}, key=True, bearer=bearer)
+
+
+def error_code(body):
+    try:
+        return json.loads(body)['error']['code'] if isinstance(body, bytes) else ''
+    except (ValueError, KeyError, TypeError):
+        return ''
+
+
+def participants(raid):
+    status, _, body = http('GET', f'{RAIDS}/v1/raids/{raid}')
+    return {p['userId'] for p in body['participants']} if status == 200 else set()
+
+
+def monster_raid_pause(seconds):
+    """Recreates the Monster Raid replicas with JOIN_PREPARED_PAUSE_SECONDS (empty: none), which
+    also starts a stopped one, and waits until the raid API answers through the broker again."""
+    env = {**os.environ, 'MONSTER_RAID_JOIN_PREPARED_PAUSE_SECONDS': str(seconds or '')}
+    subprocess.run(['docker', 'compose', 'up', '-d', '--no-deps', '--wait', '--pull', 'never', *MONSTER_RAIDS],
+                   cwd=ROOT, env=env, text=True, capture_output=True, check=True)
+    waiting(lambda: http('GET', f'{RAIDS}/v1/raids?guildId=00000000-0000-4000-8000-000000000000')[0] in (200, 403), 60)
+
+
+def join_mode():
+    container = compose('ps', '-q', 'monster-raid').stdout.strip()
+    env = subprocess.run(['docker', 'inspect', '-f', '{{json .Config.Env}}', container], text=True, capture_output=True).stdout
+    return next((v.split('=', 1)[1] for v in json.loads(env or '[]') if v.startswith('JOIN_COMMIT=')), '')
+
+
+def grade8():
+    section('Grade 8: joining a raid is a two-phase commit over Monster Raid and Tamagotchi')
+    mode = join_mode()
+    if not check('Monster Raid runs JOIN_COMMIT=two-phase', mode == 'two-phase',
+                 '' if mode == 'two-phase' else f'it runs {mode or "compensation"}; set MONSTER_RAID_JOIN_COMMIT=two-phase in .env and run python3 scripts/lab.py up'):
+        return
+    # Alice, the Registry admin, leads a new guild and schedules its raids; two new players join
+    # them, so the demo never depends on pets that earlier runs reserved.
+    (first_bearer, first_roster), (second_bearer, second_roster) = fresh_player(), fresh_player()
+    players = []
+    for bearer, roster in ((first_bearer, first_roster), (second_bearer, second_roster)):
+        user = http('GET', USERS + '/v1/users/me', bearer=bearer)[2]['id']
+        players.append((bearer, user, roster.get('primaryPetId') or roster['pets'][0]['id']))
+    guild = http('POST', GUILDS + '/v1/guilds', {'name': 'Two-phase demo', 'description': ''}, key=True)[2]['id']
+    for bearer, user, _ in players:
+        invitation = http('POST', f'{GUILDS}/v1/guilds/{guild}/invitations', {'recipientId': user}, key=True)[2]['id']
+        http('PUT', f'{GUILDS}/v1/guild-invitations/{invitation}/decision', {'decision': 'accept'}, key=True, bearer=bearer)
+    first_raid, second_raid = fresh_raid(token(), guild)[0], fresh_raid(token(), guild)[0]
+    (bearer, user, pet), (other_bearer, other_user, other_pet) = players
+
+    print('\n   1. Both vote yes: the join commits on both databases')
+    since = now()
+    status, _, body = join(first_raid, bearer, pet)
+    check('the join answered 201', status == 201, f'{status} {body}' if status != 201 else '')
+    committed = waiting(lambda: joins(since, 'join transaction committed', user), 10)
+    reservation = committed[0][1]['reservationId'] if committed else None
+    for service, entry in joins(since, 'join transaction', user):
+        print(f"   {service}: {entry['msg']} transactionId={entry['transactionId']} reservationId={entry['reservationId']}")
+    check('Monster Raid prepared, then committed it', bool(committed))
+    pets = waiting(lambda: [e for e in logs('tamagotchi', since, 'pet reservation') if e.get('activityId') == reservation], 5) \
+        if reservation else []
+    for entry in sorted(pets, key=lambda e: e.get('time', 0)):
+        print(f"   tamagotchi {entry.get('instanceId', '')}: {entry['msg']} activityId={entry['activityId']}")
+    check('Tamagotchi prepared, then committed the same reservation',
+          {'pet reservation prepared', 'pet reservation committed'} <= {e['msg'] for e in pets})
+    check('no prepared transaction is left', not prepared())
+
+    print('\n   2. Tamagotchi votes no: the same pet for a second raid, which nothing changes')
+    since = now()
+    status, _, body = join(second_raid, bearer, pet)
+    check('the join is refused with 409', status == 409, error_code(body) if status == 409 else f'{status} {body}')
+    aborted = waiting(lambda: joins(since, 'join transaction aborted', user), 10)
+    if aborted:
+        print(f"   {aborted[0][0]}: join transaction aborted, reason: {aborted[0][1].get('reason')}")
+    check('Monster Raid aborted it after the no vote', bool(aborted) and 'voted no' in aborted[0][1].get('reason', ''))
+    check('the player is not in the second raid', user not in participants(second_raid))
+    check('no prepared transaction is left', not prepared())
+
+    print('\n   3. The coordinator stops between the phases')
+    pause = 30
+    print(f'   recreating the Monster Raid replicas with JOIN_PREPARED_PAUSE_SECONDS={pause}: each join waits after both votes')
+    monster_raid_pause(pause)
+    answer = {}
+
+    def joining():  # the player's request, which the stopped coordinator never answers itself
+        try:
+            status, _, body = join(second_raid, other_bearer, other_pet)
+            answer['status'] = f'{status} {error_code(body)}'.strip()
+        except OSError as error:
+            answer['status'] = type(error).__name__
+
+    try:
+        since = now()
+        request_thread = threading.Thread(target=joining, daemon=True)
+        request_thread.start()
+        voted = waiting(lambda: joins(since, 'join transaction prepared', other_user), 20)
+        if not check('both sides voted yes and prepared', bool(voted)):
+            return
+        coordinator, entry = voted[0]
+        transaction, reservation = entry['transactionId'], entry['reservationId']
+        held = prepared()
+        for row in held:
+            print('   pg_prepared_xacts:', row)
+        check('each database holds its prepared transaction',
+              any(r.endswith('monster-raid-join:' + transaction) for r in held) and any(r.endswith('pet-reservation:' + reservation) for r in held))
+        # A retry with a new Idempotency-Key, as after a timeout: it must not touch the first join,
+        # whose prepared reservation at Tamagotchi carries the same activityId.
+        status, _, body = join(second_raid, other_bearer, other_pet)
+        check('a second join meanwhile is refused and leaves the first one prepared',
+              status == 409 and error_code(body) == 'JOIN_IN_PROGRESS' and set(prepared()) >= set(held),
+              f'{status} {error_code(body)}')
+        print(f'   stopping {coordinator}, the coordinator, before it records a decision')
+        compose('stop', coordinator)
+        request_thread.join(30)
+        print(f"   the player's request ended with {answer.get('status', 'no answer yet')}")
+        recovered = waiting(lambda: [e for _, e in joins(since, 'join transaction recovered', other_user)
+                                     if e.get('transactionId') == transaction], 45)
+        if recovered:
+            print(f"   {recovered[0].get('instanceId')}: join transaction recovered, decision {recovered[0].get('decision')}")
+        check('another replica aborted the undecided transaction', bool(recovered) and recovered[0].get('decision') == 'abort')
+        check('both prepared transactions were rolled back', waiting(lambda: not prepared(), 10))
+        check('the player is not in the raid', other_user not in participants(second_raid))
+    finally:
+        print('   recreating the Monster Raid replicas without the pause')
+        monster_raid_pause(None)
+    status, _, body = join(second_raid, other_bearer, other_pet)
+    check('the player joins normally now: the abort left nothing held', status == 201, f'{status} {body}' if status != 201 else '')
+
+
+GRADES = {'grade4': grade4, 'grade5': grade5, 'grade6': grade6, 'grade7': grade7, 'grade8': grade8, 'grade9': grade9}
 
 
 def main(argv):

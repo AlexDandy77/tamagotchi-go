@@ -155,6 +155,18 @@ def broker_defaults():
         print('Updated the previous broker migration defaults; custom selections preserved.')
 
 
+def raid_join_default():
+    """Lab 5: the raid join became a two-phase commit once Tamagotchi 5.0.1 served its routes. An .env
+    on compensation, the previous default, is moved to two-phase on every setup, which cannot tell it
+    from a deliberate choice: compensation is chosen with the shell variable, which overrides .env."""
+    path = ROOT / '.env'
+    data = path.read_text()
+    upgraded = re.sub(r'^MONSTER_RAID_JOIN_COMMIT=compensation$', 'MONSTER_RAID_JOIN_COMMIT=two-phase', data, flags=re.M)
+    if upgraded != data:
+        path.write_text(upgraded)
+        print('Raid joins now use the two-phase commit (MONSTER_RAID_JOIN_COMMIT=two-phase).')
+
+
 def demo_admin():
     """Fill only the local demo default; explicit admins always win."""
     path = ROOT / '.env'
@@ -175,6 +187,7 @@ def setup():
     env_file()
     managed_services()
     broker_defaults()
+    raid_join_default()
     demo_admin()
     directory = ROOT / '.secrets'
     directory.mkdir(mode=0o700, exist_ok=True)

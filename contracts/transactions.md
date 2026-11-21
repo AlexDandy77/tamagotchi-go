@@ -42,7 +42,8 @@ Joining a raid changes two databases: Monster Raid records the participant, and 
 - **Idempotency:**
   - `commit` repeated after success answers `204` again;
   - `prepare` for an `activityId` that is already prepared or reserved answers `409`, a no vote;
-  - each call carries an `Idempotency-Key` derived from the transaction ID and the phase.
+  - each call carries an `Idempotency-Key` derived from the transaction ID and the phase, never from the `activityId`: a later join of the same player to the same raid must run its phases, not replay an earlier join's answers.
+- **One join at a time:** Monster Raid keeps at most one unfinished join transaction per `activityId`. A second join of the same player to the same raid answers `409 JOIN_IN_PROGRESS` until the first is finished. Both would share Tamagotchi's `pet-reservation:{activityId}`, so the second one's abort would otherwise roll back the first one's prepare.
 - **Settings:** PostgreSQL disables prepared transactions by default (`max_prepared_transactions = 0`). The cluster sets it to 64 on every node ([replication.md](replication.md)).
 
 ### Logs and demo
@@ -52,6 +53,8 @@ Monster Raid logs `join transaction prepared`, `join transaction committed` or `
 1. **Commit:** join a raid in Postman. Both containers' logs show the prepare and the commit, and `SELECT * FROM pg_prepared_xacts` on either database is empty again.
 2. **Abort on a no vote:** join with a pet that is already reserved. Tamagotchi votes no, the participant is never visible, and the raid's participant count doesn't change.
 3. **Blocking and recovery:** with `JOIN_PREPARED_PAUSE_SECONDS` set on Monster Raid, a join stops after both votes. Stop that replica: `pg_prepared_xacts` on both databases shows the prepared transactions, and the raid's row stays locked. Within about 10 seconds another replica's leader aborts them (`join transaction recovered`), and the raid is free again.
+
+**By script:** `python3 scripts/demo_lab5.py grade8` runs all three with two new players in a new guild. It checks each side's log lines and `pg_prepared_xacts` after every step. For the third, it recreates the Monster Raid replicas with a 30-second pause, sends the same join again under a new key (`409 JOIN_IN_PROGRESS`, the first one still prepared), stops the replica that logged `join transaction prepared`, waits for `join transaction recovered`, recreates the replicas without the pause, and then joins the same player again.
 
 ## The battle saga
 

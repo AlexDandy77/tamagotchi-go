@@ -77,18 +77,19 @@ def start_events(token):
         events += [m['value'] if isinstance(m['value'], dict) else json.loads(m['value']) for m in page['items']]
         start = page['nextOffset']
 
-def fresh_raid(token):
-    """Schedules a new Night Owls raid as Package Registry admin and waits for Package Registry to
-    start it. Returns the raid ID, which is the schedule's, and the schedule version."""
+def fresh_raid(token, guild=NIGHT_OWLS):
+    """Schedules a new raid of guild (Night Owls by default) as Package Registry admin and waits
+    for Package Registry to start it. Returns the raid ID, which is the schedule's, and the
+    schedule version."""
     monster = request(REGISTRY, 'POST', '/v1/monsters', {'name': 'Smoke target', 'description': '',
         'spriteUrls': ['https://example.invalid/monster.png'], 'maxHp': 1000, 'baseAttack': 0,
         'weaknesses': [], 'resistances': [], 'specialProperties': ['none']}, token, key(), 201)
     starts = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=3)
-    schedule = request(REGISTRY, 'POST', '/v1/raid-schedules', {'guildId': NIGHT_OWLS, 'monsterId': monster['id'],
+    schedule = request(REGISTRY, 'POST', '/v1/raid-schedules', {'guildId': guild, 'monsterId': monster['id'],
         'monsterVersion': monster['version'], 'startsAt': starts.isoformat(), 'durationSeconds': 300,
         'participantLimit': 2, 'rewards': {'globalCurrencyPerParticipant': 20, 'xpPerParticipant': 10}}, token, key(), 201)
     for _ in range(60):
-        listed = request(RAIDS, 'GET', '/v1/raids?guildId=' + NIGHT_OWLS, token=token)['items']
+        listed = request(RAIDS, 'GET', '/v1/raids?guildId=' + guild, token=token)['items']
         if any(r['id'] == schedule['id'] and r['status'] == 'active' for r in listed):
             return schedule['id'], schedule['version']
         time.sleep(0.5)

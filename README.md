@@ -119,7 +119,7 @@ Lab 5 makes the data layer survive failures and adds analytics. Releases are `5.
 | 5 | Stop the primary in Docker Desktop → a replica logs `promoted self to leader`, the HAProxy page at `localhost:7000` moves, Postman requests keep working | `demo_lab5.py grade5` measures the failover |
 | 6 | The same Postman GET twice: `X-Cache: MISS`, then `HIT`, with the service log showing `cache miss, read from database`, then `cache hit` | — |
 | 7 | `X-Cache-Node` names the shard; stop that node and the key moves to the next node while other keys still `HIT` | `demo_lab5.py grade7` shows only the stopped node's keys move |
-| 8 | Join a raid: the Monster Raid and Tamagotchi logs show both prepares, then the commit (`join transaction committed`); joining with a reserved pet shows the abort. With `JOIN_PREPARED_PAUSE_SECONDS` set, stopping the Monster Raid replica mid-join leaves both transactions in `pg_prepared_xacts` until another replica's leader resolves them | — |
+| 8 | Join a raid: the Monster Raid and Tamagotchi logs show both prepares, then the commit (`join transaction committed`); joining with a reserved pet shows the abort. With `JOIN_PREPARED_PAUSE_SECONDS` set, stopping the Monster Raid replica mid-join leaves both transactions in `pg_prepared_xacts` until another replica's leader resolves them | `demo_lab5.py grade8` runs all three |
 | 9 | `GET /services/message-broker/v1/sagas/{battleId}` after a battle (completed) and after a failed accept (compensated); broker and participant logs share the `sagaId` | `demo_lab5.py grade9` restarts the broker mid-saga |
 
 ## Communication contract
