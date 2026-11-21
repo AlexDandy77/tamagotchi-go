@@ -23,7 +23,16 @@ SECRET_KEYS = (
     'POSTGRES_PASSWORD', 'USERS_DB_PASSWORD', 'BATTLES_DB_PASSWORD', 'GUILDS_DB_PASSWORD', 'LOCATIONS_DB_PASSWORD',
     'RAIDS_DB_PASSWORD', 'TAMAGOTCHI_DB_PASSWORD', 'NOTIFICATION_DB_PASSWORD',
     'MONGO_ROOT_PASSWORD', 'REGISTRY_DB_PASSWORD', 'SEED_PASSWORD', 'GRAFANA_ADMIN_PASSWORD',
+    # Lab 5: Patroni's replication user, the shared cache, the ETL's read-only role, the
+    # warehouse, and Grafana's read-only login to the warehouse.
+    'POSTGRES_REPLICATION_PASSWORD', 'CACHE_PASSWORD', 'ETL_DB_PASSWORD', 'WAREHOUSE_PASSWORD',
+    'WAREHOUSE_READER_PASSWORD',
 )
+PROJECT = 'tamagotchi-lab1'
+# Lab 5 (contracts/replication.md): the database cluster and the Mongo replica set.
+POSTGRES_NODES = ('postgres-1', 'postgres-2', 'postgres-3')
+MONGO_MEMBERS = ('mongo', 'mongo-2', 'mongo-3')
+DATA_SERVICES = ('etcd', *POSTGRES_NODES, 'haproxy', *MONGO_MEMBERS)
 # Prepare every service certificate; owners mount them when enabling Gateway transport.
 TLS_SERVICES = ('user-management', 'battle', 'guild', 'package-registry', 'map', 'monster-raid', 'tamagotchi', 'notification', 'gateway', 'service-discovery', 'message-broker')
 # These images run as an unprivileged user that must read its bind-mounted key.
@@ -46,7 +55,8 @@ tar -cf - $files
 '''
 
 def run(args, **kwargs):
-    return subprocess.run(args, cwd=ROOT, check=True, **kwargs)
+    kwargs.setdefault('check', True)
+    return subprocess.run(args, cwd=ROOT, **kwargs)
 
 def compose(*args, **kwargs):
     return run(['docker', 'compose', *args], **kwargs)
@@ -186,6 +196,119 @@ def check_password(value):
         raise ValueError('Use a URL-safe database password of 24–128 characters')
     return value
 
+def psql(sql, database='postgres', capture=False, host='postgres', timeout=None):
+    """Runs SQL as the superuser through HAProxy (postgres:5432 is always the primary).
+
+    A throwaway client container on the Compose network, so this works whichever node is
+    primary or stopped. The password travels in the environment, never in arguments.
+    """
+    env = {**os.environ, 'PGPASSWORD': environment()['POSTGRES_PASSWORD']}
+    limits = []
+    if timeout:
+        # The server cancels a statement (or a commit waiting for a standby) after `timeout` seconds.
+        env.update(PGCONNECT_TIMEOUT='3', PGOPTIONS=f'-c statement_timeout={int(timeout * 1000)}')
+        limits = ['-e', 'PGCONNECT_TIMEOUT', '-e', 'PGOPTIONS']
+    result = run(['docker', 'run', '--rm', '-i', '--network', f'{PROJECT}_default', '-e', 'PGPASSWORD', *limits, TOOLS_IMAGE,
+                  'psql', '-h', host, '-U', 'postgres', '-d', database, '-v', 'ON_ERROR_STOP=1', '-qAt'],
+                 input=sql.encode(), env=env, stdout=subprocess.PIPE if capture else subprocess.DEVNULL)
+    return result.stdout.decode().strip() if capture else None
+
+def wait_for_primary(timeout=120):
+    """Patroni elects a leader after its first start; HAProxy then routes postgres:5432 to it."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            if psql('SELECT NOT pg_is_in_recovery()', capture=True) == 't':
+                return
+        except subprocess.CalledProcessError:
+            pass
+        if time.monotonic() > deadline:
+            raise SystemExit('The PostgreSQL cluster elected no primary; see: docker compose logs postgres-1')
+        time.sleep(2)
+
+def ensure_cluster_settings():
+    """Patroni reads its bootstrap settings only when a cluster is first created; applying them to
+    the live cluster configuration keeps existing clusters in line (contracts/replication.md)."""
+    running = set(compose('ps', '--services', '--status', 'running', stdout=subprocess.PIPE).stdout.decode().split())
+    node = next(n for n in POSTGRES_NODES if n in running)
+    compose('exec', '-T', node, 'patronictl', 'edit-config', '--force', '--quiet',
+            '--set', 'synchronous_mode=true', '--set', 'synchronous_mode_strict=true', '--set', 'failsafe_mode=true',
+            '--set', 'postgresql.parameters.max_prepared_transactions=64',
+            stdout=subprocess.DEVNULL)
+    if psql('SHOW max_prepared_transactions', capture=True) == '64':
+        return
+    # max_prepared_transactions takes effect only after a restart. Patroni flags the nodes within
+    # one loop (10 s), then restarts them one at a time, before any service connects.
+    print('Restarting the database nodes once to enable prepared transactions.', flush=True)
+    for _ in range(30):
+        listing = compose('exec', '-T', node, 'patronictl', 'list', '--format', 'json', stdout=subprocess.PIPE).stdout
+        if any(member.get('Pending restart') for member in json.loads(listing or b'[]')):
+            break
+        time.sleep(1)
+    compose('exec', '-T', node, 'patronictl', 'restart', 'tamagotchi', '--pending', '--force',
+            stdout=subprocess.DEVNULL)
+    wait_for_primary()
+
+def copy_lab4_database():
+    """Once: copies Lab 4's single-server volume into the cluster, leaving the old volume untouched.
+
+    Each database is restored with --create --clean, so a copy that was interrupted (Ctrl-C, a
+    Docker hiccup) simply runs again on the next `up`; only a finished copy sets the marker."""
+    if psql("SELECT to_regclass('public.lab5_copied_from_lab4') IS NOT NULL", capture=True) == 't':
+        return
+    volume = f'{PROJECT}_postgres-data'
+    has_old = run(['docker', 'volume', 'inspect', volume], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
+    has_user_databases = psql("SELECT count(*) FROM pg_database WHERE datname NOT IN ('postgres','template0','template1')", capture=True) != '0'
+    interrupted = psql("SELECT to_regclass('public.lab5_copy_started') IS NOT NULL", capture=True) == 't'
+    if has_old and (interrupted or not has_user_databases):
+        users = run(['docker', 'ps', '-q', '--filter', f'volume={volume}'], stdout=subprocess.PIPE).stdout.decode().split()
+        if users:
+            # A second server on a data directory that a running Lab 4 server still uses would
+            # corrupt it, and that server would also answer for the alias postgres.
+            raise SystemExit(f'The Lab 4 volume {volume} is still in use by container {users[0]}; '
+                             'stop the Lab 4 stack (python3 scripts/lab.py down) and run up again.')
+        print('Copying the Lab 4 database volume into the cluster (once).', flush=True)
+        psql('CREATE TABLE IF NOT EXISTS lab5_copy_started (at timestamptz NOT NULL DEFAULT now())')
+        name = f'{PROJECT}-lab4-copy'
+        run(['docker', 'run', '-d', '--rm', '--name', name, '-v', f'{volume}:/var/lib/postgresql/data', TOOLS_IMAGE], stdout=subprocess.DEVNULL)
+        try:
+            for _ in range(60):
+                if run(['docker', 'exec', name, 'pg_isready', '-U', 'postgres'], stdout=subprocess.DEVNULL, check=False).returncode == 0:
+                    break
+                time.sleep(1)
+            psql(tolerant_roles(run(['docker', 'exec', name, 'pg_dumpall', '-U', 'postgres', '--globals-only'],
+                                    stdout=subprocess.PIPE).stdout.decode()))
+            databases = run(['docker', 'exec', name, 'psql', '-U', 'postgres', '-Atc',
+                             "SELECT datname FROM pg_database WHERE NOT datistemplate AND datname <> 'postgres'"],
+                            stdout=subprocess.PIPE).stdout.decode().split()
+            for database in databases:
+                dump = run(['docker', 'exec', name, 'pg_dump', '-U', 'postgres', '-Fc', database], stdout=subprocess.PIPE).stdout
+                restore(dump)
+        finally:
+            run(['docker', 'stop', name], stdout=subprocess.DEVNULL, check=False)
+    psql('CREATE TABLE IF NOT EXISTS lab5_copied_from_lab4 (at timestamptz NOT NULL DEFAULT now())')
+    psql('DROP TABLE IF EXISTS lab5_copy_started')
+
+def tolerant_roles(globals_sql):
+    """The roles of a globals dump, safe to apply again: CREATE ROLE skips a role that exists, and
+    the cluster's own superuser is left alone."""
+    lines = []
+    for line in globals_sql.splitlines():
+        if re.match(r'^(DROP|CREATE|ALTER) ROLE (IF EXISTS )?postgres\b', line):
+            continue
+        created = re.match(r'^CREATE ROLE ([^;]+);$', line)
+        if created:
+            line = f'DO $$ BEGIN CREATE ROLE {created.group(1)}; EXCEPTION WHEN duplicate_object THEN NULL; END $$;'
+        lines.append(line)
+    return '\n'.join(lines)
+
+def restore(dump):
+    """Restores one custom-format database dump on the primary, replacing that database if it exists."""
+    env = {**os.environ, 'PGPASSWORD': environment()['POSTGRES_PASSWORD']}
+    run(['docker', 'run', '--rm', '-i', '--network', f'{PROJECT}_default', '-e', 'PGPASSWORD', TOOLS_IMAGE,
+         'pg_restore', '-h', 'postgres', '-U', 'postgres', '-d', 'postgres', '--create', '--clean', '--if-exists',
+         '--exit-on-error'], input=dump, env=env, stdout=subprocess.DEVNULL)
+
 def provision():
     env = environment()
     for entry in json.loads((ROOT / 'deployment/databases.json').read_text()):
@@ -201,11 +324,21 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname='{database}')\n\\gexec
 REVOKE CONNECT ON DATABASE {database} FROM PUBLIC;
 GRANT CONNECT ON DATABASE {database} TO {role};
 """
-        compose('exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', input=sql.encode(), stdout=subprocess.DEVNULL)
+        psql(sql)
+    # Lab 5 (contracts/data-warehouse.md): one read-only login for the ETL. Roles are
+    # cluster-wide; it may connect to every service database but reads only their etl views.
+    etl_password = check_password(env['ETL_DB_PASSWORD'])
+    databases = [entry['database'] for entry in json.loads((ROOT / 'deployment/databases.json').read_text())]
+    grants = ''.join(f'GRANT CONNECT ON DATABASE {database} TO etl_reader;\n' for database in databases)
+    psql(f"""SELECT format('CREATE ROLE etl_reader LOGIN PASSWORD %L', '{etl_password}')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='etl_reader')\\gexec
+{grants}""")
     check_password(env['REGISTRY_DB_PASSWORD'])
-    # Initiates the replica set and creates the registry user; passwords come from the container environment.
+    # Initiates the replica set, adds its members and creates the registry user; passwords come
+    # from the container environment.
     script = (ROOT / 'deployment/mongo-init.js').read_text()
-    compose('exec', '-T', 'mongo', 'mongosh', '--quiet', '--nodb', '--eval', script, stdout=subprocess.DEVNULL)
+    compose('exec', '-T', '-e', 'MONGO_MEMBERS=' + ','.join(m + ':27017' for m in MONGO_MEMBERS), 'mongo',
+            'mongosh', '--quiet', '--nodb', '--eval', script, stdout=subprocess.DEVNULL)
     print('Missing databases/roles created; existing data and passwords preserved.')
 
 def refresh_images():
@@ -226,19 +359,53 @@ def refresh_images():
     compose('pull', '--policy', 'always')
 
 
+def grant_etl_reader():
+    """After migrations: lets etl_reader read every service's etl views, including databases
+    migrated before the role existed. Owners keep control of what their views contain."""
+    for entry in json.loads((ROOT / 'deployment/databases.json').read_text()):
+        psql("""DO $$ BEGIN
+  IF EXISTS (SELECT FROM pg_namespace WHERE nspname = 'etl') THEN
+    GRANT USAGE ON SCHEMA etl TO etl_reader;
+    GRANT SELECT ON ALL TABLES IN SCHEMA etl TO etl_reader;
+  END IF;
+END $$;""", database=entry['database'])
+
+def db_status():
+    """Lab 5 demo: which node is primary, which replica is synchronous, and their lag."""
+    running = set(compose('ps', '--services', '--status', 'running', stdout=subprocess.PIPE).stdout.decode().split())
+    node = next((n for n in POSTGRES_NODES if n in running), None)
+    if node is None:
+        raise SystemExit('No PostgreSQL node is running.')
+    compose('exec', '-T', node, 'patronictl', 'list')
+    # The first member holds the root password in its environment, so it never appears in arguments.
+    script = ("db = connect('mongodb://root:' + encodeURIComponent(process.env.MONGO_INITDB_ROOT_PASSWORD) + "
+              "'@localhost:27017/admin?directConnection=true');"
+              "rs.status().members.forEach(m => print(m.name.padEnd(16) + m.stateStr))")
+    if 'mongo' in running:
+        compose('exec', '-T', 'mongo', 'mongosh', '--quiet', '--nodb', '--eval', script)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['setup', 'up', 'provision', 'migrate', 'seed', 'down', 'status'])
-    command = parser.parse_args().command
+    parser.add_argument('command', choices=['setup', 'up', 'provision', 'migrate', 'seed', 'down', 'status', 'db-status', 'etl'])
+    parser.add_argument('--full', action='store_true', help='etl: empty the warehouse and rebuild it from scratch')
+    arguments = parser.parse_args()
+    command = arguments.command
     if command == 'setup':
         setup()
     elif command == 'up':
         refresh_images()
-        compose('up', '-d', '--wait', '--pull', 'never', 'postgres', 'mongo')
+        # --remove-orphans first: a Lab 4 postgres container left running would still answer for
+        # the alias postgres and hold the volume the copy reads.
+        compose('up', '-d', '--wait', '--pull', 'never', '--remove-orphans', *DATA_SERVICES)
+        wait_for_primary()
+        ensure_cluster_settings()
+        copy_lab4_database()
         provision()
         for service in SERVICES:
             compose('run', '--rm', '--no-deps', '--pull', 'never', service, 'migrate')
             compose('run', '--rm', '--no-deps', '--pull', 'never', service, 'seed')
+        grant_etl_reader()
         # --remove-orphans drops containers of services Compose no longer defines, such as Kafka.
         compose('up', '-d', '--wait', '--pull', 'never', '--remove-orphans')
     elif command == 'provision':
@@ -246,8 +413,13 @@ def main():
     elif command in ('migrate', 'seed'):
         for service in SERVICES:
             compose('run', '--rm', '--no-deps', service, command)
+    elif command == 'db-status':
+        db_status()
+    elif command == 'etl':
+        # One ETL pass now (Lab 5 demo), instead of waiting for the next 5-minute run.
+        compose('run', '--rm', '--no-deps', '--pull', 'never', 'etl', '--full' if arguments.full else '--once')
     elif command == 'down':
-        compose('down')  # Deliberately retains all data volumes.
+        compose('down', '--remove-orphans')  # Deliberately retains all data volumes.
     else:
         compose('ps')
 

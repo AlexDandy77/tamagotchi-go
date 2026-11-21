@@ -1,18 +1,124 @@
 name: tamagotchi-lab1
+# Lab 5 (contracts/replication.md): three PostgreSQL 17 nodes managed by Patroni. The node
+# holding the leader lock in etcd is the primary; one replica is synchronous, so a confirmed
+# commit is on two nodes. HAProxy keeps the address postgres:5432 on the current primary.
+x-patroni-environment: &patroni-environment
+    SCOPE: tamagotchi
+    PGVERSION: '17'
+    ETCD3_HOSTS: '"etcd:2379"'
+    PGUSER_SUPERUSER: postgres
+    PGPASSWORD_SUPERUSER: ${POSTGRES_PASSWORD:?Run python3 scripts/lab.py setup}
+    PGUSER_STANDBY: standby
+    PGPASSWORD_STANDBY: ${POSTGRES_REPLICATION_PASSWORD:?Run python3 scripts/lab.py setup}
+    PGPASSWORD_ADMIN: ${POSTGRES_PASSWORD:?Run python3 scripts/lab.py setup}
+    # Services connect without TLS on the private network, as before.
+    ALLOW_NOSSL: 'true'
+    SPILO_CONFIGURATION: |
+      bootstrap:
+        dcs:
+          ttl: 30
+          loop_wait: 10
+          retry_timeout: 10
+          maximum_lag_on_failover: 1048576
+          synchronous_mode: true
+          # Never confirm a write on the primary alone: with both replicas down, commits wait.
+          synchronous_mode_strict: true
+          failsafe_mode: true
+          postgresql:
+            parameters:
+              # Replicas share this server; leave room for bounded pools and leader connections.
+              max_connections: ${POSTGRES_MAX_CONNECTIONS:-250}
+              # The raid join is a two-phase commit (contracts/transactions.md); PostgreSQL
+              # disables PREPARE TRANSACTION unless this is above 0, on every node.
+              max_prepared_transactions: 64
+x-patroni: &patroni
+  image: ghcr.io/zalando/spilo-17:4.0-p3
+  healthcheck:
+    test: [CMD-SHELL, 'curl -fs http://localhost:8008/health >/dev/null']
+    interval: 3s
+    timeout: 3s
+    retries: 60
+  depends_on:
+    etcd: {condition: service_healthy}
+  # Stopping a primary lets Patroni demote it and hand the leader lock over at once (a few
+  # seconds). Docker's default 10 s can kill it first under load; then the replicas wait for
+  # the lock to expire (30 s).
+  stop_grace_period: 60s
+  restart: unless-stopped
+# Lab 5 (contracts/cache.md): three independent Valkey nodes; services shard keys over them
+# with the consistent-hash ring. Memory only: a restart just empties a node.
+x-valkey: &valkey
+  image: valkey/valkey:8.1.3
+  environment:
+    CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
+  command: [sh, -c, 'exec valkey-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass "$$CACHE_PASSWORD"']
+  healthcheck:
+    test: [CMD-SHELL, 'valkey-cli -a "$$CACHE_PASSWORD" --no-auth-warning ping | grep -q PONG']
+    interval: 3s
+    timeout: 3s
+    retries: 30
+  restart: unless-stopped
 services:
-  postgres:
-    image: postgres:17.9
-    # Replicas share this server; leave room for bounded pools and leader connections.
-    command: [postgres, -c, 'max_connections=${POSTGRES_MAX_CONNECTIONS:-250}']
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python3 scripts/lab.py setup}
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.21
+    command: [etcd, --name=etcd, --data-dir=/etcd-data, --listen-client-urls=http://0.0.0.0:2379, --advertise-client-urls=http://etcd:2379, --listen-peer-urls=http://0.0.0.0:2380, --initial-advertise-peer-urls=http://etcd:2380, --initial-cluster=etcd=http://etcd:2380]
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - etcd-data:/etcd-data
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U postgres]
+      test: [CMD, etcdctl, endpoint, health]
       interval: 3s
       timeout: 3s
       retries: 30
+    restart: unless-stopped
+  postgres-1:
+    <<: *patroni
+    hostname: postgres-1
+    environment:
+      <<: *patroni-environment
+      # Spilo advertises these instead of the container IP: IPs change when Docker restarts, names don't.
+      PG_CONNECT_ADDRESS: postgres-1:5432
+      RESTAPI_CONNECT_ADDRESS: postgres-1:8008
+    volumes:
+      - postgres-1-data:/home/postgres/pgdata
+  postgres-2:
+    <<: *patroni
+    hostname: postgres-2
+    environment:
+      <<: *patroni-environment
+      # Spilo advertises these instead of the container IP: IPs change when Docker restarts, names don't.
+      PG_CONNECT_ADDRESS: postgres-2:5432
+      RESTAPI_CONNECT_ADDRESS: postgres-2:8008
+    volumes:
+      - postgres-2-data:/home/postgres/pgdata
+  postgres-3:
+    <<: *patroni
+    hostname: postgres-3
+    environment:
+      <<: *patroni-environment
+      # Spilo advertises these instead of the container IP: IPs change when Docker restarts, names don't.
+      PG_CONNECT_ADDRESS: postgres-3:5432
+      RESTAPI_CONNECT_ADDRESS: postgres-3:8008
+    volumes:
+      - postgres-3-data:/home/postgres/pgdata
+  # Answers as postgres:5432 (primary) and postgres-replicas:5433 (replicas); its statistics
+  # page shows which node is primary (http://localhost:7000).
+  haproxy:
+    image: haproxy:3.0.11
+    volumes:
+      - ./deployment/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports: [127.0.0.1:7000:7000]
+    networks:
+      default:
+        aliases: [postgres, postgres-replicas]
+    healthcheck:
+      test: [CMD, bash, -c, 'exec 3<>/dev/tcp/127.0.0.1/8404 && printf "GET /healthz HTTP/1.0
+
+
+
+" >&3 && head -1 <&3 | grep -q " 200 "']
+      interval: 3s
+      timeout: 3s
+      retries: 60
     restart: unless-stopped
   mongo:
     image: mongo:7.0
@@ -23,6 +129,8 @@ services:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Run python3 scripts/lab.py setup}
       REGISTRY_DB_PASSWORD: ${REGISTRY_DB_PASSWORD:?Run setup}
+      # Lab 5: the ETL's read-only login for Registry's etl views.
+      ETL_DB_PASSWORD: ${ETL_DB_PASSWORD:?Run setup}
     volumes:
       - mongo-data:/data/db
       - mongo-config:/data/configdb
@@ -33,6 +141,42 @@ services:
       timeout: 5s
       retries: 30
     restart: unless-stopped
+  # Lab 5: two more replica-set members. They copy users and data from the primary, so they
+  # need no root credentials of their own; lab.py adds them to rs0.
+  mongo-2:
+    image: mongo:7.0
+    entrypoint: [bash, -c, 'install -m 400 -o mongodb -g mongodb /run/secrets/mongo-keyfile /data/configdb/keyfile && exec docker-entrypoint.sh "$$@"', --]
+    command: [mongod, --replSet, rs0, --keyFile, /data/configdb/keyfile, --bind_ip_all]
+    volumes:
+      - mongo-2-data:/data/db
+      - mongo-2-config:/data/configdb
+      - ./.secrets/mongo-keyfile:/run/secrets/mongo-keyfile:ro
+    healthcheck:
+      test: [CMD, mongosh, --quiet, --eval, "db.adminCommand('ping').ok"]
+      interval: 10s  # mongosh is a Node process; keep the probes light
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  mongo-3:
+    image: mongo:7.0
+    entrypoint: [bash, -c, 'install -m 400 -o mongodb -g mongodb /run/secrets/mongo-keyfile /data/configdb/keyfile && exec docker-entrypoint.sh "$$@"', --]
+    command: [mongod, --replSet, rs0, --keyFile, /data/configdb/keyfile, --bind_ip_all]
+    volumes:
+      - mongo-3-data:/data/db
+      - mongo-3-config:/data/configdb
+      - ./.secrets/mongo-keyfile:/run/secrets/mongo-keyfile:ro
+    healthcheck:
+      test: [CMD, mongosh, --quiet, --eval, "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  cache-1:
+    <<: *valkey
+  cache-2:
+    <<: *valkey
+  cache-3:
+    <<: *valkey
   gateway:
     image: ${GATEWAY_IMAGE:?Set a released Gateway image or build the local validation image}
     pull_policy: always
@@ -133,6 +277,9 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://users:${USERS_DB_PASSWORD:?Run setup}@postgres:5432/users?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
@@ -160,7 +307,7 @@ services:
     deploy:
       replicas: 3
     depends_on:
-      postgres: {condition: service_healthy}
+      haproxy: {condition: service_healthy}
       message-broker: {condition: service_healthy}
     healthcheck:
       test: [CMD, /service, healthcheck]
@@ -173,6 +320,9 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://battles:${BATTLES_DB_PASSWORD:?Run setup}@postgres:5432/battles?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       BROKER_URL: message-broker:50051
       BROKER_CERT_FILE: /run/tls/message-broker.pem
@@ -214,6 +364,9 @@ services:
     pull_policy: always
     environment: &guild-env
       DATABASE_URL: postgres://guilds:${GUILDS_DB_PASSWORD:?Run setup}@postgres:5432/guilds?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
       # and Router.Call for BROKER_DESTINATIONS. Relationships and signing keys come from User
@@ -271,7 +424,10 @@ services:
     image: ${PACKAGE_REGISTRY_IMAGE:?Set a published Package Registry image tag}
     pull_policy: always
     environment:
-      MONGODB_URL: mongodb://registry:${REGISTRY_DB_PASSWORD:?Run setup}@mongo:27017/registry?replicaSet=rs0&authSource=registry
+      MONGODB_URL: mongodb://registry:${REGISTRY_DB_PASSWORD:?Run setup}@mongo:27017,mongo-2:27017,mongo-3:27017/registry?replicaSet=rs0&authSource=registry&w=majority
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       # Lab 4: enrollments from the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
       # and Router.Call for BROKER_DESTINATIONS. Raid commands and signing keys go through the
@@ -317,6 +473,9 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://locations:${LOCATIONS_DB_PASSWORD:?Run setup}@postgres:5432/locations?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
       # and Router.Call for BROKER_DESTINATIONS. Profiles and relationships come from User
@@ -348,7 +507,7 @@ services:
     deploy:
       replicas: 3
     depends_on:
-      postgres: {condition: service_healthy}
+      haproxy: {condition: service_healthy}
       message-broker: {condition: service_healthy}
       user-management: {condition: service_healthy}
       # Started, not healthy: the Gateway's readiness waits for Map.
@@ -367,6 +526,14 @@ services:
     pull_policy: always
     environment: &monster-raid-env
       DATABASE_URL: postgres://raids:${RAIDS_DB_PASSWORD:?Run setup}@postgres:5432/raids?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
+      # Lab 5 grade 8 (contracts/transactions.md): two-phase means the raid join is a two-phase
+      # commit with Tamagotchi, which needs its prepare/commit/abort routes; compensation is
+      # the Lab 4 flow, kept as the default until Tamagotchi serves them.
+      JOIN_COMMIT: ${MONSTER_RAID_JOIN_COMMIT:-compensation}
+      JOIN_PREPARED_PAUSE_SECONDS: ${MONSTER_RAID_JOIN_PREPARED_PAUSE_SECONDS:-}
       DEPENDENCY_MODE: live
       # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,
       # and Router.Call for BROKER_DESTINATIONS; the other dependencies use their Gateway URL.
@@ -401,7 +568,7 @@ services:
     # Only the negotiated live raid socket and the probes are direct.
     ports: [127.0.0.1:8084:8080]
     depends_on:
-      postgres: {condition: service_healthy}
+      haproxy: {condition: service_healthy}
       message-broker: {condition: service_healthy}
       user-management: {condition: service_healthy}
       # Started, not healthy: the Gateway's readiness waits for Monster Raid.
@@ -433,6 +600,9 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://tamagotchi:${TAMAGOTCHI_DB_PASSWORD:?Run setup}@postgres:5432/tamagotchi?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       DEPENDENCY_MODE: live
       PORT: 8080
       REGISTRY_URL: https://gateway:8443/services/package-registry
@@ -463,7 +633,7 @@ services:
     deploy:
       replicas: 3
     depends_on:
-      postgres: {condition: service_healthy}
+      haproxy: {condition: service_healthy}
       message-broker: {condition: service_healthy}
     restart: unless-stopped
   notification:
@@ -471,6 +641,9 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: postgres://notification:${NOTIFICATION_DB_PASSWORD:?Run setup}@postgres:5432/notification?sslmode=disable
+      # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
+      CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
+      CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
       # Firebase push: mock by default; dry-run/live need the key in .secrets/fcm (see .env.example).
       FCM_MODE: ${FCM_MODE:-mock}
       FCM_CREDENTIALS_FILE: /run/secrets/fcm/fcm-service-account.json
@@ -504,8 +677,47 @@ services:
     deploy:
       replicas: 3
     depends_on:
-      postgres: {condition: service_healthy}
+      haproxy: {condition: service_healthy}
       message-broker: {condition: service_healthy}
+    restart: unless-stopped
+  # Lab 5 (contracts/data-warehouse.md): the analytics database and the ETL that fills it every
+  # 5 minutes from the owners' etl views, read on the replicas (postgres-replicas:5433).
+  warehouse:
+    image: postgres:17.9
+    environment:
+      POSTGRES_PASSWORD: ${WAREHOUSE_PASSWORD:?Run python3 scripts/lab.py setup}
+      POSTGRES_DB: warehouse
+    volumes:
+      - warehouse-data:/var/lib/postgresql/data
+    ports: [127.0.0.1:5434:5432]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d warehouse]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  etl:
+    image: python:3.13-slim
+    # The stock image installs the pinned drivers once into the etl-deps volume, then runs etl.py.
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        marker=/deps/.installed-$$(sha256sum /etl/requirements.txt | cut -c1-16);
+        [ -f "$$marker" ] || { pip install --quiet --disable-pip-version-check --root-user-action=ignore --no-cache-dir --target /deps -r /etl/requirements.txt && touch "$$marker"; };
+        PYTHONPATH=/deps exec python /etl/etl.py "$$@"
+      - etl
+    command: [--every, '300']
+    environment:
+      ETL_DB_PASSWORD: ${ETL_DB_PASSWORD:?Run python3 scripts/lab.py setup}
+      WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:?Run python3 scripts/lab.py setup}
+      WAREHOUSE_READER_PASSWORD: ${WAREHOUSE_READER_PASSWORD:?Run python3 scripts/lab.py setup}
+    volumes:
+      - ./deployment/etl:/etl:ro
+      - etl-deps:/deps
+    depends_on:
+      warehouse: {condition: service_healthy}
+      haproxy: {condition: service_healthy}
     restart: unless-stopped
   # Lab 4 monitoring: Prometheus scrapes the broker's metrics, Grafana Alloy ships every
   # container's stdout to Loki, and Grafana shows both (http://localhost:3000).
@@ -537,6 +749,9 @@ services:
     image: grafana/grafana:12.4.12
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run setup}
+      # Lab 5: the warehouse data source behind the "Game analytics" dashboard.
+      # Grafana reads the warehouse as grafana_reader, which may only SELECT (deployment/etl/etl.py).
+      WAREHOUSE_READER_PASSWORD: ${WAREHOUSE_READER_PASSWORD:?Run setup}
       # The lab dashboard is readable without a login; changes need the admin login.
       GF_AUTH_ANONYMOUS_ENABLED: 'true'
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
@@ -549,7 +764,18 @@ services:
     depends_on: [prometheus, loki]
     restart: unless-stopped
 volumes:
+  # Lab 4's single-server volume: kept, and copied into the cluster once by lab.py up.
   postgres-data:
+  etcd-data:
+  postgres-1-data:
+  postgres-2-data:
+  postgres-3-data:
+  mongo-2-data:
+  mongo-2-config:
+  mongo-3-data:
+  mongo-3-config:
+  warehouse-data:
+  etl-deps:
   mongo-data:
   mongo-config:
   broker-data:

@@ -284,6 +284,33 @@
   {
     "service": "tamagotchi",
     "method": "PUT",
+    "pattern": "/internal/v1/pet\\-reservations/[^/]+/prepare",
+    "audience": "internal",
+    "callers": [
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "tamagotchi",
+    "method": "PUT",
+    "pattern": "/internal/v1/pet\\-reservations/[^/]+/commit",
+    "audience": "internal",
+    "callers": [
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "tamagotchi",
+    "method": "PUT",
+    "pattern": "/internal/v1/pet\\-reservations/[^/]+/abort",
+    "audience": "internal",
+    "callers": [
+      "monster-raid"
+    ]
+  },
+  {
+    "service": "tamagotchi",
+    "method": "PUT",
     "pattern": "/internal/v1/pet\\-battle\\-settlements/[^/]+",
     "audience": "internal",
     "callers": [

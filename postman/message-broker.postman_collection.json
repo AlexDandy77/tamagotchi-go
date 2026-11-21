@@ -184,6 +184,89 @@
       ]
     },
     {
+      "name": "List sagas",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/sagas?limit=20"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){const b=pm.response.json();pm.test(\"Sagas with their state and current step\",()=>{pm.expect(b.items).to.be.an(\"array\");pm.expect(b).to.have.property(\"nextCursor\");});pm.collectionVariables.set(\"sagaId\",b.items.length?b.items[0].sagaId:\"\");}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read one saga with its steps",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/sagas/{{sagaId}}"
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get(\"sagaId\")){console.log(\"No saga yet: play a battle first.\");pm.execution.skipRequest();}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200){const s=pm.response.json();pm.test(\"Every step with its status and attempts\",()=>{pm.expect(s.sagaId).to.eql(pm.collectionVariables.get(\"sagaId\"));pm.expect(s.steps.map(x=>x.name)).to.include(\"reserve-stakes\");s.steps.forEach(x=>pm.expect(x).to.have.all.keys(\"name\",\"status\",\"attempts\",\"lastHttpStatus\",\"updatedAt\"));});}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject an unknown saga state",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{broker}}/v1/sagas?state=done"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "Download user logs",
       "request": {
         "method": "GET",
@@ -231,6 +314,12 @@
           }
         }
       ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "sagaId",
+      "value": ""
     }
   ]
 }

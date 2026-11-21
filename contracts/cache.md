@@ -134,7 +134,7 @@ Each service also exports `cache_requests_total{result="hit|miss|bypass", node}`
 3. Care for the pet, then read it again → `MISS` (the write logged `cache invalidated`), then `HIT`.
 4. Stop `cache-2` in Docker Desktop and read again → `X-Cache-Node` is now the next node on the ring (`MISS`, then `HIT`). Keys that lived on `cache-1` or `cache-3` still answer `HIT`. Nothing fails.
 
-**By script**, for what is hard to see one request at a time: `python3 scripts/demo_lab5.py grade7` writes 1,000 keys through the ring, prints how many landed on each node, stops one node, and shows that only that node's share moved. That's the consistent-hashing property, and the same numbers as in [cache-ring-vectors.json](cache-ring-vectors.json).
+**By script**, for what is hard to see one request at a time: `python3 scripts/demo_lab5.py grade7` places 1,000 keys with the ring and prints, for each node, that losing it moves exactly the keys it held (the consistent-hashing property, as in [cache-ring-vectors.json](cache-ring-vectors.json)). Then it checks it live: it stops the node holding Alice's roster, the roster moves to the next node on the ring and hits there, and a key on another node still hits.
 
 ## What each owner changes
 

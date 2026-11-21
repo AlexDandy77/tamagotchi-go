@@ -51,7 +51,7 @@ broker, so Kafka is no longer deployed.
 | Tamagotchi | Pets, care, XP, reservations and ownership | PostgreSQL `tamagotchi` |
 | Notification | Devices and notification delivery | PostgreSQL `notification` |
 | PostgreSQL cluster (Patroni ×3, etcd, HAProxy) | One primary and two replicas for every PostgreSQL database; automatic failover; `postgres:5432` primary, `postgres-replicas:5433` read-only | `postgres-1-data` to `postgres-3-data`, `etcd-data` |
-| MongoDB `rs0` (3 members) | Package Registry's database with majority writes and elections | `mongo-1-data` to `mongo-3-data` |
+| MongoDB `rs0` (3 members) | Package Registry's database with majority writes and elections | `mongo-data`, `mongo-2-data`, `mongo-3-data` |
 | Valkey `cache-1` to `cache-3` | Shared cache, sharded by the clients' consistent-hash ring | None: memory only |
 | Warehouse and ETL | Star schema for analytics, filled every 5 minutes from the owners' `etl` views | `warehouse-data` |
 | Prometheus, Loki, Alloy, Grafana | Metrics, container logs and dashboards, including game analytics from the warehouse | Named monitoring volumes |
