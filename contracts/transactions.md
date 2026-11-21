@@ -42,7 +42,8 @@ Joining a raid changes two databases: Monster Raid records the participant, and 
 - **Idempotency:**
   - `commit` repeated after success answers `204` again;
   - `prepare` for an `activityId` that is already prepared or reserved answers `409`, a no vote;
-  - each call carries an `Idempotency-Key` derived from the transaction ID and the phase.
+  - each call carries an `Idempotency-Key` derived from the transaction ID and the phase, never from the `activityId`: a later join of the same player to the same raid must run its phases, not replay an earlier join's answers.
+- **One join at a time:** Monster Raid keeps at most one unfinished join transaction per `activityId`. A second join of the same player to the same raid answers `409 JOIN_IN_PROGRESS` until the first is finished. Both would share Tamagotchi's `pet-reservation:{activityId}`, so the second one's abort would otherwise roll back the first one's prepare.
 - **Settings:** PostgreSQL disables prepared transactions by default (`max_prepared_transactions = 0`). The cluster sets it to 64 on every node ([replication.md](replication.md)).
 
 ### Logs and demo
