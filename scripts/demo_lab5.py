@@ -400,7 +400,7 @@ def join(raid, bearer, pet):
 
 def error_code(body):
     try:
-        return json.loads(body)['code'] if isinstance(body, bytes) else ''
+        return json.loads(body)['error']['code'] if isinstance(body, bytes) else ''
     except (ValueError, KeyError, TypeError):
         return ''
 
@@ -456,7 +456,7 @@ def grade8():
     check('Monster Raid prepared, then committed it', bool(committed))
     pets = waiting(lambda: [e for e in logs('tamagotchi', since, 'pet reservation') if e.get('activityId') == reservation], 5) \
         if reservation else []
-    for entry in pets:
+    for entry in sorted(pets, key=lambda e: e.get('time', 0)):
         print(f"   tamagotchi {entry.get('instanceId', '')}: {entry['msg']} activityId={entry['activityId']}")
     check('Tamagotchi prepared, then committed the same reservation',
           {'pet reservation prepared', 'pet reservation committed'} <= {e['msg'] for e in pets})
@@ -500,6 +500,12 @@ def grade8():
             print('   pg_prepared_xacts:', row)
         check('each database holds its prepared transaction',
               any(r.endswith('monster-raid-join:' + transaction) for r in held) and any(r.endswith('pet-reservation:' + reservation) for r in held))
+        # A retry with a new Idempotency-Key, as after a timeout: it must not touch the first join,
+        # whose prepared reservation at Tamagotchi carries the same activityId.
+        status, _, body = join(second_raid, other_bearer, other_pet)
+        check('a second join meanwhile is refused and leaves the first one prepared',
+              status == 409 and error_code(body) == 'JOIN_IN_PROGRESS' and set(prepared()) >= set(held),
+              f'{status} {error_code(body)}')
         print(f'   stopping {coordinator}, the coordinator, before it records a decision')
         compose('stop', coordinator)
         request_thread.join(30)

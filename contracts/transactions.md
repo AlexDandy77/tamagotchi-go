@@ -54,7 +54,7 @@ Monster Raid logs `join transaction prepared`, `join transaction committed` or `
 2. **Abort on a no vote:** join with a pet that is already reserved. Tamagotchi votes no, the participant is never visible, and the raid's participant count doesn't change.
 3. **Blocking and recovery:** with `JOIN_PREPARED_PAUSE_SECONDS` set on Monster Raid, a join stops after both votes. Stop that replica: `pg_prepared_xacts` on both databases shows the prepared transactions, and the raid's row stays locked. Within about 10 seconds another replica's leader aborts them (`join transaction recovered`), and the raid is free again.
 
-**By script:** `python3 scripts/demo_lab5.py grade8` runs all three with two new players in a new guild. It checks each side's log lines and `pg_prepared_xacts` after every step. For the third, it recreates the Monster Raid replicas with a 30-second pause, stops the replica that logged `join transaction prepared`, waits for `join transaction recovered`, recreates the replicas without the pause, and then joins the same player again.
+**By script:** `python3 scripts/demo_lab5.py grade8` runs all three with two new players in a new guild. It checks each side's log lines and `pg_prepared_xacts` after every step. For the third, it recreates the Monster Raid replicas with a 30-second pause, sends the same join again under a new key (`409 JOIN_IN_PROGRESS`, the first one still prepared), stops the replica that logged `join transaction prepared`, waits for `join transaction recovered`, recreates the replicas without the pause, and then joins the same player again.
 
 ## The battle saga
 
