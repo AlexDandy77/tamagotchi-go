@@ -62,7 +62,7 @@ HAProxy closes the client sessions of a node that stops being primary (`on-marke
 Package Registry's database runs on the replica set `rs0` with three members, `mongo` (the existing one, so its data and configuration stay), `mongo-2` and `mongo-3`:
 
 - Members elect a primary by majority vote. If the primary fails, a new one is elected in about 10–12 s.
-- Registry's URL lists every member: `mongodb://registry:…@mongo:27017,mongo-2:27017,mongo-3:27017/registry?replicaSet=rs0&authSource=registry&w=majority`. The driver finds and follows the primary by itself, and with three seeds it still finds the set when `mongo` itself is the member that is down, for example after a restart during the failover demo. The ETL connects the same way.
+- Registry's URL names one seed: `mongodb://registry:…@mongo:27017/registry?replicaSet=rs0&authSource=registry&w=majority`. From it the driver learns every member, then finds and follows the primary by itself, so a running Registry rides through a failover. Only a Registry that starts while `mongo` is down cannot find the set: Package Registry 4.x checks the URL with `new URL()`, which rejects a seed list. The ETL lists all three members.
 - Writes use `w: majority`, so a confirmed write is on two members and survives a failover.
 - The members share the existing keyfile. `lab.py up` initiates the set, or adds the new members to an existing one.
 

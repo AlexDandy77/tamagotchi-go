@@ -424,7 +424,7 @@ services:
     image: ${PACKAGE_REGISTRY_IMAGE:?Set a published Package Registry image tag}
     pull_policy: always
     environment:
-      MONGODB_URL: mongodb://registry:${REGISTRY_DB_PASSWORD:?Run setup}@mongo:27017,mongo-2:27017,mongo-3:27017/registry?replicaSet=rs0&authSource=registry&w=majority
+      MONGODB_URL: mongodb://registry:${REGISTRY_DB_PASSWORD:?Run setup}@mongo:27017/registry?replicaSet=rs0&authSource=registry&w=majority
       # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
       CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
       CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
