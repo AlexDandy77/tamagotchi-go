@@ -529,10 +529,9 @@ services:
       # Lab 5: the shared cache (contracts/cache.md), sharded by the consistent-hash ring.
       CACHE_NODES: cache-1=cache-1:6379,cache-2=cache-2:6379,cache-3=cache-3:6379
       CACHE_PASSWORD: ${CACHE_PASSWORD:?Run python3 scripts/lab.py setup}
-      # Lab 5 grade 8 (contracts/transactions.md): two-phase means the raid join is a two-phase
-      # commit with Tamagotchi, which needs its prepare/commit/abort routes; compensation is
-      # the Lab 4 flow, kept as the default until Tamagotchi serves them.
-      JOIN_COMMIT: ${MONSTER_RAID_JOIN_COMMIT:-compensation}
+      # Lab 5 grade 8 (contracts/transactions.md): the raid join is a two-phase commit with
+      # Tamagotchi (5.0.1 serves prepare/commit/abort); compensation is the Lab 4 flow.
+      JOIN_COMMIT: ${MONSTER_RAID_JOIN_COMMIT:-two-phase}
       JOIN_PREPARED_PAUSE_SECONDS: ${MONSTER_RAID_JOIN_PREPARED_PAUSE_SECONDS:-}
       DEPENDENCY_MODE: live
       # Lab 4: events through the Message Broker, Endpoint.Handle for the broker on GRPC_PORT,

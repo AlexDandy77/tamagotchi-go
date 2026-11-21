@@ -91,6 +91,17 @@ class StartupImagesTests(unittest.TestCase):
             compose.assert_not_called()
 
 
+class RaidJoinDefaultTests(unittest.TestCase):
+    def test_moves_the_previous_default_to_two_phase_and_keeps_other_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for before, after in (('compensation', 'two-phase'), ('two-phase', 'two-phase')):
+                (root / '.env').write_text(f'SEED_PASSWORD=x\nMONSTER_RAID_JOIN_COMMIT={before}\n')
+                with patch.object(lab, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                    lab.raid_join_default()
+                self.assertEqual((root / '.env').read_text(), f'SEED_PASSWORD=x\nMONSTER_RAID_JOIN_COMMIT={after}\n')
+
+
 class DemoAdminTests(unittest.TestCase):
     def test_sets_demo_admin_once_without_changing_credentials(self):
         with tempfile.TemporaryDirectory() as directory:
