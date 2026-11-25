@@ -39,7 +39,7 @@ The ETL **never reads an owner's tables**. Each owner creates a schema `etl` in 
 | Guild | `etl.guilds` | `guild_id`, `name`, `created_at`, `updated_at` |
 | Guild | `etl.guild_members` | `guild_id`, `user_id`, `role`, `joined_at`, `left_at`, `updated_at` |
 | Package Registry | `etl_packages` | `packageId`, `name`, `status`, `updatedAt` |
-| Package Registry | `etl_monsters` | `monsterId`, `name`, `type`, `updatedAt` |
+| Package Registry | `etl_monsters` | `monsterId`, `name`, `type` (always null: a monster has weaknesses and resistances, not one combat type), `updatedAt` |
 
 **Never exposed:** emails, password hashes, refresh or device tokens, chat message text, raw locations and coordinates, idempotency records.
 
