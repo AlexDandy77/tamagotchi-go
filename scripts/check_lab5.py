@@ -99,9 +99,9 @@ def audit(config, root=ROOT):
     registry = services.get('package-registry', {}).get('environment', {}).get('MONGODB_URL', '')
     if 'replicaSet=rs0' not in registry or 'w=majority' not in registry:
         failures.append('package-registry: MONGODB_URL needs replicaSet=rs0 and w=majority')
-    if ',' in registry.split('@')[-1].split('/')[0]:
-        # Package Registry 4.x checks the URL with new URL(), which rejects a seed list.
-        failures.append('package-registry: MONGODB_URL must name one host; Package Registry rejects a seed list')
+    if not all(f'{member}:27017' in registry for member in MONGO_MEMBERS):
+        # Package Registry 5.x accepts a seed list; 4.x rejected one.
+        failures.append('package-registry: MONGODB_URL must list every member, so the set is found when one is down')
 
     # Cache and sharding (grades 6 and 7).
     for name in CACHE_NODES:
