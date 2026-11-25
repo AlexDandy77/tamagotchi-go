@@ -520,6 +520,59 @@
    ]
   },
   {
+   "name": "Read the edited guild (Lab 5 cache miss)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"the edited name\", () => pm.expect(pm.response.json().name).to.eql(\"Postman Pack\"));",
+       "pm.test(\"Read from the database: the edit deleted the cached guild (contracts/cache.md)\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"MISS\"));",
+       "pm.environment.set(\"guildCacheNode\", pm.response.headers.get(\"X-Cache-Node\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read the edited guild again from the cache",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{aliceToken}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Served from the shared cache, on the same shard (contracts/cache.md)\", () => { pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"HIT\"); pm.expect(pm.response.headers.get(\"X-Cache-Node\")).to.eql(pm.environment.get(\"guildCacheNode\")); });",
+       "pm.test(\"the same guild\", () => pm.expect(pm.response.json().name).to.eql(\"Postman Pack\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
    "name": "Non-member cannot read",
    "request": {
     "method": "GET",
@@ -728,6 +781,32 @@
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
        "pm.test(\"accepted\", () => pm.expect(pm.response.json().status).to.eql(\"accepted\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read the guild after Bob joins (the acceptance deleted the cached copy)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{bobToken}}"
+     }
+    ],
+    "url": "{{guild}}/v1/guilds/{{guildId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Read from the database again\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"MISS\"));",
+       "pm.test(\"two members\", () => pm.expect(pm.response.json().memberCount).to.eql(2));"
       ]
      }
     }

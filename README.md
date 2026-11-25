@@ -65,7 +65,7 @@ Import [one Postman environment](postman/local.postman_environment.json), set `s
 
 - [Gateway](postman/gateway.postman_collection.json)
 - [User Management](postman/user-management.postman_collection.json) and [Battle](postman/battle.postman_collection.json)
-- [Guild](postman/guild.postman_collection.json) and [Package Registry](postman/package-registry.postman_collection.json)
+- [Guild](postman/guild.postman_collection.json) and [Package Registry](postman/package-registry.postman_collection.json), which also show the Lab 5 cache: the edited guild and the newly published package are read from the database (`X-Cache: MISS`), then from the cache (`HIT` on the same `X-Cache-Node`), and from the database again after the next change deletes the key
 - [Map](postman/map.postman_collection.json) and [Monster Raid](postman/monster-raid.postman_collection.json), which also shows the Lab 5 cache: the raid read after the join is a `MISS`, the next one a `HIT` on the same `X-Cache-Node`
 - [Tamagotchi](postman/tamagotchi.postman_collection.json) and [Notification](postman/notification.postman_collection.json)
 - [Message Broker](postman/message-broker.postman_collection.json): the admin routes, as Alice, the demo admin, including the Lab 5 sagas (`/v1/sagas` and one saga with its steps, after a battle)
