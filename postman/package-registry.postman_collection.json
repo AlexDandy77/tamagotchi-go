@@ -172,7 +172,8 @@
      "script": {
       "type": "text/javascript",
       "exec": [
-       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"X-Cache says where the pinned configuration came from (Lab 5 cache)\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.be.oneOf([\"MISS\", \"HIT\", \"BYPASS\"]));"
       ]
      }
     }
@@ -192,7 +193,8 @@
       "type": "text/javascript",
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-       "pm.test(\"stake is 10\", () => pm.expect(pm.response.json().stake).to.eql(10));"
+       "pm.test(\"stake is 10\", () => pm.expect(pm.response.json().stake).to.eql(10));",
+       "pm.test(\"X-Cache says where the pinned combat rules came from (Lab 5 cache)\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.be.oneOf([\"MISS\", \"HIT\", \"BYPASS\"]));"
       ]
      }
     }
@@ -497,7 +499,30 @@
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
        "if(pm.response.code===200){const b=pm.response.json();pm.collectionVariables.set(\"registryPackageVersion\",b.version);}",
-       "pm.test(\"configVersion 1\", () => pm.expect(pm.response.json().configVersion).to.eql(1));"
+       "pm.test(\"configVersion 1\", () => pm.expect(pm.response.json().configVersion).to.eql(1));",
+       "pm.test(\"Read from the database: publishing deleted the cached package (contracts/cache.md)\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"MISS\"));",
+       "pm.collectionVariables.set(\"registryCacheNode\", pm.response.headers.get(\"X-Cache-Node\"));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read the package again from the cache",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/v1/packages/{{registryPackageId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Served from the shared cache, on the same shard (contracts/cache.md)\", () => { pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"HIT\"); pm.expect(pm.response.headers.get(\"X-Cache-Node\")).to.eql(pm.collectionVariables.get(\"registryCacheNode\")); });",
+       "pm.test(\"the same package version\", () => pm.expect(pm.response.json().version).to.eql(pm.collectionVariables.get(\"registryPackageVersion\")));"
       ]
      }
     }
@@ -581,6 +606,27 @@
       "exec": [
        "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
        "if(pm.response.code===200){const b=pm.response.json();pm.collectionVariables.set(\"registryPackageVersion\",b.version);}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "Read the edited package (the edit deleted the cached copy)",
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": "{{registry}}/v1/packages/{{registryPackageId}}"
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+       "pm.test(\"Read from the database again\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"MISS\"));",
+       "pm.test(\"the edited version\", () => pm.expect(pm.response.json().version).to.eql(pm.collectionVariables.get(\"registryPackageVersion\")));"
       ]
      }
     }
