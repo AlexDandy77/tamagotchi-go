@@ -318,7 +318,7 @@ def grade9():
     bearer, roster = fresh_player()
     me = http('GET', USERS + '/v1/users/me', bearer=bearer)[2]['id']
     primary = roster.get('primaryPetId') or roster['pets'][0]['id']
-    # Started as Battle would: hold both stakes, then reserve the pets. A real battle has two players.
+    # Deliberately invalid input: exercise compensation, then run a real two-player battle below.
     data = {'hold': {'participants': [{'userId': me, 'boostIds': []}], 'rulesVersion': 1},
             'pets': {'kind': 'battle', 'users': [{'userId': me, 'primaryPetId': primary, 'secondaryPetId': None}]}}
     since = now()
@@ -365,6 +365,26 @@ def grade9():
         resumed = [e for e in logs('message-broker', since, 'saga resumed after restart') if e.get('sagaId') == saga_id]
         check('the broker resumed it from its last recorded step', bool(resumed),
               f"step {resumed[0].get('step')}" if resumed else 'no "saga resumed after restart" line')
+
+    print('   playing a real battle with fresh players, real stakes and worker takeover', flush=True)
+    previous = http('GET', f'{ADMIN}/v1/sagas?type=battle&state=completed&limit=100')[2]
+    previous_ids = {s['sagaId'] for s in previous.get('items', [])}
+    run = subprocess.run([sys.executable, str(ROOT / 'scripts/smoke_live.py'), '--leader-failover'],
+                         cwd=ROOT, text=True, capture_output=True, timeout=180)
+    for line in run.stdout.splitlines():
+        if 'Battle' in line or 'battle worker' in line or line.startswith('FAIL:'):
+            print('   ' + line, flush=True)
+    if not check('real combat, wallet/pet settlement and notifications completed', run.returncode == 0,
+                 run.stderr.strip().splitlines()[-1] if run.returncode and run.stderr else ''):
+        return
+    status, _, page = http('GET', f'{ADMIN}/v1/sagas?type=battle&state=completed&limit=100')
+    completed = [s for s in page.get('items', []) if s['sagaId'] not in previous_ids] if status == 200 else []
+    if check('the broker records the new battle saga as completed', bool(completed)):
+        saga = completed[0]
+        print(f"   completed battle saga {saga['sagaId']}", flush=True)
+        for step in saga['steps']:
+            print(f"     {step['name']:15} {step['status']:12} attempts={step['attempts']}", flush=True)
+        check('all six saga steps finished', len(saga['steps']) == 6 and all(st['status'] == 'done' for st in saga['steps']))
 
 
 # -- grade 8 helpers -----------------------------------------------------------------------
