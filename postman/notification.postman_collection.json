@@ -142,7 +142,45 @@
             "type": "text/javascript",
             "exec": [
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-              "pm.collectionVariables.unset(\"notificationRecordId\"); if (pm.response.code === 200) { const s = pm.response.json(); if (s.items[0]) pm.collectionVariables.set(\"notificationRecordId\", s.items[0].id); }"
+              "pm.collectionVariables.unset(\"notificationRecordId\"); if (pm.response.code === 200) { const s = pm.response.json(); if (s.items[0]) pm.collectionVariables.set(\"notificationRecordId\", s.items[0].id); }",
+              "pm.test(\"X-Cache says where the inbox came from (Lab 5 cache)\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.be.oneOf([\"MISS\", \"HIT\", \"BYPASS\"]));",
+              "pm.environment.set(\"notificationCacheNode\", pm.response.headers.get(\"X-Cache-Node\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List notifications again from the cache",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{notificationToken}}"
+          }
+        ],
+        "url": "{{notification}}/v1/notifications"
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// The service stores the copy just after answering the first read.",
+              "setTimeout(() => {}, 300);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Served from the shared cache, on the same shard (contracts/cache.md)\", () => { pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"HIT\"); pm.expect(pm.response.headers.get(\"X-Cache-Node\")).to.eql(pm.environment.get(\"notificationCacheNode\")); });",
+              "pm.test(\"The same inbox page\", () => pm.expect(pm.response.json()).to.have.property(\"items\"));"
             ]
           }
         }

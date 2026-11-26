@@ -306,7 +306,45 @@
             "type": "text/javascript",
             "exec": [
               "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-              "if(pm.response.code===200){const s=pm.response.json();pm.collectionVariables.set(\"tamaPetVersion\", s.version);}"
+              "if(pm.response.code===200){const s=pm.response.json();pm.collectionVariables.set(\"tamaPetVersion\", s.version);}",
+              "pm.test(\"X-Cache says where the pet came from (Lab 5 cache)\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.be.oneOf([\"MISS\", \"HIT\", \"BYPASS\"]));",
+              "pm.environment.set(\"tamaPetCacheNode\", pm.response.headers.get(\"X-Cache-Node\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get primary pet again from the cache",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{tamaToken}}"
+          }
+        ],
+        "url": "{{tamagotchi}}/v1/pets/{{tamaPetId}}"
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// The service stores the copy just after answering the first read.",
+              "setTimeout(() => {}, 300);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Served from the shared cache, on the same shard (contracts/cache.md)\", () => { pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"HIT\"); pm.expect(pm.response.headers.get(\"X-Cache-Node\")).to.eql(pm.environment.get(\"tamaPetCacheNode\")); });",
+              "pm.test(\"The same pet\", () => pm.expect(pm.response.json().id).to.eql(pm.variables.get(\"tamaPetId\")));"
             ]
           }
         }
