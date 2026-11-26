@@ -35,6 +35,7 @@ Requires Docker Compose v2 and Python 3. Published images run without access to 
 | --- | --- | --- |
 | Gateway | `alexdandy77/pad-team-8-gateway:latest` | `http://localhost:8080` |
 | Service Discovery | `alexdandy77/pad-team-8-service-discovery:latest` | None; instances and Gateway call it over mTLS inside Compose |
+| Message Broker | `arturtugui/pad-team-8-message-broker:latest` | Gateway `/services/message-broker` for the admin routes (demo admins only); services call it over gRPC at `message-broker:50051` |
 | User Management | `alexdandy77/pad-team-8-user-management:latest` | Gateway `/services/user-management`; three replicas |
 | Battle | `alexdandy77/pad-team-8-battle:latest` | Gateway `/services/battle`; three replicas |
 | Map | `ralex225/pad-team-8-map:latest` | Gateway `/services/map`; three replicas |
