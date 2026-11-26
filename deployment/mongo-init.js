@@ -40,6 +40,9 @@ const registry = db.getSiblingDB('registry');
 if (!registry.getUser('registry')) {
   registry.createUser({ user: 'registry', pwd: registryPassword, roles: [{ role: 'readWrite', db: 'registry' }] });
 }
+// Lab 5: Package Registry keeps its etl_* views up to date on every migrate, and changing an
+// existing view (collMod) needs dbAdmin on its own database. Granting a role it holds is a no-op.
+registry.grantRolesToUser('registry', [{ role: 'dbAdmin', db: 'registry' }]);
 // Lab 5 (contracts/data-warehouse.md): the ETL's read-only login. Package Registry decides what
 // its etl_* views contain; this user can only read the registry database.
 const etlPassword = process.env.ETL_DB_PASSWORD;
