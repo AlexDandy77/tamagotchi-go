@@ -101,6 +101,8 @@ Gateway authenticates players and sends migrated destinations to the Message Bro
 
 Lab 5 makes the data layer survive failures and adds analytics. Releases are `5.x.y`.
 
+User Management and Battle expose read-only warehouse views, use the shared cache, and recover database connections after failover. Battle delegates reservations and settlement to the broker saga; combat and outcomes remain in Battle. `python3 scripts/demo_lab5.py grade9` demonstrates compensation and a complete battle with worker takeover. The two service Postman collections also check cache MISS → HIT on the same shard.
+
 | Area | What runs | Contract |
 | --- | --- | --- |
 | Replication | PostgreSQL as a three-node Patroni cluster with etcd. HAProxy keeps `postgres:5432` on the current primary and serves read-only `postgres-replicas:5433`. MongoDB runs a three-member replica set `rs0`. Every service database has two replicas and fails over automatically | [replication](contracts/replication.md) |
@@ -121,7 +123,7 @@ Lab 5 makes the data layer survive failures and adds analytics. Releases are `5.
 | 6 | The same Postman GET twice: `X-Cache: MISS`, then `HIT`, with the service log showing `cache miss, read from database`, then `cache hit` | — |
 | 7 | `X-Cache-Node` names the shard; stop that node and the key moves to the next node while other keys still `HIT` | `demo_lab5.py grade7` shows only the stopped node's keys move |
 | 8 | Join a raid: the Monster Raid and Tamagotchi logs show both prepares, then the commit (`join transaction committed`); joining with a reserved pet shows the abort. With `JOIN_PREPARED_PAUSE_SECONDS` set, stopping the Monster Raid replica mid-join leaves both transactions in `pg_prepared_xacts` until another replica's leader resolves them | `demo_lab5.py grade8` runs all three |
-| 9 | `GET /services/message-broker/v1/sagas/{battleId}` after a battle (completed) and after a failed accept (compensated); broker and participant logs share the `sagaId` | `demo_lab5.py grade9` restarts the broker mid-saga |
+| 9 | `GET /services/message-broker/v1/sagas/{battleId}` after a battle (completed) and after a failed accept (compensated); broker and participant logs share the `sagaId` | `demo_lab5.py grade9` checks compensation, broker persistence and a complete battle with worker takeover |
 
 ## Communication contract
 

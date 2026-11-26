@@ -782,6 +782,62 @@
       ]
     },
     {
+      "name": "Battle cache MISS",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Cache MISS\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"MISS\"));",
+              "const node = pm.response.headers.get(\"X-Cache-Node\");",
+              "pm.test(\"Cache shard\", () => pm.expect(node).to.match(/^cache-[123]$/));",
+              "pm.variables.set(\"battleCacheNode\", node);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Battle cache HIT",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{aliceToken}}"
+          }
+        ],
+        "url": "{{battle}}/v1/battles/{{battleId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Cache HIT\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"HIT\"));",
+              "const node = pm.response.headers.get(\"X-Cache-Node\");",
+              "pm.test(\"Cache shard\", () => pm.expect(node).to.match(/^cache-[123]$/));",
+              "pm.test(\"Same shard\", () => pm.expect(node).to.eql(pm.variables.get(\"battleCacheNode\")));"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "Accept challenge",
       "request": {
         "method": "POST",

@@ -130,7 +130,7 @@ be rebuilt from the sources at any time.
 ## Extending and releasing
 
 Each owner adds gRPC transport, broker trust and its event client, registers `grpcPort` and
-any consumer interests, and publishes a validated merged `4.x.y` image. Producers name topics,
+any consumer interests, and publishes a validated merged image. Producers name topics,
 not consumers. User Management and Battle produce events but subscribe to none.
 
 For Lab 5, each owner adds the cache client and its ring test, its `etl` views, and the
@@ -143,6 +143,7 @@ workflow, outage recovery and events through the broker. Kafka was removed once 
 and consumer had migrated. Update CPR submodule pointers to actual merged commits after service
 PRs merge; feature commits are not releases.
 
-The single-PC deployment uses Compose, one PostgreSQL, MongoDB, and one broker with a
-persistent volume. Broker-process replication, Kubernetes and autoscaling are future work;
-this lab's service high availability is rerouting between business-service replicas.
+The single-PC deployment uses Compose with three PostgreSQL members, three MongoDB members,
+three cache shards, one warehouse and one persistent broker. Business-service replicas and
+database failover provide availability. Broker-process replication, Kubernetes and autoscaling
+remain future work.

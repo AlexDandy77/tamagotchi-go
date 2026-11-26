@@ -941,7 +941,64 @@
             "type": "text/javascript",
             "exec": [
               "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
-              ""
+              "",
+              "if (pm.response.code === 201) { pm.variables.set(\"cacheUserId\", pm.response.json().user.id); pm.variables.set(\"cacheUserToken\", pm.response.json().accessToken); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public profile cache MISS",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{cacheUserToken}}"
+          }
+        ],
+        "url": "{{users}}/v1/users/{{cacheUserId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Cache MISS\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"MISS\"));",
+              "const node = pm.response.headers.get(\"X-Cache-Node\");",
+              "pm.test(\"Cache shard\", () => pm.expect(node).to.match(/^cache-[123]$/));",
+              "pm.variables.set(\"profileCacheNode\", node);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public profile cache HIT",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{cacheUserToken}}"
+          }
+        ],
+        "url": "{{users}}/v1/users/{{cacheUserId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Cache HIT\", () => pm.expect(pm.response.headers.get(\"X-Cache\")).to.eql(\"HIT\"));",
+              "const node = pm.response.headers.get(\"X-Cache-Node\");",
+              "pm.test(\"Cache shard\", () => pm.expect(node).to.match(/^cache-[123]$/));",
+              "pm.test(\"Same shard\", () => pm.expect(node).to.eql(pm.variables.get(\"profileCacheNode\")));"
             ]
           }
         }
